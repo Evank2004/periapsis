@@ -8,3 +8,7 @@ class Prior(ABC):
     @abstractmethod
     def logpdf(self, x):
         pass
+
+    @abstractmethod
+    def unp(self, u):
+        pass

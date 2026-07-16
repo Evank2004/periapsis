@@ -119,7 +119,7 @@ def credible_intervals(results):
 
     return credible_intervals
 
-def all_stats(results,data,pretty_print=True,indent=4):
+def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
     red_chi2_map, red_chi2_med,uwe_map,uwe_med,orbit_dof = red_chi2(results,data)
     delta_chi2_map, delta_chi2_med,p_map,p_med = delta_chi2(results,data)
     intervals = credible_intervals(results)
@@ -157,7 +157,12 @@ def all_stats(results,data,pretty_print=True,indent=4):
         print("\n" + "=" * 80 + "\n")
         print(json.dumps(fit_results, indent=indent, sort_keys=True, default=_json_default))
 
-    
+    if savepath is not None:
+        with open(savepath/"stats.json", "w") as f:
+            json.dump(stats, f, indent=indent, sort_keys=True, default=_json_default)
+        with open(savepath/"fit_results.json", "w") as f:
+            json.dump(fit_results, f, indent=indent, sort_keys=True, default=_json_default)
+            
 
     return stats,fit_results
     

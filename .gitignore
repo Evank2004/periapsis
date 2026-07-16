@@ -3,6 +3,7 @@ __pycache__
 **/__pycache__
 
 .venv
+.vscode
 
 # Created by https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
 # Edit at https://www.toptal.com/developers/gitignore?templates=python,visualstudiocode

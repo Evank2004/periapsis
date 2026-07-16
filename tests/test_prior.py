@@ -1,7 +1,8 @@
 import numpy as np
 
-from periapsis.prior.normal_prior import NormalPrior
-from periapsis.prior.uniform_prior import UniformPrior
+from periapsis.prior import NormalPrior
+from periapsis.prior import LogNormalPrior
+from periapsis.prior import UniformPrior
 
 
 def test_uniform_prior_logpdf_inside_and_outside_bounds():
@@ -27,3 +28,22 @@ def test_normal_prior_logpdf_is_maximum_at_the_mean():
 
     assert np.isfinite(prior.logpdf(10.0))
     assert prior.logpdf(10.0) > prior.logpdf(12.0)
+
+
+def test_log_normal_prior_logpdf_matches_base_10_density():
+    prior = LogNormalPrior(1.0, 0.5)
+
+    expected = -0.5*np.log(2*np.pi*0.5**2) - np.log(10.0*np.log(10))
+
+    assert prior.logpdf(10.0) == expected
+    assert prior.logpdf(0.0) == -np.inf
+
+
+def test_log_normal_prior_sample_is_positive():
+    prior = LogNormalPrior(1.0, 0.5)
+    random_state = np.random.RandomState(0)
+
+    samples = prior.sample(random_state, size=100)
+
+    assert samples.shape == (100,)
+    assert np.all(samples > 0)

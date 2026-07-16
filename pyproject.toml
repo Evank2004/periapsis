@@ -16,6 +16,15 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+    "numpy",
+    "scipy",
+    "astropy",
+    "matplotlib",
+    "corner",
+    "emcee",
+    "ultranest"
+]
 license = "MIT"
 license-files = ["LICENSE"]
 keywords = ["binaries","astronomy","regression","model_fitting"]

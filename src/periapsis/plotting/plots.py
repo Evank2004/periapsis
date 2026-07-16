@@ -2,14 +2,14 @@ import matplotlib.pyplot as plt
 import numpy as np
 import emcee
 import corner
-from orbit_package.fitting.results import FitResults
-from orbit_package.model import thieleinnes
-from orbit_package.model import campbell
+from periapsis.fitting.results import FitResults
+from periapsis.model import thieleinnes
+from periapsis.model import campbell
 import matplotlib.gridspec as gridspec
-from orbit_package.utils.solvers import solve_mass
-from orbit_package.utils.solvers import campbell_to_thiele
-from orbit_package.utils.solvers import transform_theile
-from orbit_package.utils.helpers import _build_model
+from periapsis.utils.solvers import solve_mass
+from periapsis.utils.solvers import campbell_to_thiele
+from periapsis.utils.solvers import transform_theile
+from periapsis.utils.helpers import _build_model
 from scipy.stats import gaussian_kde
 
 rng_plots = np.random.default_rng(5377)

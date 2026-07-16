@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 import numpy as np
-from orbit_package.data.data import Data
-from orbit_package.fitting.results import FitResults
-from orbit_package.utils.helpers import _match_param_keys
+from periapsis.data.data import Data
+from periapsis.fitting.results import FitResults
+from periapsis.utils.helpers import _match_param_keys
 
 class Fitter(ABC):
     def __init__(self, m1=None, **prior_kwargs):

@@ -1,9 +1,9 @@
 import json
 
 import numpy as np
-from orbit_package.utils.helpers import _build_model
-from orbit_package.data.data import Data
-from orbit_package.data.common import AstrometryData, RadialVelocityData, AstroRVData
+from periapsis.utils.helpers import _build_model
+from periapsis.data.data import Data
+from periapsis.data.common import AstrometryData, RadialVelocityData, AstroRVData
 from scipy.stats import chi2
 
 

@@ -1,6 +1,6 @@
 import pytest
 
-from orbit_package.model.orbit import Orbit
+from periapsis.model.orbit import Orbit
 
 
 def test_orbit_requires_complete_parameter_set():

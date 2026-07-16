@@ -1,10 +1,10 @@
 from .fitter import Fitter
-from orbit_package.data.data import Data
-from orbit_package.fitting.results import FitResults
-from orbit_package.model.campbell import CampbellOrbit
-from orbit_package.initial.initial import InitialFit
-from orbit_package.utils.helpers import _match_param_keys
-from orbit_package.utils.solvers import solve_mass
+from periapsis.data.data import Data
+from periapsis.fitting.results import FitResults
+from periapsis.model.campbell import CampbellOrbit
+from periapsis.initial.initial import InitialFit
+from periapsis.utils.helpers import _match_param_keys
+from periapsis.utils.solvers import solve_mass
 import numpy as np
 import ultranest
 from typing import Any, cast

@@ -1,6 +1,6 @@
 import numpy as np
 
-from orbit_package.fitting.results import FitResults
+from periapsis.fitting.results import FitResults
 
 
 def test_add_mass_samples_adds_derived_mass_and_param_name():

@@ -2,7 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 
-from orbit_package.stats import stat_funcs
+from periapsis.stats import stat_funcs
 
 
 def test_compute_red_chi2_uses_results_and_data_contract(monkeypatch):

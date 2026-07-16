@@ -1,10 +1,10 @@
 from .fitter import Fitter
-from orbit_package.data.data import Data
-from orbit_package.fitting.results import FitResults
-from orbit_package.model import thieleinnes
-from orbit_package.initial.initial import InitialFit
-from orbit_package.utils.solvers import transform_theile
-from orbit_package.utils.helpers import _match_param_keys
+from periapsis.data.data import Data
+from periapsis.fitting.results import FitResults
+from periapsis.model import thieleinnes
+from periapsis.initial.initial import InitialFit
+from periapsis.utils.solvers import transform_theile
+from periapsis.utils.helpers import _match_param_keys
 import numpy as np
 import emcee
 

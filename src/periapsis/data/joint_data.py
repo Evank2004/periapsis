@@ -1,7 +1,7 @@
 from typing import List
 
 from .data import Data
-from orbit_package.model.orbit import Orbit
+from periapsis.model.orbit import Orbit
 
 class JointData(Data):
     def __init__(self, datas: List[Data]):

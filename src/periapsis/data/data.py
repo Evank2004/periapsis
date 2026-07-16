@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 
-from orbit_package.model.orbit import Orbit
+from periapsis.model.orbit import Orbit
 
 class Data(ABC):
     """

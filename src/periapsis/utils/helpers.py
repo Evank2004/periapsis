@@ -1,5 +1,5 @@
-from orbit_package.model import thieleinnes
-from orbit_package.model import campbell
+from periapsis.model import thieleinnes
+from periapsis.model import campbell
 
 def _build_model(results, params):
     params = _match_param_keys(params)

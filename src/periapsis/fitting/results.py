@@ -1,6 +1,6 @@
 import numpy as np
-from orbit_package.utils.solvers import transform_theile
-from orbit_package.utils.solvers import solve_mass
+from periapsis.utils.solvers import transform_theile
+from periapsis.utils.solvers import solve_mass
 
 
 class FitResults:

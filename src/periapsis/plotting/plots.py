@@ -428,7 +428,7 @@ def mass_distribution(results,scale='linear',savepath=None):
         ax.set_ylabel("Probability Density")
         ax.legend(loc='upper right')
         if savepath is not None:
-            fig.savefig(f'{savepath}/Mass_dist.png',dpi=300)
+            fig.savefig(savepath,dpi=300)
             print(f"Saved mass distribution plot to {savepath}")
         return fig
 
@@ -467,7 +467,7 @@ def mass_distribution(results,scale='linear',savepath=None):
         ax.legend(loc='upper right')
 
         if savepath is not None:
-            fig.savefig(f'{savepath}/Mass_dist_log.png',dpi=300)
+            fig.savefig(savepath,dpi=300)
             print(f"Saved mass distribution plot to {savepath}")
         return fig
 

@@ -1,5 +1,5 @@
 from .data import Data
-from orbit_package.model.orbit import Orbit
+from periapsis.model.orbit import Orbit
 import numpy as np
 
 class AstrometryData(Data):

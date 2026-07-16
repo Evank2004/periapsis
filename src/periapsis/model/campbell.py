@@ -1,5 +1,5 @@
 from .orbit import Orbit
-from orbit_package.utils.solvers import solve_kepler
+from periapsis.utils.solvers import solve_kepler
 import numpy as np
 
 class CampbellOrbit(Orbit):

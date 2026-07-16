@@ -1,7 +1,7 @@
 import numpy as np
 
-from orbit_package.data.common import AstroRVData, AstrometryData, RadialVelocityData
-from orbit_package.data.joint_data import JointData
+from periapsis.data.common import AstroRVData, AstrometryData, RadialVelocityData
+from periapsis.data.joint_data import JointData
 
 
 class DummyOrbit:

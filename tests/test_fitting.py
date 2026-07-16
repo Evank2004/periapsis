@@ -1,6 +1,6 @@
 import numpy as np
 
-from orbit_package.fitting.fitter import Fitter
+from periapsis.fitting.fitter import Fitter
 
 
 class DummyData:

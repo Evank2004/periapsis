@@ -1,7 +1,7 @@
 import numpy as np
 
-from orbit_package.prior.normal_prior import NormalPrior
-from orbit_package.prior.uniform_prior import UniformPrior
+from periapsis.prior.normal_prior import NormalPrior
+from periapsis.prior.uniform_prior import UniformPrior
 
 
 def test_uniform_prior_logpdf_inside_and_outside_bounds():

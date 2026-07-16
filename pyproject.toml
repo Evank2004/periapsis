@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools >= 77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "periapsis"
+version = "0.1.0"
+authors = [
+    {name = "Evan Kerr", email ="evan.kerr@utah.edu"},
+    {name = "Matthew Whitaker", email ="matthew.whitaker@utah.edu"},
+]
+description = "An orbital fitting package"
+readme = "README.md"
+requires-python = ">=3.9"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["binaries","astronomy","regression","model_fitting"]

@@ -39,6 +39,12 @@ from periapsis.utils.solvers import solve_mass, solve_kepler
 # K1 = radial velocity semi-amplitude of the primary
 # K2 = radial velocity semi-amplitude of the secondary
 # q = mass ratio = M2/M1
+# dx = astrometric offset in x
+# dy = astrometric offset in y
+# dpmra = proper motion offset in RA
+# dpmdec = proper motion offset in Dec
+# systemic_velocity = systemic velocity offset in radial velocity
+
 # TODO add log versions of some params
 # TODO add T-I C and H
 # TODO add equinoctal params
@@ -55,6 +61,7 @@ _all_parameters = {
     'a1sini', 'a2sini',
     't0', 'T0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
     'u01', 'u02', 'uM01', 'uM02', 'l01', 'l02', 'K1', 'K2',
+    'dx', 'dy', 'dpmra', 'dpmdec', 'systemic_velocity'
 }
 
 def A_B_F_G_to_a_cosi_omega_Omega(A, B, F, G):

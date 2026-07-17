@@ -5,6 +5,7 @@ import corner
 from periapsis.fitting.results import FitResults
 from periapsis.model import thieleinnes
 from periapsis.model import campbell
+from periapsis.model.orbit import Orbit
 import matplotlib.gridspec as gridspec
 from periapsis.utils.solvers import solve_mass
 from periapsis.utils.solvers import campbell_to_thiele
@@ -282,8 +283,10 @@ def orbit_plot(results, data, savepath=None):
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for orbit plotting.")
 
-    map_model = _build_model(results, map_params)
-    med_model = _build_model(results, med_params)
+    # map_model = _build_model(results, map_params)
+    # med_model = _build_model(results, med_params)
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
 
     x_map_raw, y_map_raw = map_model.astrometry(tfold)
     x_med_raw, y_med_raw = med_model.astrometry(tfold)
@@ -336,8 +339,10 @@ def multi_orbit_plot(results, data, savepath=None, Nplot=100):
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for multi-orbit plotting.")
 
-    map_model = _build_model(results, map_params)
-    med_model = _build_model(results, med_params)
+    # map_model = _build_model(results, map_params)
+    # med_model = _build_model(results, med_params)
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
 
     x_map, y_map = map_model.astrometry(tfold)
     x_med, y_med = med_model.astrometry(tfold)
@@ -365,7 +370,8 @@ def multi_orbit_plot(results, data, savepath=None, Nplot=100):
     fig, ax = plt.subplots()
 
     for samp in samps:
-        model = _build_model(results, dict(zip(param_names, samp)))
+        # model = _build_model(results, dict(zip(param_names, samp)))
+        model = Orbit(**dict(zip(param_names, samp)))
         x, y = model.astrometry(tfold)
         x, y = _apply_center_offset(x, y, dict(zip(param_names, samp)), dt, center=True)
         ax.plot(x, y, color='tab:blue', alpha=0.3)

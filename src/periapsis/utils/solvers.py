@@ -161,3 +161,38 @@ def solve_mass(a1,P,m1,max_iter=15,tol=1e-6):
             )
     M2 = M - m1
     return M2
+
+
+def gaia_single_motion(spsi,cpsi,t,plx_fac,x,err):
+    """
+    Computes single star motion for Gaia data"""
+    
+    A = np.column_stack([spsi,cpsi,plx_fac,spsi*t,cpsi*t])
+
+    w = 1.0 / err
+    x_w = x * w
+    A_w = A * w[:, None]
+
+    ATA = A_w.T @ A_w
+    ATx = A_w.T @ x_w
+
+    mu = np.linalg.solve(ATA, ATx)
+
+    cov_mu = np.linalg.inv(ATA)
+
+    mu_err = np.sqrt(np.diag(cov_mu))
+
+
+    model_werr = A_w @ mu
+
+    residuals = x_w - model_werr
+    chi2 = np.sum(residuals**2)
+
+    dof = len(x) - len(mu)
+    
+    return {
+        "mu": mu,
+        "mu_err": mu_err,
+        "chi2": chi2,
+        "dof": dof
+    }

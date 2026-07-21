@@ -1,17 +1,17 @@
-from .orbit import Orbit
+from .orbit import OldOrbit
 from periapsis.utils.solvers import solve_kepler
 import numpy as np
 
-class ThieleInnesOrbit(Orbit):
-    def __init__(self, P, e, t0, A, B, F, G, velocity_ratio=None, ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
+class ThieleInnesOrbit(OldOrbit):
+    def __init__(self, P, e, t0, A1, B1, F1, G1, velocity_ratio=None, ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
         super().__init__(
             P=P,
             e=e,
             t0=t0,
-            A=A,
-            B=B,
-            F=F,
-            G=G,
+            A=A1,
+            B=B1,
+            F=F1,
+            G=G1,
             velocity_ratio=velocity_ratio,
             ref_epoch=ref_epoch,
             dx=dx,
@@ -20,7 +20,7 @@ class ThieleInnesOrbit(Orbit):
             dpmdec=dpmdec,
         )
 
-    def astrometry(self, t):
+    def astrometry(self, t, system=None):
         ref_epoch = self.params.get('ref_epoch', None)
         if ref_epoch is None:
             ref_epoch = 0.0

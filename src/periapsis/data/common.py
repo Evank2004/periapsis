@@ -4,7 +4,8 @@ import numpy as np
 
 class SystemData(Data):
     def __init__(self, system):
-        assert system is not None, f"`system` must be provided for {self.__class__.__name__}. It can be either '1', '2', or 'relative'."
+        if system is None:
+            raise ValueError(f"`system` must be provided for {self.__class__.__name__}. It can be either '1', '2', or 'relative'.")
         self.system = str(system)
 
 class AstrometryData(SystemData):

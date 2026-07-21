@@ -1,6 +1,10 @@
 import numpy as np
 from periapsis.utils.solvers import solve_mass, solve_kepler
 
+from collections import defaultdict, deque
+from functools import lru_cache
+from typing import Callable
+
 # a = semi-major axis
 # b = semi-minor axis
 # p = semi-parameter / semi-latus rectum
@@ -26,8 +30,9 @@ from periapsis.utils.solvers import solve_mass, solve_kepler
 # Msini = Mtot * sini
 # n = mean motion - angle per unit time
 # mu = Mtot*G
-# t0 = reference epoch
-# T0 = time of periastron passage
+# Tepoch = reference epoch
+# Tp = time of periastron passage
+# t0 = Scaled time of periastron passage (t0 = (Tp - Tepoch)/P)
 # M0 = mean anomaly at reference epoch
 # L0 = mean longitude at reference epoch (longitude measured wrt vernal point)
 # E0 = eccentric anomaly at reference epoch
@@ -52,6 +57,7 @@ from periapsis.utils.solvers import solve_mass, solve_kepler
 # TODO add eclipsing binary/planet params
 # TODO add Delauny variables
 # TODO add quaternion params
+# TODO add flux of source 1/2 (and scale stuff in orbit by that - add photocenter option in addition to 1,2,relative)
 
 _all_parameters = {
     'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'piomega', 'P', 'A', 'B', 'F', 'G', 'cosi', 'sini', 'Mtot', 'mu',
@@ -59,7 +65,7 @@ _all_parameters = {
     'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'omega2', 'piomega2', 'A2', 'B2', 'F2', 'G2', 'M2',
     'Msini', 'M1sini', 'M2sini', 'n', 'K', 'q',
     'a1sini', 'a2sini',
-    't0', 'T0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
+    'Tepoch', 'Tp', 't0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
     'u01', 'u02', 'uM01', 'uM02', 'l01', 'l02', 'K1', 'K2',
     'dx', 'dy', 'dpmra', 'dpmdec', 'systemic_velocity'
 }
@@ -68,14 +74,16 @@ def A_B_F_G_to_a_cosi_omega_Omega(A, B, F, G):
     popovic_k = (A*A + B*B + F*F + G*G) / 2.0
     popovic_m = A*G - B*F
     popovic_j = np.sqrt(np.maximum(0, popovic_k * popovic_k - popovic_m*popovic_m))
-    a1 = np.sqrt(popovic_j + popovic_k) # as
-    i = np.arctan2(a1 * np.sqrt(2.0 * popovic_j), popovic_m) # TODO check quadrant issue. This should have two solutions. For now just returning cosi
+    a_squared = popovic_j + popovic_k
+    a1 = np.sqrt(a_squared) # as
+    cosi = popovic_m / a_squared
+    cosi = np.where(a_squared == 0, 1.0, cosi)
+    # i = np.arctan2(a1 * np.sqrt(2.0 * popovic_j), popovic_m) # quadrant issue. This should have two solutions. For now just returning cosi
     vpi = np.arctan2(B-F, A+G)
     Omo = np.arctan2(B+F, A-G)
     long = np.mod((vpi + Omo) / 2.0 + 2*np.pi, np.pi)
     w = np.mod(vpi - long + 2*np.pi, 2*np.pi) 
-
-    return a1,np.cos(i),w,long
+    return a1, cosi, w, long
 
 def a_cosi_omega_Omega_to_ABFG(a, cosi, omega, Omega):
     cO = np.cos(Omega)
@@ -133,7 +141,7 @@ def omega2_to_omega_omega1(omega2):
     return omega, omega1
 
 def a_b_to_e(a, b):
-    e = np.when(a > 0, np.sqrt(1 - (b/a)**2), np.when(a < 0, np.sqrt(1 + (b/a)**2), np.nan))
+    e = np.where(a > 0, np.sqrt(1 - (b/a)**2), np.where(a < 0, np.sqrt(1 + (b/a)**2), np.nan))
     return e
 
 def i_to_cosi_sini(i):
@@ -146,8 +154,9 @@ def n_to_P(n):
     return 2 * np.pi / n
 
 def a_e_to_b_p_rp_ra(a, e):
-    b = a * np.sqrt(np.abs(1-e**2))
-    p = a * (1 - e**2)
+    one_minus_e2 = 1 - e**2
+    b = a * np.sqrt(np.abs(one_minus_e2))
+    p = a * one_minus_e2
     r_p = a * (1 - e)
     r_a = a * (1 + e)
     return b, p, r_p, r_a
@@ -186,7 +195,7 @@ def p_e_to_a(p, e):
     return a
 
 def a_p_to_e(a, p):
-    e = 1 - np.sqrt(p/a)
+    e = np.sqrt(1 - p/a)
     return e
 
 def Mtot_to_mu(Mtot):
@@ -209,16 +218,32 @@ def mu_n_to_a(mu, n):
     a = np.cbrt(mu / n**2)
     return a
 
-def t0_T0_M0_to_n(t0, T0, M0):
-    n = M0 / (t0 - T0)
+def Tp_Tepoch_P_to_t0(Tp, Tepoch, P):
+    t0 = (Tp - Tepoch) / P
+    return t0
+
+def t0_Tp_Tepoch_to_P(t0, Tp, Tepoch):
+    P = (Tp - Tepoch) / t0
+    return P
+
+def P_t0_Tp_to_Tepoch(P, t0, Tp):
+    Tepoch = Tp - t0 * P
+    return Tepoch
+
+def Tepoch_P_t0_to_Tp(Tepoch, P, t0):
+    Tp = Tepoch + t0 * P
+    return Tp
+
+def Tepoch_Tp_M0_to_n(Tepoch, Tp, M0):
+    n = M0 / (Tepoch - Tp)
     return n
 
-def t0_M0_n_to_T0(t0, M0, n):
-    T0 = t0 - M0 / n
-    return T0
+def Tepoch_M0_n_to_Tp(Tepoch, M0, n):
+    Tp = Tepoch - M0 / n
+    return Tp
 
-def t0_n_T0_to_M0(t0, n, T0):
-    M0 = n * (t0 - T0)
+def Tepoch_n_Tp_to_M0(Tepoch, n, Tp):
+    M0 = n * (Tepoch - Tp)
     return M0
 
 def M0_E0_to_e(M0, E0):
@@ -331,8 +356,14 @@ def ab_Ma_aasini_to_Mbsini(ab, Ma, aasini):
 def add_ab(a, b):
     return a + b
 
+def add_ab_mod2pi(a, b):
+    return np.mod(a + b, 2*np.pi)
+
 def sub_ab(a, b):
     return a - b
+
+def sub_ab_mod2pi(a, b):
+    return np.mod(a - b, 2*np.pi)
 
 def mul_ab(a, b):
     return a * b
@@ -378,20 +409,20 @@ _transform_graph = [
     (('M2', 'a2', 'P'), ('M1',), Ma_aa_P_to_Mb),
     (('M1', 'a1', 'P'), ('M2',), Ma_aa_P_to_Mb),
     (('a1', 'M1', 'M2',), ('a2', 'a'), aa_Ma_Mb_to_ab_a),
-    (('a2', 'M1', 'M2',), ('a1', 'a'), aa_Ma_Mb_to_ab_a),
+    (('a2', 'M2', 'M1',), ('a1', 'a'), aa_Ma_Mb_to_ab_a),
     (('a', 'M1', 'M2',), ('a1', 'a2'), a_M1_M2_to_a1_a2),
-    (('omega', 'Omega',), ('piomega',), add_ab), # TODO may need some modulo here
-    (('omega1', 'Omega',), ('piomega1',), add_ab),
-    (('omega2', 'Omega',), ('piomega2',), add_ab),
+    (('omega', 'Omega',), ('piomega',), add_ab_mod2pi), # TODO may need some modulo here
+    (('omega1', 'Omega',), ('piomega1',), add_ab_mod2pi),
+    (('omega2', 'Omega',), ('piomega2',), add_ab_mod2pi),
     (('omega',), ('omega2', 'omega1',), omega_to_omega2_omega1),
     (('omega1',), ('omega', 'omega2',), omega1_to_omega_omega2),
     (('omega2',), ('omega', 'omega1',), omega2_to_omega_omega1),
-    (('piomega', 'Omega',), ('omega',), sub_ab),
-    (('piomega1', 'Omega',), ('omega1',), sub_ab),
-    (('piomega2', 'Omega',), ('omega2',), sub_ab),
-    (('piomega', 'omega',), ('Omega',), sub_ab),
-    (('piomega1', 'omega1',), ('Omega',), sub_ab),
-    (('piomega2', 'omega2',), ('Omega',), sub_ab),
+    (('piomega', 'Omega',), ('omega',), sub_ab_mod2pi),
+    (('piomega1', 'Omega',), ('omega1',), sub_ab_mod2pi),
+    (('piomega2', 'Omega',), ('omega2',), sub_ab_mod2pi),
+    (('piomega', 'omega',), ('Omega',), sub_ab_mod2pi),
+    (('piomega1', 'omega1',), ('Omega',), sub_ab_mod2pi),
+    (('piomega2', 'omega2',), ('Omega',), sub_ab_mod2pi),
     (('i',), ('cosi', 'sini',), i_to_cosi_sini),
     (('a', 'b',), ('e',), a_b_to_e),
     (('a1', 'b1',), ('e',), a_b_to_e),
@@ -430,31 +461,35 @@ _transform_graph = [
     (('mu', 'a',), ('n',), mu_a_to_n),
     (('n', 'a',), ('mu',), n_a_to_mu),
     (('mu', 'n',), ('a',), mu_n_to_a),
-    (('T0',), ('t0',), identity),
-    (('t0', 'T0', 'M0',), ('n',), t0_T0_M0_to_n),
-    (('t0', 'M0', 'n',), ('T0',), t0_M0_n_to_T0),
-    (('t0', 'n', 'T0',), ('M0',), t0_n_T0_to_M0),
+    # (('Tp',), ('Tepoch',), identity),
+    (('Tp', 'Tepoch', 'P',), ('t0',), Tp_Tepoch_P_to_t0),
+    (('t0', 'Tp', 'Tepoch',), ('P',), t0_Tp_Tepoch_to_P),
+    (('P', 't0', 'Tp',), ('Tepoch',), P_t0_Tp_to_Tepoch),
+    (('Tepoch', 'P', 't0',), ('Tp',), Tepoch_P_t0_to_Tp),
+    (('Tepoch', 'Tp', 'M0',), ('n',), Tepoch_Tp_M0_to_n),
+    (('Tepoch', 'M0', 'n',), ('Tp',), Tepoch_M0_n_to_Tp),
+    (('Tepoch', 'n', 'Tp',), ('M0',), Tepoch_n_Tp_to_M0),
     (('M0', 'E0',), ('e',), M0_E0_to_e),
     (('E0', 'e',), ('M0', 'nu0',), E0_e_to_M0_nu0),
     (('e', 'M0',), ('E0',), e_M0_to_E0),
-    (('L0', 'M0',), ('piomega',), sub_ab), # TODO may need some modulo here
-    (('piomega', 'M0',), ('L0',), add_ab),
-    (('L0', 'piomega',), ('M0',), sub_ab),
-    (('l0', 'nu0',), ('piomega',), sub_ab),
-    (('l01', 'nu0',), ('piomega1',), sub_ab),
-    (('l02', 'nu0',), ('piomega2',), sub_ab),
-    (('piomega', 'nu0',), ('l0',), add_ab),
-    (('piomega1', 'nu0',), ('l01',), add_ab),
-    (('piomega2', 'nu0',), ('l02',), add_ab),
-    (('l0', 'piomega',), ('nu0',), sub_ab),
-    (('l01', 'piomega1',), ('nu0',), sub_ab),
-    (('l02', 'piomega2',), ('nu0',), sub_ab),
-    (('uM0', 'M0',), ('Omega',), sub_ab),
-    (('Omega', 'M0',), ('uM0',), add_ab),
-    (('uM0', 'Omega',), ('M0',), sub_ab),
-    (('u0', 'nu0',), ('Omega',), sub_ab),
-    (('Omega', 'nu0',), ('u0',), add_ab),
-    (('u0', 'Omega',), ('nu0',), sub_ab),
+    (('L0', 'M0',), ('piomega',), sub_ab_mod2pi), # TODO may need some modulo here
+    (('piomega', 'M0',), ('L0',), add_ab_mod2pi),
+    (('L0', 'piomega',), ('M0',), sub_ab_mod2pi),
+    (('l0', 'nu0',), ('piomega',), sub_ab_mod2pi),
+    (('l01', 'nu0',), ('piomega1',), sub_ab_mod2pi),
+    (('l02', 'nu0',), ('piomega2',), sub_ab_mod2pi),
+    (('piomega', 'nu0',), ('l0',), add_ab_mod2pi),
+    (('piomega1', 'nu0',), ('l01',), add_ab_mod2pi),
+    (('piomega2', 'nu0',), ('l02',), add_ab_mod2pi),
+    (('l0', 'piomega',), ('nu0',), sub_ab_mod2pi),
+    (('l01', 'piomega1',), ('nu0',), sub_ab_mod2pi),
+    (('l02', 'piomega2',), ('nu0',), sub_ab_mod2pi),
+    (('uM0', 'M0',), ('Omega',), sub_ab_mod2pi),
+    (('Omega', 'M0',), ('uM0',), add_ab_mod2pi),
+    (('uM0', 'Omega',), ('M0',), sub_ab_mod2pi),
+    (('u0', 'nu0',), ('Omega',), sub_ab_mod2pi),
+    (('Omega', 'nu0',), ('u0',), add_ab_mod2pi),
+    (('u0', 'Omega',), ('nu0',), sub_ab_mod2pi),
     (('nu0', 'e',), ('E0',), nu0_e_to_E0),
     (('u0',), ('u01', 'u02'), u0_to_u01_u02),
     (('u01',), ('u0', 'u02'), u01_to_u0_u02),
@@ -489,12 +524,6 @@ _transform_graph = [
     (('K2', 'e', 'a2sini',), ('n',), K_e_asini_to_n),
     (('n', 'a1sini', 'K1',), ('e',), n_asini_K_to_e),
     (('n', 'a2sini', 'K2',), ('e',), n_asini_K_to_e),
-    (('a1', 'sini',), ('a1sini',), mul_ab),
-    (('a2', 'sini',), ('a2sini',), mul_ab),
-    (('a1sini', 'sini',), ('a1',), div_ab),
-    (('a2sini', 'sini',), ('a2',), div_ab),
-    (('a1sini', 'a1',), ('sini',), div_ab),
-    (('a2sini', 'a2',), ('sini',), div_ab),
     (('M1', 'a1sini', 'M2sini',), ('a2',), Ma_aasini_Mbsini_to_ab),
     (('M2', 'a2sini', 'M1sini',), ('a1',), Ma_aasini_Mbsini_to_ab),
     (('a1sini', 'M2sini', 'a2',), ('M1',), aasini_Mbsini_ab_to_Ma),
@@ -505,20 +534,92 @@ _transform_graph = [
     (('a1', 'M2', 'a2sini',), ('M1sini',), ab_Ma_aasini_to_Mbsini),
 ]
 
+_TransformStep = tuple[tuple[str, ...], Callable, tuple[str, ...]]
+_Plan = tuple[_TransformStep, ...]
+
+_compiled_transform_graph = tuple(
+    (inputs, outputs, fn, frozenset(inputs), frozenset(outputs))
+    for inputs, outputs, fn in _transform_graph
+)
+
+_transforms_by_input: dict[str, list[int]] = defaultdict(list)
+for transform_index, (_, _, _, input_set, _) in enumerate(_compiled_transform_graph):
+    for name in input_set:
+        _transforms_by_input[name].append(transform_index)
+
+@lru_cache(maxsize=512)
+def _covered_parameters_cached(known: frozenset[str]) -> frozenset[str]:
+    """Return the graph closure without repeatedly scanning every transform."""
+    covered = set(known)
+    missing_input_count = [
+        len(input_set.difference(covered))
+        for _, _, _, input_set, _ in _compiled_transform_graph
+    ]
+    ready = deque(
+        index for index, count in enumerate(missing_input_count) if count == 0
+    )
+
+    while ready:
+        index = ready.popleft()
+        _, _, _, _, output_set = _compiled_transform_graph[index]
+        new_outputs = output_set.difference(covered)
+        if not new_outputs:
+            continue
+
+        covered.update(new_outputs)
+        for output in new_outputs:
+            for dependent_index in _transforms_by_input.get(output, ()):
+                missing_input_count[dependent_index] -= 1
+                if missing_input_count[dependent_index] == 0:
+                    ready.append(dependent_index)
+
+    return frozenset(covered)
+
+
+def _merge_plans(*plans: _Plan) -> _Plan:
+    """Stable union of already-topological plans."""
+    merged = []
+    seen = set()
+    for plan in plans:
+        for step in plan:
+            if step not in seen:
+                seen.add(step)
+                merged.append(step)
+    return tuple(merged)
+
+
+@lru_cache(maxsize=512)
+def _plans_for_known(known: frozenset[str]) -> dict[str, _Plan]:
+    """Find the lowest unique-transform-count plan for every reachable name."""
+    plans: dict[str, _Plan] = {name: () for name in known}
+
+    changed = True
+    while changed:
+        changed = False
+        for inputs, outputs, fn, _, _ in _compiled_transform_graph:
+            if not all(name in plans for name in inputs):
+                continue
+
+            step = (inputs, fn, outputs)
+            candidate = _merge_plans(*(plans[name] for name in inputs), (step,))
+            for output in outputs:
+                # Explicit inputs always win. This also gives identity transforms
+                # an empty execution plan.
+                if output in known:
+                    continue
+                current = plans.get(output)
+                if current is None or len(candidate) < len(current):
+                    plans[output] = candidate
+                    changed = True
+
+    return plans
+
+
 def covered_parameters(known_params: set):
     """
     From a list of known parameters, return a list of all parameters that can be known via mathematical relationships.
     """
-    covered = set()
-    covered |= known_params
-    delta = -1
-    while delta != 0:
-        delta = 0
-        for key, value, fn in _transform_graph:
-            if set(key).issubset(covered) and not set(value).issubset(covered):
-                covered |= set(value)
-                delta += len(value)
-    return covered
+    return set(_covered_parameters_cached(frozenset(known_params)))
 
 def uncovered_parameters(known_params: set):
     """
@@ -531,35 +632,97 @@ def shortest_path(known_params, end):
     """
     From a list of known parameters, return the shortest path to a desired parameter. If there is no such path, raises a KeyError.
     """
-    covered = set(known_params)
-    paths = {param: [] for param in covered}
-    delta = -1
-    while delta != 0:
-        delta = 0
-        for key, value, fn in _transform_graph:
-            if set(key).issubset(covered) and not set(value).issubset(covered):
-                covered |= set(value)
-                for v in value:
-                    paths[v] = [*[x for i in range(len(key)) for x in paths[key[i]]], (key, fn, value)]
-                delta += len(value)
-    return paths[end]
+    return list(_plans_for_known(frozenset(known_params))[end])
+
+@lru_cache(maxsize=512)
+def _execution_plan(
+    known: frozenset[str], targets: frozenset[str]
+) -> _Plan:
+    plans = _plans_for_known(known)
+    for target in sorted(targets):
+        if target not in plans:
+            raise KeyError(target)
+
+    merged = _merge_plans(*(plans[target] for target in sorted(targets)))
+
+    # Merging independently optimal paths can include an alternate transform
+    # whose outputs have already been produced. Remove such work while preserving
+    # dependency order.
+    available = set(known)
+    pruned = []
+    for step in merged:
+        inputs, _, outputs = step
+        if not all(name in available for name in inputs):
+            raise RuntimeError("Transform plan is not topologically ordered")
+        if any(name not in available for name in outputs):
+            pruned.append(step)
+            available.update(outputs)
+    return tuple(pruned)
+
+
+def _run_plan(plan: _Plan, kwargs: dict) -> dict:
+    params = kwargs.copy()
+    for inputs, fn, outputs in plan:
+        result = fn(*(params[name] for name in inputs))
+        values = (result,) if len(outputs) == 1 else result
+        for name, value in zip(outputs, values):
+            # Do not replace an explicit input or an earlier, cheaper derivation.
+            params.setdefault(name, value)
+    return params
+
+
+@lru_cache(maxsize=512)
+def _build_transform_function_cached(known: frozenset[str], end: str):
+    plan = _execution_plan(known, frozenset((end,)))
+
+    if not plan:
+        def transform_function(**kwargs):
+            return kwargs[end]
+    else:
+        def transform_function(**kwargs):
+            return _run_plan(plan, kwargs)[end]
+
+    transform_function.__doc__ = f"Transforms {sorted(known)} -> {end}"
+    return transform_function
 
 def build_transform_function(known_params, end):
     """
     From a list of known parameters, return a function that transforms the known parameters into the desired parameter. If there is no such path, raises a KeyError.
     """
-    path = shortest_path(known_params, end)
-    def transform_function(**kwargs):
-        params = kwargs.copy()
-        for key, fn, value in path:
-            args = [params[k] for k in key]
-            result = fn(*args)
-            if len(value) == 1:
-                params[value[0]] = result
-            else:
-                for i, v in enumerate(value):
-                    params[v] = result[i]
-        return params[end]
-    transform_function.__doc__ = f"Transforms {known_params} -> {end}"
-    return transform_function
+    return _build_transform_function_cached(frozenset(known_params), end)
+
+@lru_cache(maxsize=512)
+def _build_transform_functions_cached(
+    known: frozenset[str], targets: tuple[str, ...]
+):
+    plan = _execution_plan(known, frozenset(targets))
+
+    if not plan:
+        def transform_functions(**kwargs):
+            return {target: kwargs[target] for target in targets}
+    else:
+        def transform_functions(**kwargs):
+            params = _run_plan(plan, kwargs)
+            return {target: params[target] for target in targets}
+
+    transform_functions.__doc__ = (
+        f"Transforms {sorted(known)} -> {list(targets)}"
+    )
+    return transform_functions
+
+
+def build_transform_functions(known_params, ends):
+    """Build one callable that derives all requested parameters once."""
+    # Preserve caller order in the result while removing duplicate targets.
+    targets = tuple(dict.fromkeys(ends))
+    return _build_transform_functions_cached(frozenset(known_params), targets)
+
+def overconstrained_parameters(known_params) -> set[str]:
+    known_params = frozenset(known_params)
+    overconstrained = set()
+    for param in known_params:
+        covered = covered_parameters(known_params - {param})
+        if param in covered:
+            overconstrained.add(param)
+    return overconstrained
 

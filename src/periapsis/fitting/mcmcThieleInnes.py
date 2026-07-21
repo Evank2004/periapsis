@@ -5,6 +5,7 @@ from periapsis.model import thieleinnes
 from periapsis.initial.initial import InitialFit
 from periapsis.utils.solvers import transform_theile
 from periapsis.utils.helpers import _match_param_keys
+from periapsis.prior import FixedPrior, Bounds
 import numpy as np
 import emcee
 
@@ -99,6 +100,12 @@ class MCMCThieleInnes(Fitter):
         results_dict['backend'] = 'emcee'
         results_dict['fit_method'] = 'ThieleInnes'
         results_dict['raw_sampler'] = None
+        results_dict['priors'] = self.prior_kwargs
+        
+        if results_dict['ref_epoch'] is not None:
+            results_dict['priors']['Tepoch'] = FixedPrior(results_dict['ref_epoch'])
+        if self.m1 is not None and 'M1' not in results_dict['priors']:
+            results_dict['priors']['M1'] = FixedPrior(self.m1)
 
         fit_results = FitResults(**results_dict)
         fit_results.add_mass_samples(m1=self.m1)

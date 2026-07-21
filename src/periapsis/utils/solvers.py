@@ -28,14 +28,17 @@ def e_help(e,M,x):
 
 def _solve_kepler_numpy(M, e):
     M_array = np.asarray(M, dtype=np.float64)
+    e_array = np.asarray(e, dtype=np.float64)
     flat_M = np.mod(M_array.ravel(), 2.0 * np.pi)
+    flat_e = e_array.ravel()
     flat_E = np.empty_like(flat_M)
 
     for i in range(flat_M.size):
         Mi = flat_M[i]
-        E = kep_guess(e, Mi)
+        ei = flat_e[i] if len(flat_e) > 1 else flat_e[0]
+        E = kep_guess(ei, Mi)
         for _ in range(3):
-            E = E - e_help(e, Mi, E)
+            E = E - e_help(ei, Mi, E)
         flat_E[i] = E
 
     return flat_E.reshape(M_array.shape)
@@ -63,15 +66,16 @@ if njit is not None:
 
 
     @njit(cache=True)
-    def _solve_kepler_numba(flat_M, e):
+    def _solve_kepler_numba(flat_M, flat_e):
         flat_E = np.empty_like(flat_M)
         two_pi = 2.0 * np.pi
 
         for i in range(flat_M.size):
             Mi = flat_M[i] % two_pi
-            E = _kep_guess_numba(e, Mi)
+            ei = flat_e[i] if len(flat_e) > 1 else flat_e[0]
+            E = _kep_guess_numba(ei, Mi)
             for _ in range(3):
-                E = E - _e_help_numba(e, Mi, E)
+                E = E - _e_help_numba(ei, Mi, E)
             flat_E[i] = E
 
         return flat_E
@@ -93,10 +97,13 @@ def solve_kepler(M, e):
     M_array = np.asarray(M, dtype=np.float64)
     flat_M = M_array.ravel()
 
-    if njit is None:
-        return _solve_kepler_numpy(M_array, e)
+    e_array = np.asarray(e, dtype=np.float64)
+    flat_e = e_array.ravel()
 
-    flat_E = _solve_kepler_numba(flat_M, e)
+    if njit is None:
+        return _solve_kepler_numpy(M_array, e_array)
+
+    flat_E = _solve_kepler_numba(flat_M, flat_e)
     return flat_E.reshape(M_array.shape)
 
 

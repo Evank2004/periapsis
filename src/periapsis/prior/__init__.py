@@ -4,5 +4,6 @@ from .log_normal_prior import LogNormalPrior
 from .normal_prior import NormalPrior
 from .fixed_prior import FixedPrior
 from .prior import Prior
+from .bounds import Bounds
 
-__all__ = ["Prior", "UniformPrior", "LogUniformPrior", "LogNormalPrior", "NormalPrior", "FixedPrior"]
+__all__ = ["Prior", "Bounds", "UniformPrior", "LogUniformPrior", "LogNormalPrior", "NormalPrior", "FixedPrior"]

@@ -44,16 +44,19 @@ def _match_param_keys(prior_kwargs):
 
     param_map ={
         'p': 'P','P':'P','period':'P',
-        'a':'a','semimajoraxis':'a','semi_major_axis':'a','a1':'a','avis':'a',
+        'a':'a1','semimajoraxis':'a1','semi_major_axis':'a1','a1':'a1','avis':'a1',
         'e':'e','eccentricity':'e',
         'cosi':'cosi',
-        'omega':'omega','argperi':'omega','w':'omega',
+        'omega':'omega1','argperi':'omega1','w':'omega1','omega1':'omega1',
         'Omega':'Omega','longnode':'Omega','bigomega':'Omega','long':'Omega',
-        'T0':'t0','tperi':'t0','timeperi':'t0','tp':'t0','t0':'t0',
-        'A':'A','B':'B','F':'F','G':'G',
+        't0':'t0','tperi':'t0','timeperi':'t0','tp':'t0','T0':'t0',
+        'A':'A1','B':'B1','F':'F1','G':'G1',
+        'A1': 'A1','B1':'B1','F1':'F1','G1':'G1',
         'dx':'dx','dy':'dy',
         'dpmra':'dpmra','dmux':'dpmra',
-        'dpmdec':'dpmdec','dmuy':'dpmdec'
+        'dpmdec':'dpmdec','dmuy':'dpmdec',
+        'm2':'M2','M2':'M2',
+        'm1':'M1','M1':'M1',
     }
 
     normalized = {}

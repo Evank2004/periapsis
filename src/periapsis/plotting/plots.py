@@ -2,10 +2,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import emcee
 import corner
-from periapsis.fitting.results import FitResults
+from periapsis.fitting.results import FitResults, SampledPriors
 from periapsis.model import thieleinnes
 from periapsis.model import campbell
+from periapsis.model.orbit import Orbit
 import matplotlib.gridspec as gridspec
+from periapsis.prior import FixedPrior
 from periapsis.utils.solvers import solve_mass
 from periapsis.utils.solvers import campbell_to_thiele
 from periapsis.utils.solvers import transform_theile
@@ -48,13 +50,14 @@ def mcmc_autocorrelation_plot(results,savepath=None):
 
     return fig
 
-def corner_plot(results,savepath=None):
+def corner_plot(results,params=None,savepath=None):
     '''
     Plots the corner plot for sampled parameters 
     '''
+    
+    param_names = results.param_names if params is None else params
 
-    param_names = results.param_names
-    samples = np.array([results.samples[name] for name in param_names]).T
+    samples = np.array([results[name] for name in param_names]).T
 
     fig = corner.corner(samples,quantiles=[0.16,0.5,0.84],
         color='tab:blue',labels=param_names,show_titles=True,verbose=False,
@@ -93,112 +96,136 @@ def ess_distribution_plot(results,savepath=None):
     return fig
 
 
-def _sample_induced_m2_prior(results, priors, m1=None, size=5000, rng=None):
-    rng = rng_plots if rng is None else rng
+def prior_dist_plot(sampled_priors: SampledPriors, params=None, savepath=None, bins=100, ncols=None):
+    '''
+    Plots the prior distribution for each parameter.
+    This can be used to diagnose convergence and mixing of MCMC chain
+    '''
 
-    if m1 is None:
-        m1 = getattr(results, 'm1', None)
-    if m1 is None:
-        m1 = getattr(results, 'samples', {}).get('m1', None)
-    if m1 is None:
-        return None
+    param_names = sampled_priors.param_order if params is None else params
 
-    fit_method = getattr(results, 'fit_method', None)
-    if fit_method is None:
-        fit_method = getattr(results, 'samples', {}).get('fit_method', None)
+    # Initialize Axes
+    ncols = max(1, min(int(np.ceil(np.sqrt(len(param_names)))), len(param_names))) if ncols is None else ncols
+    nrows = int(np.ceil(len(param_names) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, squeeze=False, constrained_layout=True)
+    axes = axes.ravel()
 
-    if fit_method == 'linear' and all(name in priors for name in ['a', 'cosi', 'omega', 'Omega']):
-        P = np.asarray(priors['P'].sample(rng, size=size), dtype=float).ravel()
-        a = np.asarray(priors['a'].sample(rng, size=size), dtype=float).ravel()
-        cosi = np.asarray(priors['cosi'].sample(rng, size=size), dtype=float).ravel()
-        omega = np.asarray(priors['omega'].sample(rng, size=size), dtype=float).ravel()
-        Omega = np.asarray(priors['Omega'].sample(rng, size=size), dtype=float).ravel()
+    for i, name in enumerate(param_names):
+        ax = axes[i]
+        prior_samples = sampled_priors[name]
+        if prior_samples is not None and len(prior_samples) > 0:
+            ax.hist(
+                prior_samples,
+                bins=bins,
+                density=True,
+                histtype='step',
+                color='gray',
+                linewidth=1.5,
+                label='Prior',
+            )
+            ax.set_ylabel('Probability Density')
+            ax.set_xlabel(f'{name} Value')
+        else:
+            ax.set_axis_off()
 
-        A, B, F, G = campbell_to_thiele(a, cosi, omega, Omega)
-        a1, _, _, _ = transform_theile(A, B, F, G)
-        m2 = solve_mass(np.asarray(a1, dtype=float), P, float(m1))
-    elif all(name in priors for name in ['P', 'a']):
-        P = np.asarray(priors['P'].sample(rng, size=size), dtype=float).ravel()
-        a = np.asarray(priors['a'].sample(rng, size=size), dtype=float).ravel()
-        m2 = solve_mass(np.asarray(a, dtype=float), P, float(m1))
-    else:
-        return None
+    for j in range(len(param_names), len(axes)):
+        axes[j].axis('off')
 
-    m2 = np.asarray(m2, dtype=float).ravel()
-    return m2[np.isfinite(m2) & (m2 > 0) & (m2<50)] #TODO fix this later
+    if savepath is not None:
+        fig.savefig(savepath,dpi=300)
+        print(f"Saved prior distribution plot to {savepath}")
+    
+    return fig
+
+def prior_histogram_2d(sampled_priors: SampledPriors, param_x, param_y, savepath=None, bins=100):
+    '''
+    Plots the 2D histogram of the prior distribution for two parameters.
+    This can be used to diagnose convergence and mixing of MCMC chain
+    '''
+
+    prior_samples_x = sampled_priors[param_x]
+    prior_samples_y = sampled_priors[param_y]
+
+    if prior_samples_x is None or prior_samples_y is None:
+        raise ValueError(f"Prior samples for {param_x} or {param_y} are not available.")
+
+    fig, ax = plt.subplots()
+    h = ax.hist2d(prior_samples_x, prior_samples_y, bins=bins, density=True, cmap='Blues')
+    plt.colorbar(h[3], ax=ax)
+    ax.set_xlabel(f'{param_x} Value')
+    ax.set_ylabel(f'{param_y} Value')
+    ax.set_title(f'2D Prior Histogram: {param_x} vs {param_y}')
+
+    if savepath is not None:
+        fig.savefig(savepath,dpi=300)
+        print(f"Saved 2D prior histogram plot to {savepath}")
+
+    return fig
+
+def prior_conditional_histogram_2d(sampled_priors: SampledPriors, param_fixed, param_other, bins=100, savepath=None):
+    '''
+    For bins of param_fixed, plots the conditional histogram of param_other on a 2d histogram
+    '''
+
+    prior_samples_fixed = sampled_priors[param_fixed]
+    prior_samples_other = sampled_priors[param_other]
+
+    fixed_bins = np.linspace(np.min(prior_samples_fixed), np.max(prior_samples_fixed), bins + 1)
+    results = np.zeros((bins, bins))
+    for i in range(len(fixed_bins) - 1):
+        bin_mask = (prior_samples_fixed >= fixed_bins[i]) & (prior_samples_fixed < fixed_bins[i + 1])
+        conditional_samples = prior_samples_other[bin_mask]
+
+        if len(conditional_samples) > 0:
+            hist, _ = np.histogram(conditional_samples, bins=bins, density=True)
+            results[i, :] = hist
+    
+    fig, ax = plt.subplots()
+    extent = [np.min(prior_samples_other), np.max(prior_samples_other), np.min(prior_samples_fixed), np.max(prior_samples_fixed)]
+    im = ax.imshow(results, aspect='auto', origin='lower', extent=extent, cmap='Blues', norm='log')
+    plt.colorbar(im, ax=ax)
+    ax.set_xlabel(f'{param_other} Value')
+    ax.set_ylabel(f'{param_fixed} Value')
+    ax.set_title(f'Conditional 2D Histogram: {param_other} vs {param_fixed}')
+
+    if savepath is not None:
+        fig.savefig(savepath, dpi=300)
+        print(f"Saved conditional 2D histogram plot to {savepath}")
+
+    return fig
 
 
-def _sample_induced_thiele_priors(priors, size=5000, rng=None):
-    rng = rng_plots if rng is None else rng
-
-    required = ['a', 'cosi', 'omega', 'Omega']
-    if not all(name in priors for name in required):
-        return None
-
-    a = np.asarray(priors['a'].sample(rng, size=size), dtype=float).ravel()
-    cosi = np.asarray(priors['cosi'].sample(rng, size=size), dtype=float).ravel()
-    omega = np.asarray(priors['omega'].sample(rng, size=size), dtype=float).ravel()
-    Omega = np.asarray(priors['Omega'].sample(rng, size=size), dtype=float).ravel()
-
-    A, B, F, G = campbell_to_thiele(a, cosi, omega, Omega)
-    return {
-        'A': np.asarray(A, dtype=float).ravel(),
-        'B': np.asarray(B, dtype=float).ravel(),
-        'F': np.asarray(F, dtype=float).ravel(),
-        'G': np.asarray(G, dtype=float).ravel(),
-    }
-
-
-def posterior_over_prior(results,priors,m1=None,savepath=None,ncols=2,bins=100):
+def posterior_over_prior(results: FitResults, params=None, savepath=None, random_state=np.random.default_rng(), ncols=2, bins=100):
     '''
     Plots the posterior distribution over the prior distribution for each parameter.
     This can be used to diagnose convergence and mixing of MCMC chain
     '''
-    param_names = [name for name in results.param_names if name in results.samples]
-    
-    for derived_name in ('M2',):
-        if derived_name in results.samples and derived_name not in param_names:
-            param_names.append(derived_name)
-        
 
+    param_names = results.param_names if params is None else params
+
+    # Get Samples 
     sample_arrays = []
     for name in param_names:
-        value = results.samples[name]
+        value = results[name]
         if isinstance(value, np.ndarray):
             sample_arrays.append(np.asarray(value, dtype=float).ravel())
         else:
             sample_arrays.append(np.asarray(value, dtype=float).reshape(-1))
     samples = np.array(sample_arrays, dtype=float).T
 
-    induced_thiele_priors = None
-    if any(name in {'A', 'B', 'F', 'G'} for name in param_names):
-        induced_thiele_priors = _sample_induced_thiele_priors(priors, size=5000, rng=rng_plots)
-
-    induced_m2_prior = None
-    if 'M2' in param_names:
-        induced_m2_prior = _sample_induced_m2_prior(results, priors, m1=m1, size=5000, rng=rng_plots)
-
+    # Initialize Axes
     ncols = max(1, min(int(ncols), len(param_names)))
     nrows = int(np.ceil(len(param_names) / ncols))
-    fig, axes = plt.subplots(nrows, ncols, figsize=(5.5 * ncols, 2.8 * nrows), squeeze=False)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(5.5 * ncols, 2.8 * nrows), squeeze=False, constrained_layout=True)
     axes = axes.ravel()
 
-    
+    priors = results.sample_priors(random_state, size=10000)
 
     for i, name in enumerate(param_names):
         ax = axes[i]
-        prior = priors.get(name)
+        prior_samples = priors[name]
         sample_values = samples[:, i]
         finite_sample_values = sample_values[np.isfinite(sample_values)]
-
-        prior_samples = None
-        if prior is not None:
-            prior_samples = np.asarray(prior.sample(rng_plots, size=5000), dtype=float).ravel()
-            prior_samples = prior_samples[np.isfinite(prior_samples)]
-        elif induced_thiele_priors is not None and name in induced_thiele_priors:
-            prior_samples = induced_thiele_priors[name]
-        elif induced_m2_prior is not None and name == 'M2':
-            prior_samples = induced_m2_prior
 
         range_values = finite_sample_values #create range this way incase, for parameters like A,B,F,G, the samples are outside of induced prior, since they arent really being impacted by that prior
         if prior_samples is not None and len(prior_samples) > 0:
@@ -239,8 +266,6 @@ def posterior_over_prior(results,priors,m1=None,savepath=None,ncols=2,bins=100):
 
     for j in range(len(param_names), len(axes)):
         axes[j].axis('off')
-
-    plt.tight_layout()
     
     if savepath is not None:
         fig.savefig(savepath,dpi=300)
@@ -262,10 +287,7 @@ def _apply_center_offset(x, y, params, dt, center=True):
     return np.asarray(x) - dx - dpmra * dt, np.asarray(y) - dy - dpmdec * dt
 
 
-def orbit_plot(results, data, savepath=None):
-
-    
-
+def orbit_plot(results, data, system=1, savepath=None):
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
     ref_epoch = getattr(data, 'ref_epoch', 0)
     dt_obs = data.t - ref_epoch
@@ -281,12 +303,19 @@ def orbit_plot(results, data, savepath=None):
 
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for orbit plotting.")
+    
+    for k, p in results.priors.items():
+        if isinstance(p, FixedPrior):
+            map_params[k] = p.value
+            med_params[k] = p.value
 
-    map_model = _build_model(results, map_params)
-    med_model = _build_model(results, med_params)
+    # map_model = _build_model(results, map_params)
+    # med_model = _build_model(results, med_params)
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
 
-    x_map_raw, y_map_raw = map_model.astrometry(tfold)
-    x_med_raw, y_med_raw = med_model.astrometry(tfold)
+    x_map_raw, y_map_raw = map_model.astrometry(tfold, system=system)
+    x_med_raw, y_med_raw = med_model.astrometry(tfold, system=system)
 
     x_map, y_map = _apply_center_offset(x_map_raw, y_map_raw, map_params, dt_model, center=True)
     x_med, y_med = _apply_center_offset(x_med_raw, y_med_raw, med_params, dt_model, center=True)
@@ -319,7 +348,7 @@ def orbit_plot(results, data, savepath=None):
     return fig
 
 
-def multi_orbit_plot(results, data, savepath=None, Nplot=100):
+def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
     '''
     Plots multiple orbits from the posterior samples
     '''
@@ -335,12 +364,21 @@ def multi_orbit_plot(results, data, savepath=None, Nplot=100):
 
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for multi-orbit plotting.")
+    
+    fixed_prior_params = {}
+    for k, p in results.priors.items():
+        if isinstance(p, FixedPrior):
+            map_params[k] = p.value
+            med_params[k] = p.value
+            fixed_prior_params[k] = p.value
 
-    map_model = _build_model(results, map_params)
-    med_model = _build_model(results, med_params)
+    # map_model = _build_model(results, map_params)
+    # med_model = _build_model(results, med_params)
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
 
-    x_map, y_map = map_model.astrometry(tfold)
-    x_med, y_med = med_model.astrometry(tfold)
+    x_map, y_map = map_model.astrometry(tfold, system=system)
+    x_med, y_med = med_model.astrometry(tfold, system=system)
 
     ref_epoch = getattr(data, 'ref_epoch', 0)
     dt = tfold - ref_epoch
@@ -365,8 +403,9 @@ def multi_orbit_plot(results, data, savepath=None, Nplot=100):
     fig, ax = plt.subplots()
 
     for samp in samps:
-        model = _build_model(results, dict(zip(param_names, samp)))
-        x, y = model.astrometry(tfold)
+        # model = _build_model(results, dict(zip(param_names, samp)))
+        model = Orbit(**dict(zip(param_names, samp)), **fixed_prior_params)
+        x, y = model.astrometry(tfold, system=system)
         x, y = _apply_center_offset(x, y, dict(zip(param_names, samp)), dt, center=True)
         ax.plot(x, y, color='tab:blue', alpha=0.3)
 
@@ -387,8 +426,9 @@ def mass_distribution(results,scale='linear',savepath=None):
     '''
     Plots distribution of secondary mass (M2) from posterior samples
     '''
-    M2_samples = results.samples.get('M2', None)
-    if M2_samples is None:
+    try:
+        M2_samples = results['M2']
+    except KeyError:
         print('No M2 samples found in results.')
         return None
 
@@ -473,7 +513,7 @@ def mass_distribution(results,scale='linear',savepath=None):
 
 
         
-def all_plots(results,data,priors,m1,scale=None,savepath=None):
+def all_plots(results, data, scale=None, savepath=None):
     '''
     Generates all diagnostic and orbit plots
     '''
@@ -486,7 +526,7 @@ def all_plots(results,data,priors,m1,scale=None,savepath=None):
         auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
         corner = corner_plot(results,savepath=savepath)
         ess_dist = ess_distribution_plot(results,savepath=savepath)
-        posterior_prior = posterior_over_prior(results,priors,m1,savepath=savepath)
+        posterior_prior = posterior_over_prior(results, savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
         multi_orb = multi_orbit_plot(results,data,savepath=savepath)
         mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
@@ -495,7 +535,7 @@ def all_plots(results,data,priors,m1,scale=None,savepath=None):
         return auto_corr, corner, ess_dist,posterior_prior, orbit_vis, multi_orb, mass_dist
 
     if results.backend=='ultranest':
-        posterior_prior = posterior_over_prior(results,priors,m1,savepath=savepath)
+        posterior_prior = posterior_over_prior(results, savepath=savepath)
         corner = corner_plot(results,savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
         multi_orb = multi_orbit_plot(results,data,savepath=savepath)

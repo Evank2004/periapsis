@@ -1,5 +1,6 @@
-from .data import Data
+from .common import SystemData
 from periapsis.model.orbit import Orbit
+
 
 
 class GaiaData(Data):
@@ -10,6 +11,7 @@ class GaiaData(Data):
         self.plx_fac = plx_fac
         self.x = x
         self.err = err
+
 
     def chi2(self, orbit: Orbit):
         raise NotImplementedError("GaiaData chi2 method is not implemented yet")

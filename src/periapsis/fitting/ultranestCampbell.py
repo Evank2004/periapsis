@@ -3,6 +3,7 @@ from periapsis.data.data import Data
 from periapsis.fitting.results import FitResults
 from periapsis.model.campbell import CampbellOrbit
 from periapsis.initial.initial import InitialFit
+from periapsis.prior import FixedPrior, Bounds
 from periapsis.utils.helpers import _match_param_keys
 from periapsis.utils.solvers import solve_mass
 import numpy as np
@@ -82,6 +83,14 @@ class UltraNestCampbell(Fitter):
         results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
         results_dict['backend'] = 'ultranest'
         results_dict['fit_method'] = 'Campbell'
+        results_dict['priors'] = self.prior_kwargs
+
+        if results_dict['ref_epoch'] is not None:
+            results_dict['priors']['Tepoch'] = FixedPrior(results_dict['ref_epoch'])
+        if self.m2_max is not None and 'M2' not in results_dict['priors']:
+            results_dict['priors']['M2'] = Bounds(0.0, self.m2_max)
+        if self.m1 is not None and 'M1' not in results_dict['priors']:
+            results_dict['priors']['M1'] = FixedPrior(self.m1)
 
         fit_results = FitResults(**results_dict)
         fit_results.add_mass_samples(m1=self.m1)

@@ -11,6 +11,8 @@ class LogNormalPrior(Prior):
         self.min = 10**(mean - 10*std)
         self.max = 10**(mean + 10*std)
 
+        self.constants = -0.5*np.log(2*np.pi*self.std**2)
+
     def sample(self, random_state, size=1):
         return 10**random_state.normal(loc=self.mean, scale=self.std, size=size)
 
@@ -19,7 +21,7 @@ class LogNormalPrior(Prior):
             return -np.inf
         log_x = np.log10(x)
         return (
-            -0.5*np.log(2*np.pi*self.std**2)
+            self.constants
             - 0.5*((log_x - self.mean)/self.std)**2
             - np.log(x*np.log(10))
         )

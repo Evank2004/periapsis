@@ -12,11 +12,13 @@ class NormalPrior(Prior):
         self.min = mean - 10*std
         self.max = mean + 10*std
 
+        self.constants = -0.5*np.log(2*np.pi*self.std**2)
+
     def sample(self, random_state, size=1):
         return random_state.normal(loc=self.mean, scale=self.std, size=size)
     
     def logpdf(self, x):
-        return -0.5*np.log(2*np.pi*self.std**2) - 0.5*((x - self.mean)/self.std)**2
+        return self.constants - 0.5*((x - self.mean)/self.std)**2
     
     #for Ultranest
     #ndtri, for a given u in [0,1], returns the value x 

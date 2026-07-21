@@ -1,28 +1,29 @@
-from .orbit import Orbit
+from .orbit import OldOrbit
 from periapsis.utils.solvers import solve_kepler
 import numpy as np
 
-class CampbellOrbit(Orbit):
-    def __init__(self, P, a, e, cosi, omega, Omega, t0, velocity_ratio=None,ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
+class CampbellOrbit(OldOrbit):
+    def __init__(self, P, a1, e, cosi, omega1, Omega, t0, velocity_ratio=None,ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
         super().__init__(
             P=P,
-            a=a, e=e, cosi=cosi, 
-            omega=omega, Omega=Omega, 
+            a=a1, e=e, cosi=cosi, 
+            omega=omega1, Omega=Omega, 
             t0=t0, velocity_ratio=velocity_ratio,
             ref_epoch=ref_epoch,
-            dx=dx, dy=dy, dpmra=dpmra, dpmdec=dpmdec,)
+            dx=dx, dy=dy, dpmra=dpmra, dpmdec=dpmdec,
+        )
         
         cO = np.cos(Omega)
         sO = np.sin(Omega)
-        cw = np.cos(omega)
-        sw = np.sin(omega)
+        cw = np.cos(omega1)
+        sw = np.sin(omega1)
 
-        self.A = a * (cO * cw - sO * sw * cosi)
-        self.B = a * (sO * cw + cO * sw * cosi)
-        self.F = a * (-cO * sw - sO * cw * cosi)
-        self.G = a * (-sO * sw + cO * cw * cosi)
+        self.A = a1 * (cO * cw - sO * sw * cosi)
+        self.B = a1 * (sO * cw + cO * sw * cosi)
+        self.F = a1 * (-cO * sw - sO * cw * cosi)
+        self.G = a1 * (-sO * sw + cO * cw * cosi)
 
-    def astrometry(self, t):
+    def astrometry(self, t, system=None):
         ref_epoch = self.params.get('ref_epoch', None)
         if ref_epoch is None:
             ref_epoch = 0.0

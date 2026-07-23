@@ -32,9 +32,24 @@ class Data(ABC):
 
         
         pass
-
-    def t_series(self):
+    @abstractmethod
+    def _astrometry(self,orbit:Orbit):
         """
         Returns x_obs,y_obs,rv_obs, t_obs"""
         
+        
         pass
+    @abstractmethod
+    def _radial_velocity(self,orbit:Orbit):
+        """
+        Returns rv_obs, t_obs"""
+        
+        pass
+    @abstractmethod
+    def t_series(self):
+        """
+        Returns the time series of the data.
+        """
+        pass
+
+   

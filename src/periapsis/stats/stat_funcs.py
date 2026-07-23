@@ -3,7 +3,8 @@ import json
 import numpy as np
 from periapsis.utils.helpers import _build_model
 from periapsis.data.data import Data
-from periapsis.data.common import AstrometryData, RadialVelocityData, AstroRVData
+from periapsis.data.common import AstrometryData, RadialVelocityData
+from periapsis.data.gaia import GaiaData
 from scipy.stats import chi2
 
 
@@ -39,14 +40,20 @@ def red_chi2(results,data,savepath=None):
 
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for reduced Chi2 calculation.")
+
+    if not isinstance(data,(GaiaData)):
+        map_model = _build_model(results, map_params)
+        med_model = _build_model(results, med_params)
+
+        chi2_map = data.chi2(map_model)
+        chi2_med = data.chi2(med_model)
+        orbit_dof = 2*len(data.t) - len(map_params)
+    else:
+        chi2_map = GaiaData.chi2(data,map_params)
+        chi2_med = GaiaData.chi2(data,med_params)
+        orbit_dof = len(data.t) - len(map_params) # for Gaia data, only one dimension is used for chi2 calculation
+
     
-    map_model = _build_model(results, map_params)
-    med_model = _build_model(results, med_params)
-
-    chi2_map = data.chi2(map_model)
-    chi2_med = data.chi2(med_model)
-
-    orbit_dof = 2*len(data.t) - len(map_params)
 
       # degrees of freedom for the fit
     red_chi2_map = chi2_map / orbit_dof
@@ -62,8 +69,7 @@ def delta_chi2(results,data,savepath=None):
     Returns delta Chi2 value for orbit fit
     - proper motion fit'''
 
-    pm_chi2 = results.PM_fit['chi2']
-    pm_dof = results.PM_fit['dof']
+    
 
     map_params = getattr(results, 'MAP_params', None)
     if map_params is None:
@@ -72,25 +78,42 @@ def delta_chi2(results,data,savepath=None):
     med_params = getattr(results, 'median_params', None)
     if med_params is None:
         med_params = results.samples.get('median_params', None)
-    
-    map_model = _build_model(results, map_params)
-    med_model = _build_model(results, med_params)
 
-    chi2_map = data.chi2(map_model)
-    chi2_med = data.chi2(med_model)
+    if not isinstance(data,(GaiaData)):
+        map_model = _build_model(results, map_params)
+        med_model = _build_model(results, med_params)
 
-    delta_chi2_map = pm_chi2 - chi2_map #if delta_chi2 > 0, orbit fit is better
-    delta_chi2_med = pm_chi2 - chi2_med
+        pm_chi2 = results.PM_fit['chi2']
+        pm_dof = results.PM_fit['dof']
+        chi2_map = data.chi2(map_model)
+        chi2_med = data.chi2(med_model)
+        orbit_dof = 2*len(data.t) - len(map_params)
 
-    orbit_dof = 2*len(data.t) - len(map_params)
-    
-    
-    
-    delta_dof_map = np.abs(pm_dof - orbit_dof)
-    delta_dof_med = np.abs(pm_dof - orbit_dof)
+        delta_chi2_map = pm_chi2 - chi2_map #if delta_chi2 > 0, orbit fit is better
+        delta_chi2_med = pm_chi2 - chi2_med
 
-    p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
-    p_value_med = chi2.sf(delta_chi2_med, delta_dof_med) #0.0027 is 3 sigma significance 
+        delta_dof_map = np.abs(pm_dof - orbit_dof)
+        delta_dof_med = np.abs(pm_dof - orbit_dof)
+        
+        p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
+        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med) #0.0027 is 3 sigma significance 
+
+    else:
+        chi2_map = GaiaData.chi2(data,map_params)
+        chi2_med = GaiaData.chi2(data,med_params)
+        orbit_dof = len(data.t) - len(map_params)
+
+        single_chi2 = results.Single_motion_params['chi2']
+        single_dof = results.Single_motion_params['dof']
+
+        delta_chi2_map = single_chi2 - chi2_map 
+        delta_chi2_med = single_chi2 - chi2_med
+        delta_dof_map = np.abs(single_dof - orbit_dof)
+        delta_dof_med = np.abs(single_dof - orbit_dof)
+
+        p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
+        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med)
+ 
 
     return delta_chi2_map, delta_chi2_med, p_value_map, p_value_med
     
@@ -123,6 +146,7 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
     red_chi2_map, red_chi2_med,uwe_map,uwe_med,orbit_dof = red_chi2(results,data)
     delta_chi2_map, delta_chi2_med,p_map,p_med = delta_chi2(results,data)
     intervals = credible_intervals(results)
+    
 
     stats = {
         'red_chi2_map': red_chi2_map,
@@ -136,6 +160,12 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
         'p_value_med': p_med,
         'credible_intervals': intervals
     }
+    if getattr(results, 'backend', None) == 'emcee':
+        stats.update({
+            'Ess': results.Ess,
+            'mean_acceptance_fraction': results.mean_acceptance_fraction,
+            'tau': results.tau
+        })
 
     fit_results = {
         'fit_params':{

@@ -6,12 +6,14 @@ from periapsis.fitting.results import FitResults, SampledPriors
 from periapsis.model import thieleinnes
 from periapsis.model import campbell
 from periapsis.model.orbit import Orbit
+from periapsis.utils.solvers import solve_kepler
 import matplotlib.gridspec as gridspec
 from periapsis.prior import FixedPrior
 from periapsis.utils.solvers import solve_mass
 from periapsis.utils.solvers import campbell_to_thiele
 from periapsis.utils.solvers import transform_theile
 from periapsis.utils.helpers import _build_model
+from periapsis.data.gaia import GaiaData
 from scipy.stats import gaussian_kde
 
 rng_plots = np.random.default_rng(5377)
@@ -288,6 +290,40 @@ def _apply_center_offset(x, y, params, dt, center=True):
 
 
 def orbit_plot(results, data, system=1, savepath=None):
+
+    if isinstance(data, GaiaData):
+        Map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
+        Med_plot_dict = data._astrometry(Orbit(**results.median_params))
+
+        fig,ax = plt.subplots(figsize=(8,6))
+        ax.plot(Map_plot_dict['ra_orb'],Map_plot_dict['dec_orb'],label='MAP Orbit',color='red',linestyle='-',zorder=1)
+        ax.plot(Med_plot_dict['ra_orb'],Med_plot_dict['dec_orb'],label='Median Orbit',color='purple',linestyle='--',zorder=1)
+
+        for ri,di,ei,si,ci in zip(Map_plot_dict['ra_obs'],Map_plot_dict['dec_obs'],data.err,data.spsi,data.cpsi):
+
+            x0 = ri - ei * si
+            x1 = ri + ei * si
+            y0 = di - ei * ci
+            y1 = di + ei * ci
+
+            ax.plot([x0,x1],[y0,y1],color='tab:orange',alpha=0.5,zorder=2)
+
+        ax.scatter(Map_plot_dict['ra_orb_obs'],Map_plot_dict['dec_orb_obs'],color='tab:blue',s=15,zorder=3)
+        ax.scatter(0,0,color='k',marker='*',label = 'COM',zorder = 10)
+        ax.plot([0,Map_plot_dict['ra_peri']],[0,Map_plot_dict['dec_peri']],color='gray',linestyle='--',label='Periastron',zorder=4,alpha=0.6)
+
+        ax.set_xlabel(r"$\Delta \alpha^*$ (mas)")
+        ax.set_ylabel(r"$\Delta \delta$ (mas)")
+        ax.set_aspect('equal', adjustable='datalim')
+        ax.legend(loc='best')
+        ax.invert_xaxis()
+
+        if savepath is not None:
+            fig.savefig(savepath, dpi=300)
+            print(f"Saved orbit plot to {savepath}")
+        return fig
+
+
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
     ref_epoch = getattr(data, 'ref_epoch', 0)
     dt_obs = data.t - ref_epoch
@@ -347,11 +383,152 @@ def orbit_plot(results, data, system=1, savepath=None):
         print(f"Saved orbit plot to {savepath}")
     return fig
 
+def sky_motion_plot(results, data, savepath=None):
+    '''
+    Plots full sky motion over time
+    '''
+
+    if isinstance(data, GaiaData):
+        map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
+        med_plot_dict = data._astrometry(Orbit(**results.median_params))
+
+        fig,ax = plt.subplots()
+
+        ax.plot(map_plot_dict['ra_lin'],map_plot_dict['dec_lin'],label='MAP Linear Model',color='red',linestyle='--',zorder=1,alpha=0.7)
+        ax.plot(med_plot_dict['ra_lin'],med_plot_dict['dec_lin'],label='Median Linear Model',color='purple',linestyle='--',zorder=1,alpha=0.7)
+        ax.plot(map_plot_dict['ra_sky'],map_plot_dict['dec_sky'],label='MAP Sky Track',color='red',linestyle='-',zorder=1)
+        ax.plot(med_plot_dict['ra_sky'],med_plot_dict['dec_sky'],label='Median Sky Track',color='purple',linestyle='-',zorder=1)
+        ax.scatter(map_plot_dict['ra_sky_data'],map_plot_dict['dec_sky_data'],color='k',s=15,zorder=3)
+
+        ax.set_xlabel(r"$\Delta \alpha^*$ (mas)")
+        ax.set_ylabel(r"$\Delta \delta$ (mas)")
+        ax.set_aspect('equal',adjustable='datalim')
+        ax.legend(loc='best')
+        ax.invert_xaxis()
+        if savepath is not None:
+            fig.savefig(savepath, dpi=300)
+            print(f"Saved sky motion plot to {savepath}")
+
+        return fig
+
+    tfold = np.linspace(data.t.min(), data.t.max(), 1000)
+    ref_epoch = getattr(data, 'ref_epoch', 0)
+    dt = tfold - ref_epoch
+
+    map_params = getattr(results, 'MAP_params', None)
+    if map_params is None:
+        map_params = results.samples.get('MAP_params', None)
+    
+    med_params = getattr(results, 'median_params', None)
+    if med_params is None:
+        med_params = results.samples.get('median_params', None)
+    
+    if map_params is None or med_params is None:
+        raise ValueError("Both MAP and median parameter sets are required for multi-orbit plotting.")
+        
+    fixed_prior_params = {}
+    for k, p in results.priors.items():
+        if isinstance(p, FixedPrior):
+            map_params[k] = p.value
+            med_params[k] = p.value
+            fixed_prior_params[k] = p.value
+
+    x0 = results.PM_fit['params']['x0']
+    y0 = results.PM_fit['params']['y0']
+    mu_x = results.PM_fit['params']['mu_x']
+    mu_y = results.PM_fit['params']['mu_y']
+
+    map_dx = map_params.get('dx', 0)
+    map_dy = map_params.get('dy', 0)
+    map_dpmra = map_params.get('dpmra', 0)
+    map_dpmdec = map_params.get('dpmdec', 0)
+
+    med_dx = med_params.get('dx', 0)
+    med_dy = med_params.get('dy', 0)
+    med_dpmra = med_params.get('dpmra', 0)
+    med_dpmdec = med_params.get('dpmdec', 0)
+
+    ra_lin_map = x0 + mu_x*dt + map_dpmra*dt + map_dx
+    dec_lin_map = y0 + mu_y*dt + map_dpmdec*dt + map_dy
+    ra_lin_med = x0 + mu_x*dt + med_dpmra*dt + med_dx
+    dec_lin_med = y0 + mu_y*dt + med_dpmdec*dt
+
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
+    ra_map, dec_map = map_model.astrometry(tfold, system=1)
+    ra_med, dec_med = med_model.astrometry(tfold, system=1)
+
+    ra_map_full = ra_lin_map + ra_map
+    dec_map_full = dec_lin_map + dec_map
+    ra_med_full = ra_lin_med + ra_med
+    dec_med_full = dec_lin_med + dec_med
+
+    fig,ax = plt.subplots()
+
+    ax.plot(ra_lin_map,dec_lin_map,label='Map Linear Model',color='red',linestyle='--',zorder=1,alpha=0.7)
+    ax.plot(ra_lin_med,dec_lin_med,label='Median Linear Model',color='purple',linestyle='--',zorder=1,alpha=0.7)
+    ax.plot(ra_map_full,dec_map_full,label='Map Sky Track',color='red',linestyle='-',zorder=1)
+    ax.plot(ra_med_full,dec_med_full,label='Median Sky Track',color='purple',linestyle='-',zorder=1)
+    ax.scatter(data.x,data.y,color='k',s=15,zorder=3)
+
+    ax.set_aspect('equal',adjustable='datalim')
+    ax.legend(loc='best')
+
+    if savepath is not None:
+        fig.savefig(savepath, dpi=300)
+        print(f"Saved sky motion plot to {savepath}")
+
+    return fig
+    
+
 
 def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
     '''
     Plots multiple orbits from the posterior samples
     '''
+
+    #------Gaia---------------
+    if isinstance(data, GaiaData):
+        Map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
+        med_plot_dict = data._astrometry(Orbit(**results.median_params))
+
+        param_names = results.param_names
+        samples = results.samples.get('samples', None)
+        if samples is None:
+            if not param_names:
+                raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+        
+            sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
+            if len(sample_arrays) != len(param_names):
+                raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+            samples = np.column_stack(sample_arrays)
+        
+        idx = np.random.choice(samples.shape[0], size=min(Nplot, samples.shape[0]), replace=False)
+        samps = samples[idx]
+
+        fig,ax = plt.subplots()
+        for samp in samps:
+            model = Orbit(**dict(zip(param_names, samp)))
+            plot_dict = data._astrometry(model)
+            ax.plot(plot_dict['ra_orb'],plot_dict['dec_orb'],color='tab:blue',alpha=0.3)
+
+        ax.plot(Map_plot_dict['ra_orb'],Map_plot_dict['dec_orb'],label='MAP Orbit',color='red',linestyle='-',zorder=1)
+        ax.plot(med_plot_dict['ra_orb'],med_plot_dict['dec_orb'],label='Median Orbit',color='purple',linestyle='--',zorder=1)
+        ax.scatter(0,0,color='k',marker='*',label = 'COM',zorder = 10)
+
+        ax.set_xlabel(r"$\Delta \alpha^*$ (mas)")
+        ax.set_ylabel(r"$\Delta \delta$ (mas)")
+
+        ax = plt.gca()
+        ax.set_aspect('equal')
+        ax.legend(fontsize='small', loc='best')
+        if savepath is not None:
+            fig.savefig(savepath, dpi=300)
+            print(f"Saved multi-orbit plot to {savepath}")
+        return fig
+
+    #--------------------------------
+
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
 
     map_params = getattr(results, 'MAP_params', None)
@@ -528,6 +705,7 @@ def all_plots(results, data, scale=None, savepath=None):
         ess_dist = ess_distribution_plot(results,savepath=savepath)
         posterior_prior = posterior_over_prior(results, savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
+        sky_vis=sky_motion_plot(results,data,savepath=savepath)
         multi_orb = multi_orbit_plot(results,data,savepath=savepath)
         mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
 
@@ -538,6 +716,7 @@ def all_plots(results, data, scale=None, savepath=None):
         posterior_prior = posterior_over_prior(results, savepath=savepath)
         corner = corner_plot(results,savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
+        sky_vis=sky_motion_plot(results,data,savepath=savepath)
         multi_orb = multi_orbit_plot(results,data,savepath=savepath)
         mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
         

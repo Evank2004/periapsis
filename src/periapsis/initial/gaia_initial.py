@@ -12,7 +12,7 @@ class GaiaInitialFit():
         self.rng = np.random.default_rng()
 
     def Delisle_periodogram(self,num_freq=10000):
-        """Compute the Delisle periodogram to obtain an intial guess on Period"""
+        """Compute the Delisle periodogram to obtain an initial guess on Period"""
 
         prior_p = self.priors.get('P')
         p_min = prior_p.min if prior_p is not None else 0.1

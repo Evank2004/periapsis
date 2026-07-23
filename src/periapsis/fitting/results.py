@@ -85,13 +85,20 @@ class FitResults:
             else:
                 return
 
+        if self.samples['parrallax'] is not None:
+            plx_samps = self.samples.get('parallax')
+        else:
+            plx_samps = None
+
         P_samps = self.samples.get(period_name)
         a1_samps = self.samples.get(a1_name)
         
 
-        m2_samps = solve_mass(np.asarray(a1_samps, dtype=float), np.asarray(P_samps, dtype=float), float(m1))
+        m2_samps,f_M = solve_mass(np.asarray(a1_samps, dtype=float), np.asarray(P_samps, dtype=float), float(m1), plx=np.asarray(plx_samps, dtype=float) if plx_samps is not None else None)
         m2_samps = np.where(np.isfinite(m2_samps) & (m2_samps > 0), m2_samps, np.nan)
         self.samples['M2'] = m2_samps
+        self.samples['mass_function'] = f_M
+        setattr(self,'mass_function',f_M)
         setattr(self,'M2',m2_samps)
 
 

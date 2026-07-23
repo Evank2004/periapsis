@@ -23,6 +23,12 @@ _vxyz_param_names = {
     "2": {"P", "e", "a2", "Tp", "Tepoch", "omega2", "Omega", "i", 'dx', 'dy', 'dz', 'dpmra', 'dpmdec', 'systemic_velocity'} # Secondary 3D velocity
 }
 
+_gaia_param_names = {
+    "": {"P", "e", "Tp", "Tepoch", "A", "B", "F", "G", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Relative Gaia astrometry
+    "1": {"P", "e", "Tp", "Tepoch", "A1", "B1", "F1", "G1", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Primary Gaia astrometry
+    "2": {"P", "e", "Tp", "Tepoch", "A2", "B2", "F2", "G2", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"} # Secondary Gaia astrometry
+}
+
 class Orbit():
     """Class representing an orbit defined by a set of orbital elements."""
     def __init__(self, *, velocity_ratio=None, **kwparams):
@@ -93,7 +99,32 @@ class Orbit():
         alpha = alpha + self.derived_params['dx'] + self.derived_params['dpmra'] * dt
         delta = delta + self.derived_params['dy'] + self.derived_params['dpmdec'] * dt
         return alpha, delta
-    
+
+    def gaia_astrometry(self, t,spsi,cpsi,par_factor, system=None):
+        """
+        Computes astrometric position of orbit at time(s) t for Gaia data
+        """
+        if system is None or str(system) not in {'1', '2', 'relative'}:
+            raise ValueError(f"`system` must be provided for astrometry. It can be either '1', '2', or 'relative'.")
+        system = "" if system == "relative" else str(system)
+
+        self._ensure_derived_params(_gaia_param_names[system])
+
+        M = 2 * np.pi / self.derived_params['P'] * (t - (self.derived_params['Tp']*self.derived_params['P']))
+        E = solve_kepler(M, self.derived_params['e'])
+        X = (np.cos(E) - self.derived_params['e'])
+        Y = (np.sqrt(1 - self.derived_params['e']**2) * np.sin(E))
+
+        wss = ((self.derived_params['dalpha']+self.derived_params['mu_alpha']*t)*spsi
+                + (self.derived_params['ddelta']+self.derived_params['mu_delta']*t)*cpsi
+                + self.derived_params['parallax']*par_factor)
+
+        wk = ((self.derived_params[f'B{system}']*X + self.derived_params[f'G{system}']*Y)*spsi
+              + (self.derived_params[f'A{system}']*X + self.derived_params[f'F{system}']*Y)*cpsi)
+
+        return wss + wk
+
+
     def rv(self, t, system=None):
         """
         Computes the radial velocity of the orbit at time(s) t. 

@@ -138,15 +138,18 @@ def campbell_to_thiele(a1,cosi,w,long):
 
     return A, B, F, G
 
-def solve_mass(a1,P,m1,max_iter=15,tol=1e-6):
+def solve_mass(a1,P,m1,plx=None,max_iter=15,tol=1e-6):
     'Solves for the secondary mass M2 given the'
     'primary mass M1, and the samples for semimajor axis a1 and period P'
+    if plx is not None:
+        a1 = a1 / plx #convert to AU
     Ps23 = P**(2./3.)
 
     #initial guess 
     K = a1 / (Ps23 * m1**(1./3.))
     K = np.clip(K,0.0,None)
     M = m1 * (1. + 1.4*K**1.135 + 0.743*K**3.163)
+    f_M = a1**3. / P**2. #mass function
 
     for i in range(max_iter):
         Ps23divM23 = Ps23 * M**(-2./3.)
@@ -167,7 +170,7 @@ def solve_mass(a1,P,m1,max_iter=15,tol=1e-6):
                 f"Max |Δ| = {max_delta}"
             )
     M2 = M - m1
-    return M2
+    return M2,f_M
 
 
 def gaia_single_motion(spsi,cpsi,t,plx_fac,x,err):

@@ -70,10 +70,11 @@ class MCMCGaia(Fitter):
 
             return mu, mu_err, chi2
    
-        def objective(theta,data):
-            params_dict = dict(zip(param_order, theta))
+        def objective(params,data):
+            params_dict = dict(zip(param_order,params))
             _, _, chi2 = matrix_method(params_dict,data)
 
+            lp = 0
             for name, val in params_dict.items():
                 prior = self.prior_kwargs.get(name)
                 if prior is not None:
@@ -88,7 +89,7 @@ class MCMCGaia(Fitter):
             
             ln_like = -0.5 * chi2
 
-            return ln_like
+            return ln_like + lp
         
 
         initial_fit = GaiaInitialFit(data, **self.prior_kwargs).initial_guess()
@@ -110,7 +111,7 @@ class MCMCGaia(Fitter):
         initial = np.clip(initial_params + np.random.randn(self.nwalkers,ndim) * 1e-2, lower, upper)
 
 
-        sampler = emcee.EnsembleSampler(self.nwalkers, ndim, objective, args=(data), pool=self.pool)
+        sampler = emcee.EnsembleSampler(self.nwalkers, ndim, objective, args=(data,), pool=self.pool)
         sampler.run_mcmc(initial, self.niter, progress=True)
 
         chain = sampler.get_chain()
@@ -172,5 +173,6 @@ class MCMCGaia(Fitter):
         results_dict['backend'] = 'emcee'
         results_dict['fit_method'] = 'linear'
         fit_results = FitResults(**results_dict)
+        fit_results.add_mass_samples(m1=self.m1)
        
         return fit_results

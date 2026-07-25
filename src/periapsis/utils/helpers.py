@@ -12,8 +12,8 @@ def _build_model(results, params):
     if ref_epoch is None:
         ref_epoch = results.samples.get('ref_epoch', None)
 
-    thiele_innes_keys = {'P', 'e', 't0', 'A', 'B', 'F', 'G'}
-    campbell_keys = {'P', 'e', 't0', 'a', 'cosi', 'omega', 'Omega'}
+    thiele_innes_keys = {'P', 'e', 'Tp', 'A', 'B', 'F', 'G'}
+    campbell_keys = {'P', 'e', 'Tp', 'a', 'cosi', 'omega', 'Omega'}
 
     if fit_method in {'ThieleInnes', 'linear'}:
         if thiele_innes_keys.issubset(params):
@@ -49,7 +49,7 @@ def _match_param_keys(prior_kwargs):
         'cosi':'cosi',
         'omega':'omega1','argperi':'omega1','w':'omega1','omega1':'omega1',
         'Omega':'Omega','longnode':'Omega','bigomega':'Omega','long':'Omega',
-        't0':'t0','tperi':'t0','timeperi':'t0','tp':'t0','T0':'t0',
+        't0':'Tp','tperi':'Tp','timeperi':'Tp','tp':'Tp','T0':'Tp','Tp':'Tp',
         'A':'A1','B':'B1','F':'F1','G':'G1',
         'A1': 'A1','B1':'B1','F1':'F1','G1':'G1',
         'dx':'dx','dy':'dy',

@@ -16,7 +16,12 @@ class FitResults:
         self.param_names = samples.pop('param_names', None)
         self.sampler = self.backend
         self.m1 = samples.pop('m1', None)
+        self.mass_function = samples.pop('mass_function', None)
         self.priors = samples.pop('priors', None)
+        self.Single_motion_params = samples.pop('Single_motion_params', None)
+        self.Ess = samples.pop('Ess', None)
+        self.tau = samples.pop('tau', None)
+        self.mean_acceptance_fraction = samples.pop('mean_acceptance_fraction', None)
 
         self.samples = samples
         if self.param_names is not None:
@@ -43,7 +48,7 @@ class FitResults:
             transform = build_transform_function(known_params, key)
             return transform(**known_param_values)
         
-    def sample_priors(self, random_state, size=1) -> SampledPriors:
+    def sample_priors(self, random_state, size=1) -> 'SampledPriors':
         if self.priors is None:
             raise ValueError("No priors are available to sample from.")
         return SampledPriors(self.priors, self.param_names, size, random_state)    
@@ -68,10 +73,10 @@ class FitResults:
 
         if a1_name is None:
             # Attempt to compute a1 from Thiele-Innes parameters if available
-            A_name = next((name for name in param_names if name == 'A'), None)
-            B_name = next((name for name in param_names if name == 'B'), None)
-            F_name = next((name for name in param_names if name == 'F'), None)
-            G_name = next((name for name in param_names if name == 'G'), None)
+            A_name = next((name for name in param_names if name in {'A','A1'}), None)
+            B_name = next((name for name in param_names if name in {'B','B1'}), None)
+            F_name = next((name for name in param_names if name in {'F','F1'}), None)
+            G_name = next((name for name in param_names if name in {'G','G1'}), None)
 
             if A_name and B_name and F_name and G_name:
                 A_samps = self.samples.get(A_name)
@@ -83,12 +88,12 @@ class FitResults:
                 self.samples['a1'] = a1_samps
                 a1_name = 'a1'
             else:
+                
                 return
 
-        if self.samples['parrallax'] is not None:
-            plx_samps = self.samples.get('parallax')
-        else:
-            plx_samps = None
+        plx_samps = (
+            self.samples.get('parallax', None) if isinstance(self.samples, dict) else None
+            )
 
         P_samps = self.samples.get(period_name)
         a1_samps = self.samples.get(a1_name)

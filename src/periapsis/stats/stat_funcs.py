@@ -5,6 +5,7 @@ from periapsis.utils.helpers import _build_model
 from periapsis.data.data import Data
 from periapsis.data.common import AstrometryData, RadialVelocityData
 from periapsis.data.gaia import GaiaData
+from periapsis.model.orbit import Orbit
 from scipy.stats import chi2
 
 
@@ -49,8 +50,10 @@ def red_chi2(results,data,savepath=None):
         chi2_med = data.chi2(med_model)
         orbit_dof = 2*len(data.t) - len(map_params)
     else:
-        chi2_map = GaiaData.chi2(data,map_params)
-        chi2_med = GaiaData.chi2(data,med_params)
+        map_model = Orbit(**map_params)
+        med_model = Orbit(**med_params)
+        chi2_map = GaiaData.chi2(data,map_model)
+        chi2_med = GaiaData.chi2(data,med_model)
         orbit_dof = len(data.t) - len(map_params) # for Gaia data, only one dimension is used for chi2 calculation
 
     
@@ -99,8 +102,10 @@ def delta_chi2(results,data,savepath=None):
         p_value_med = chi2.sf(delta_chi2_med, delta_dof_med) #0.0027 is 3 sigma significance 
 
     else:
-        chi2_map = GaiaData.chi2(data,map_params)
-        chi2_med = GaiaData.chi2(data,med_params)
+        map_model = Orbit(**map_params)
+        med_model = Orbit(**med_params)
+        chi2_map = GaiaData.chi2(data,map_model)
+        chi2_med = GaiaData.chi2(data,med_model)
         orbit_dof = len(data.t) - len(map_params)
 
         single_chi2 = results.Single_motion_params['chi2']
@@ -179,6 +184,7 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
             'M2': {
                 'median': float(np.median(results.samples['M2'])),
                 'credible_intervals': _credible_interval_summary(results.samples['M2']),
+            
             }
         }
 

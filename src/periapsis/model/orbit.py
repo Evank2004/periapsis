@@ -24,9 +24,9 @@ _vxyz_param_names = {
 }
 
 _gaia_param_names = {
-    "": {"P", "e", "Tp", "Tepoch", "A", "B", "F", "G", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Relative Gaia astrometry
-    "1": {"P", "e", "Tp", "Tepoch", "A1", "B1", "F1", "G1", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Primary Gaia astrometry
-    "2": {"P", "e", "Tp", "Tepoch", "A2", "B2", "F2", "G2", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"} # Secondary Gaia astrometry
+    "": {"P", "e", "Tp",  "A", "B", "F", "G", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Relative Gaia astrometry
+    "1": {"P", "e", "Tp", "A1", "B1", "F1", "G1", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Primary Gaia astrometry
+    "2": {"P", "e", "Tp", "A2", "B2", "F2", "G2", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"} # Secondary Gaia astrometry
 }
 
 class Orbit():
@@ -83,10 +83,11 @@ class Orbit():
 
         # if self.astrometry_param_sets[system] is None:
             # raise ValueError(f"Insufficient orbital parameters provided to compute astrometry. Unable to calculate parameters for system {system}: {_astrometry_param_names[system] - self.covered_params}")
-        
-        ref_epoch = self.derived_params['Tepoch']
-        if ref_epoch is None:
+        if self.derived_params['Tepoch'] is None:
             ref_epoch = 0.0
+        else:
+            ref_epoch = self.derived_params['Tepoch']
+        
         dt = np.asarray(t) - ref_epoch
 
         M = 2 * np.pi / self.derived_params['P'] * (dt - (self.derived_params['Tp']-ref_epoch))
@@ -210,7 +211,7 @@ class OldOrbit():
         The parameters supported by this class are:
         - P: Orbital period (time)
         - e: Eccentricity (dimensionless)
-        - t0: Time of periapsis passage (time)
+        - Tp: Time of periapsis passage (time)
         - omega: Argument of periapsis (angle)
         - bigomega: Longitude of ascending node (angle)
         - cosi: Cosine of Inclination (angle)
@@ -225,8 +226,8 @@ class OldOrbit():
         if not self.params:
             raise ValueError("No orbital parameters provided.")
 
-        campbell_params = {'P', 'e', 't0', 'omega', 'Omega', 'cosi', 'a'}
-        thiele_innes_params = {'P', 'e', 't0', 'A', 'B', 'F', 'G'}
+        campbell_params = {'P', 'e', 'Tp', 'omega', 'Omega', 'cosi', 'a'}
+        thiele_innes_params = {'P', 'e', 'Tp', 'A', 'B', 'F', 'G'}
 
         if campbell_params.issubset(self.params):
             return

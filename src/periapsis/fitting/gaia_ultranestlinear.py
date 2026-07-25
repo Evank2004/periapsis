@@ -13,25 +13,27 @@ logger = logging.getLogger("ultranest")
 logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.WARNING)
 
-class UltranestGaia(Fitter):
-    def __init__(self,nlive,min_ess, **priors):
-        super().__init__(**priors)
+class UltraNestGaia(Fitter):
+    def __init__(self,nlive,min_ess,m1=None, **priors):
+        super().__init__(m1=m1,**priors)
         self.nlive = nlive
         self.min_ess = min_ess
         
+        
 
     def fit(self, data: GaiaData) -> FitResults:
-        param_order = [name for name in ('P', 'e', 't0') if name in self.prior_kwargs]
+        param_order = [name for name in ('P', 'e', 'Tp') if name in self.prior_kwargs]
         if len(param_order) != 3:
-            missing = [name for name in ('P', 'e', 't0') if name not in self.prior_kwargs]
-            raise ValueError(f"UltranestGaia requires priors for P, e, and t0. Missing: {missing}")
-        
+            missing = [name for name in ('P', 'e', 'Tp') if name not in self.prior_kwargs]
+            raise ValueError(f"UltranestGaia requires priors for P, e, and Tp. Missing: {missing}")
+        system = getattr(data, 'system', None)
+
         def matrix_method(params_dict, data):
-            P,e,t0 = params_dict['P'],params_dict['e'],params_dict['t0']
+            P,e,Tp = params_dict['P'],params_dict['e'],params_dict['Tp']
 
             nobs = len(data.t)
 
-            ti = data.t - t0*P
+            ti = data.t - Tp*P
 
             M = 2*np.pi * ti/P
             E = solve_kepler(M,e)
@@ -122,17 +124,17 @@ class UltranestGaia(Fitter):
             if mu is None:
                 continue
             
-            P, e, t0 = sample
+            P, e, Tp = sample
             delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
             
-            posterior.append([P, e, t0, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
+            posterior.append([P, e, Tp, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
             valid_logl.append(ll)
 
 
         logl = np.array(valid_logl)
         posterior = np.array(posterior)
 
-        post_labels = ['P','e','t0','dalpha','ddelta','parallax','mu_alpha','mu_delta','A','B','F','G']
+        post_labels = ['P','e','Tp','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
 
         best_i = np.argmax(logl)
         best_params = dict(zip(post_labels, posterior[best_i]))
@@ -156,7 +158,7 @@ class UltranestGaia(Fitter):
         results_dict['samples'] = posterior
         results_dict['n_samples_raw'] = int(len(ultranest_samples))
         results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
-        
+        results_dict['priors'] = self.prior_kwargs
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'ultranest'
         results_dict['fit_method'] = 'linear'

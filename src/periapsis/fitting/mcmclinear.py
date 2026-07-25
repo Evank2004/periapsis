@@ -16,7 +16,7 @@ class MCMCLinearFitter(Fitter):
         super().__init__(m1=m1, **priors)
         self.nwalkers = nwalkers
         self.niter = niter
-        self.sampled_params = ('P', 'e', 't0')
+        self.sampled_params = ('P', 'e', 'Tp')
         self.m2_max = m2_max
 
     def fit(self, data: Data) -> FitResults:
@@ -104,7 +104,7 @@ class MCMCLinearFitter(Fitter):
                 params_dict = _match_param_keys(dict(zip(param_order, params)))
 
                 dt = data.t - ref_epoch
-                ti = dt - params_dict['t0'] * params_dict['P']
+                ti = dt - params_dict['Tp'] * params_dict['P']
 
                 M = 2 * np.pi * ti / params_dict['P']
                 E = solve_kepler(M, params_dict['e'])
@@ -161,9 +161,9 @@ class MCMCLinearFitter(Fitter):
 
         P0 = initial_fit['P']
         e0 = initial_fit['e']
-        T00 = initial_fit['t0']
+        Tp0 = initial_fit['Tp']
 
-        initial_params = [P0, e0, T00]
+        initial_params = [P0, e0, Tp0]
         
         bounds = np.array(
             [[self.prior_kwargs[name].min, self.prior_kwargs[name].max] for name in param_order],
@@ -197,8 +197,8 @@ class MCMCLinearFitter(Fitter):
         
         full_posterior = [] 
         for param in samples:
-            P,e,t0 = param
-            M = 2*np.pi * (data.t - ref_epoch - t0*P) / P
+            P,e,Tp = param
+            M = 2*np.pi * (data.t - ref_epoch - Tp*P) / P
             E = solve_kepler(M,e)
             mu, _ = matrix_method({'e': e}, data, E)
             dx = mu[0]
@@ -209,9 +209,9 @@ class MCMCLinearFitter(Fitter):
             dpmdec = mu[5]
             B = mu[6]
             G = mu[7]
-            full_posterior.append((P,e,t0,A,B,F,G,dx,dy,dpmra,dpmdec))
+            full_posterior.append((P,e,Tp,A,B,F,G,dx,dy,dpmra,dpmdec))
 
-        post_labels = ['P','e','t0','A','B','F','G','dx','dy','dpmra','dpmdec']
+        post_labels = ['P','e','Tp','A','B','F','G','dx','dy','dpmra','dpmdec']
 
         best_i = np.argmax(lnprobs)
         best_params = dict(zip(post_labels, full_posterior[best_i]))

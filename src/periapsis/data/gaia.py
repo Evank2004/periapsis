@@ -5,8 +5,10 @@ from .data import Data
 import numpy as np
 
 
-class GaiaData(Data):
-    def __init__(self, spsi,cpsi,t,plx_fac,x,err):
+
+class GaiaData(SystemData):
+    def __init__(self, spsi,cpsi,t,plx_fac,x,err,system=None):
+        super().__init__(system)
         self.spsi = spsi
         self.cpsi = cpsi
         self.t = t
@@ -16,14 +18,22 @@ class GaiaData(Data):
 
 
     def chi2(self, orbit: Orbit):
-        model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac)
+        model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac,system=self.system)
         chi2 = np.sum(((self.x - model_x) / self.err) ** 2)
         return chi2
 
-    def _astrometry(self, orbit: Orbit):
+    def t_series(self):
+        """Return the observation timestamps."""
+        return self.t
 
+    def _radial_velocity(self, orbit: Orbit):
+        """Gaia 1D astrometry dataset has no radial velocity data."""
+        return None
+
+    def _astrometry(self, orbit: Orbit):
+        system = getattr(self, 'system', None)
         params = orbit.derived_params
-        model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac)
+        model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac,self.system)
 
         #smooth orbit for plotting
         t_smooth = np.linspace(np.min(self.t),np.max(self.t),1000)
@@ -33,8 +43,8 @@ class GaiaData(Data):
         Xsmooth = np.cos(Esmooth) - params['e']
         Ysmooth = np.sqrt(1-params['e']**2)*np.sin(Esmooth)
 
-        ra_orb = params['B']*Xsmooth + params['G']*Ysmooth
-        dec_orb = params['A']*Xsmooth + params['F']*Ysmooth
+        ra_orb = params[f'B{system}']*Xsmooth + params[f'G{system}']*Ysmooth
+        dec_orb = params[f'A{system}']*Xsmooth + params[f'F{system}']*Ysmooth
 
         #--------position decomposition ---------
         res_1d = self.x - model_x
@@ -43,8 +53,8 @@ class GaiaData(Data):
         dec_obs = res_1d * self.cpsi
 
         #pos for Tp
-        ra_peri = params['B']*(1-params['e'])
-        dec_peri = params['G']*(1-params['e'])
+        ra_peri = params[f'B{system}']*(1-params['e'])
+        dec_peri = params[f'A{system}']*(1-params['e'])
 
 
         #--------linear motion ---------
@@ -58,8 +68,8 @@ class GaiaData(Data):
         ra_full = ra_lin + ra_orb
         dec_full = dec_lin + dec_orb
 
-        ra_sky = params['dalpha'] + params['mu_alpha']*t_smooth + params['parallax']*self.plx_fac*self.spsi + ra_orb
-        dec_sky = params['ddelta'] + params['mu_delta']*t_smooth + params['parallax']*self.plx_fac*self.cpsi + dec_orb    
+        ra_sky = params['dalpha'] + params['mu_alpha']*t_smooth + params['parallax']*plx_ra_smooth + ra_orb
+        dec_sky = params['ddelta'] + params['mu_delta']*t_smooth + params['parallax']*plx_dec_smooth + dec_orb    
 
 
         #--------orbital data points for plotting ---------
@@ -69,8 +79,8 @@ class GaiaData(Data):
         X_data = np.cos(E_data) - params['e']
         Y_data = np.sqrt(1-params['e']**2)*np.sin(E_data)
         
-        ra_data_orb = params['B']*X_data + params['G']*Y_data
-        dec_data_orb = params['A']*X_data + params['F']*Y_data
+        ra_data_orb = params[f'B{system}']*X_data + params[f'G{system}']*Y_data
+        dec_data_orb = params[f'A{system}']*X_data + params[f'F{system}']*Y_data
         ra_orb_obs = ra_data_orb + ra_obs
         dec_orb_obs = dec_data_orb + dec_obs
 

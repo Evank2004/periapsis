@@ -10,28 +10,28 @@ import emcee
 
 
 class MCMCGaia(Fitter):
-    def __init__(self,nwalkers,niter,pool=None,**priors):
-        super().__init__(**priors)
+    def __init__(self,nwalkers,niter,m1=None,pool=None,**priors):
+        super().__init__(m1=m1,**priors)
         self.nwalkers = nwalkers
         self.niter = niter
         self.pool = pool
-        self.sampled_params = ('P', 'e', 't0')
+        self.sampled_params = ('P', 'e', 'Tp')
 
     def fit(self,data: GaiaData) -> FitResults:
         """Fit the Gaia data using MCMC"""
         param_order = [name for name in self.sampled_params if name in self.prior_kwargs]
         ndim = len(param_order)
         mu_single = gaia_single_motion(data.spsi,data.cpsi,data.t,data.plx_fac,data.x,data.err)
-        
+        system = getattr(data, 'system', None)
 
 
 
         def matrix_method(params_dict,data):
-            P,e,t0 = params_dict['P'],params_dict['e'],params_dict['t0']
+            P,e,Tp = params_dict['P'],params_dict['e'],params_dict['Tp']
 
             nobs = len(data.t)
 
-            ti = data.t - t0*P
+            ti = data.t - Tp*P
 
             M = 2*np.pi * ti/P
             E = solve_kepler(M,e)
@@ -96,9 +96,9 @@ class MCMCGaia(Fitter):
             
         P0 = initial_fit['P']
         e0 = initial_fit['e']
-        T00 = initial_fit['t0']
+        Tp0 = initial_fit['Tp']
 
-        initial_set = [P0, e0, T00]
+        initial_set = [P0, e0, Tp0]
 
         bounds = np.array(
             [[self.prior_kwargs[name].min, self.prior_kwargs[name].max] for name in param_order],
@@ -139,13 +139,13 @@ class MCMCGaia(Fitter):
             if mu is None:
                 continue
             
-            P, e, t0 = sample
+            P, e, Tp = sample
             delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
             
-            posterior.append([P, e, t0, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
+            posterior.append([P, e, Tp, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
             valid_logp.append(l_prob)
        
-        post_labels = ['P','e','t0','dalpha','ddelta','parallax','mu_alpha','mu_delta','A','B','F','G']
+        post_labels = ['P','e','Tp','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
 
         best_i = np.argmax(valid_logp)
         best_params = dict(zip(post_labels, posterior[best_i]))
@@ -169,6 +169,7 @@ class MCMCGaia(Fitter):
         results_dict['Single_motion_params'] = mu_single
         # results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
         
+        results_dict['priors'] = self.prior_kwargs
         results_dict['raw_sampler'] = None
         results_dict['backend'] = 'emcee'
         results_dict['fit_method'] = 'linear'

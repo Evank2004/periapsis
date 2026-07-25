@@ -28,10 +28,10 @@ class UltranestLinearFitter(Fitter):
         
 
     def fit(self, data: Data) -> FitResults:
-        param_order = [name for name in ('P', 'e', 't0') if name in self.prior_kwargs]
+        param_order = [name for name in ('P', 'e', 'Tp') if name in self.prior_kwargs]
         if len(param_order) != 3:
-            missing = [name for name in ('P', 'e', 't0') if name not in self.prior_kwargs]
-            raise ValueError(f"UltranestLinearFitter requires priors for P, e, and t0. Missing: {missing}")
+            missing = [name for name in ('P', 'e', 'Tp') if name not in self.prior_kwargs]
+            raise ValueError(f"UltranestLinearFitter requires priors for P, e, and Tp. Missing: {missing}")
        
         ref_epoch = getattr(data, 'ref_epoch', 0.0)
         reject_logl = -1e300
@@ -81,7 +81,7 @@ class UltranestLinearFitter(Fitter):
                 params_dict = _match_param_keys(dict(zip(param_order, params)))
 
                 dt = data.t - ref_epoch
-                ti = dt - params_dict['t0'] * params_dict['P']
+                ti = dt - params_dict['Tp'] * params_dict['P']
 
                 M = 2 * np.pi * ti / params_dict['P']
                 E = solve_kepler(M, params_dict['e'])
@@ -158,14 +158,14 @@ class UltranestLinearFitter(Fitter):
         full_posterior = []
         valid_logl = []
         for param in ultranest_samples:
-            P,e,t0 = param
+            P,e,Tp = param
             ll = log_likelihood(param)
             if (not np.isfinite(ll)) or (ll <= reject_logl / 2):
                 continue
 
-            M = 2*np.pi * (data.t - ref_epoch - t0*P) / P
+            M = 2*np.pi * (data.t - ref_epoch - Tp*P) / P
             E = solve_kepler(M,e)
-            params_dict = {'P': P, 'e': e, 't0': t0}
+            params_dict = {'P': P, 'e': e, 'Tp': Tp}
             try:
                 mu, _ = matrix_method(params_dict,data,E)
             except np.linalg.LinAlgError:
@@ -178,7 +178,7 @@ class UltranestLinearFitter(Fitter):
             dpmdec = mu[5]
             B = mu[6]
             G = mu[7]
-            full_posterior.append((P,e,t0,A,B,F,G,dx,dy,dpmra,dpmdec))
+            full_posterior.append((P,e,Tp,A,B,F,G,dx,dy,dpmra,dpmdec))
             valid_logl.append(ll)
 
         if len(full_posterior) == 0:
@@ -190,7 +190,7 @@ class UltranestLinearFitter(Fitter):
         logl = np.array(valid_logl)
         full_posterior_arr = np.array(full_posterior)
 
-        post_labels = ['P','e','t0','A','B','F','G','dx','dy','dpmra','dpmdec']
+        post_labels = ['P','e','Tp','A','B','F','G','dx','dy','dpmra','dpmdec']
 
         best_i = int(np.argmax(logl))
         best_params = dict(zip(post_labels, full_posterior[best_i]))

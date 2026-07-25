@@ -3,12 +3,12 @@ from periapsis.utils.solvers import solve_kepler
 import numpy as np
 
 class CampbellOrbit(OldOrbit):
-    def __init__(self, P, a1, e, cosi, omega1, Omega, t0, velocity_ratio=None,ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
+    def __init__(self, P, a1, e, cosi, omega1, Omega, Tp, velocity_ratio=None,ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
         super().__init__(
             P=P,
             a=a1, e=e, cosi=cosi, 
             omega=omega1, Omega=Omega, 
-            t0=t0, velocity_ratio=velocity_ratio,
+            Tp=Tp, velocity_ratio=velocity_ratio,
             ref_epoch=ref_epoch,
             dx=dx, dy=dy, dpmra=dpmra, dpmdec=dpmdec,
         )
@@ -28,7 +28,7 @@ class CampbellOrbit(OldOrbit):
         if ref_epoch is None:
             ref_epoch = 0.0
         dt = np.asarray(t) - ref_epoch
-        ti = dt - self.params['t0'] * self.params['P']
+        ti = dt - self.params['Tp'] * self.params['P']
 
         M = 2 * np.pi / self.params['P'] * ti
         E = solve_kepler(M, self.params['e'])

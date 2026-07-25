@@ -27,7 +27,7 @@ def mcmc_autocorrelation_plot(results,savepath=None):
     param_means = np.asarray(results.samples['param_means'])
     param_names = results.param_names
     if results.fit_method =='linear':
-        param_names = [name for name in param_names if name in ('P', 'e', 't0')]
+        param_names = [name for name in param_names if name in ('P', 'e', 'Tp')]
         name_to_idx = {name: i for i, name in enumerate(results.param_names)}
         param_means = param_means[:, [name_to_idx[name] for name in param_names]]
 
@@ -75,7 +75,7 @@ def ess_distribution_plot(results,savepath=None):
     Plots distribution of effective sample size (ESS) for each parameter.
     This can be used to diagnose convergence
     '''
-    ess = results.samples['Ess']
+    ess = results.Ess
     param_names = results.param_names
 
     ess_values = np.atleast_1d(ess)  # Ensure ESS is an array
@@ -299,7 +299,7 @@ def orbit_plot(results, data, system=1, savepath=None):
         ax.plot(Map_plot_dict['ra_orb'],Map_plot_dict['dec_orb'],label='MAP Orbit',color='red',linestyle='-',zorder=1)
         ax.plot(Med_plot_dict['ra_orb'],Med_plot_dict['dec_orb'],label='Median Orbit',color='purple',linestyle='--',zorder=1)
 
-        for ri,di,ei,si,ci in zip(Map_plot_dict['ra_obs'],Map_plot_dict['dec_obs'],data.err,data.spsi,data.cpsi):
+        for ri,di,ei,si,ci in zip(Map_plot_dict['ra_orb_obs'],Map_plot_dict['dec_orb_obs'],data.err,data.spsi,data.cpsi):
 
             x0 = ri - ei * si
             x1 = ri + ei * si
@@ -308,8 +308,8 @@ def orbit_plot(results, data, system=1, savepath=None):
 
             ax.plot([x0,x1],[y0,y1],color='tab:orange',alpha=0.5,zorder=2)
 
-        ax.scatter(Map_plot_dict['ra_orb_obs'],Map_plot_dict['dec_orb_obs'],color='tab:blue',s=15,zorder=3)
-        ax.scatter(0,0,color='k',marker='*',label = 'COM',zorder = 10)
+        ax.scatter(Map_plot_dict['ra_orb_obs'],Map_plot_dict['dec_orb_obs'],color='k',s=15,zorder=3)
+        ax.scatter(0,0,color='k',marker='*',label = 'COM',zorder = 10,s=100)
         ax.plot([0,Map_plot_dict['ra_peri']],[0,Map_plot_dict['dec_peri']],color='gray',linestyle='--',label='Periastron',zorder=4,alpha=0.6)
 
         ax.set_xlabel(r"$\Delta \alpha^*$ (mas)")
@@ -510,10 +510,10 @@ def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
         for samp in samps:
             model = Orbit(**dict(zip(param_names, samp)))
             plot_dict = data._astrometry(model)
-            ax.plot(plot_dict['ra_orb'],plot_dict['dec_orb'],color='tab:blue',alpha=0.3)
+            ax.plot(plot_dict['ra_orb'],plot_dict['dec_orb'],color='tab:blue',alpha=0.3,zorder=1)
 
-        ax.plot(Map_plot_dict['ra_orb'],Map_plot_dict['dec_orb'],label='MAP Orbit',color='red',linestyle='-',zorder=1)
-        ax.plot(med_plot_dict['ra_orb'],med_plot_dict['dec_orb'],label='Median Orbit',color='purple',linestyle='--',zorder=1)
+        ax.plot(Map_plot_dict['ra_orb'],Map_plot_dict['dec_orb'],label='MAP Orbit',color='red',linestyle='-',zorder=4)
+        ax.plot(med_plot_dict['ra_orb'],med_plot_dict['dec_orb'],label='Median Orbit',color='purple',linestyle='--',zorder=4)
         ax.scatter(0,0,color='k',marker='*',label = 'COM',zorder = 10)
 
         ax.set_xlabel(r"$\Delta \alpha^*$ (mas)")
@@ -521,6 +521,7 @@ def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
 
         ax = plt.gca()
         ax.set_aspect('equal')
+        ax.invert_xaxis()
         ax.legend(fontsize='small', loc='best')
         if savepath is not None:
             fig.savefig(savepath, dpi=300)
@@ -604,7 +605,7 @@ def mass_distribution(results,scale='linear',savepath=None):
     Plots distribution of secondary mass (M2) from posterior samples
     '''
     try:
-        M2_samples = results['M2']
+        M2_samples = results.samples['M2']
     except KeyError:
         print('No M2 samples found in results.')
         return None
@@ -703,17 +704,17 @@ def all_plots(results, data, scale=None, savepath=None):
         auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
         corner = corner_plot(results,savepath=savepath)
         ess_dist = ess_distribution_plot(results,savepath=savepath)
-        posterior_prior = posterior_over_prior(results, savepath=savepath)
+        # posterior_prior = posterior_over_prior(results, savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
         sky_vis=sky_motion_plot(results,data,savepath=savepath)
         multi_orb = multi_orbit_plot(results,data,savepath=savepath)
         mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
 
 
-        return auto_corr, corner, ess_dist,posterior_prior, orbit_vis, multi_orb, mass_dist
+        return auto_corr, corner, ess_dist, orbit_vis, multi_orb, mass_dist
 
     if results.backend=='ultranest':
-        posterior_prior = posterior_over_prior(results, savepath=savepath)
+        # posterior_prior = posterior_over_prior(results, savepath=savepath)
         corner = corner_plot(results,savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
         sky_vis=sky_motion_plot(results,data,savepath=savepath)
@@ -722,4 +723,4 @@ def all_plots(results, data, scale=None, savepath=None):
         
                 
 
-        return posterior_prior,corner, orbit_vis, multi_orb, mass_dist
+        return corner, orbit_vis, multi_orb, mass_dist

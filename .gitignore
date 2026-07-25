@@ -200,3 +200,6 @@ pyrightconfig.json
 .ionide
 
 # End of https://www.toptal.com/developers/gitignore/api/python,visualstudiocode
+downloaded_file.zip
+extracted_files/GAIA_DR4_PRERELEASE_EPOCH_ASTROMETRY_RAW.xml
+extracted_files/readme.txt

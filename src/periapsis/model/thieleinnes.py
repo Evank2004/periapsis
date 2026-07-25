@@ -3,11 +3,11 @@ from periapsis.utils.solvers import solve_kepler
 import numpy as np
 
 class ThieleInnesOrbit(OldOrbit):
-    def __init__(self, P, e, t0, A1, B1, F1, G1, velocity_ratio=None, ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
+    def __init__(self, P, e, Tp, A1, B1, F1, G1, velocity_ratio=None, ref_epoch=None, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0):
         super().__init__(
             P=P,
             e=e,
-            t0=t0,
+            Tp=Tp,
             A=A1,
             B=B1,
             F=F1,
@@ -26,7 +26,7 @@ class ThieleInnesOrbit(OldOrbit):
             ref_epoch = 0.0
         dt = np.asarray(t) - ref_epoch
 
-        M = 2 * np.pi / self.params['P'] * (dt - self.params['t0']*self.params['P'])
+        M = 2 * np.pi / self.params['P'] * (dt - self.params['Tp']*self.params['P'])
         E = solve_kepler(M, self.params['e'])
         X = (np.cos(E) - self.params['e'])
         Y = (np.sqrt(1 - self.params['e']**2) * np.sin(E))

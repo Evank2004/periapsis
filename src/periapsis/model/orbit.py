@@ -150,9 +150,10 @@ class Orbit():
         true_anomaly = 2 * np.arctan2(np.sqrt(1 + self.derived_params['e']) * np.sin(E / 2), np.sqrt(1 - self.derived_params['e']) * np.cos(E / 2))
         rv = self.derived_params[f'K{system}'] * (np.cos(true_anomaly + self.derived_params[f'omega{system}']) + self.derived_params[f'e'] * np.cos(self.derived_params[f'omega{system}']))
         rv *= self.velocity_ratio if self.velocity_ratio is not None else 1.0
-        if self.velocity_ratio is None:
-            print("Warning: velocity_ratio is not set. Radial velocity will be returned in units of (time/distance).")
-        rv += self.derived_params['systemic_velocity']
+        # if self.velocity_ratio is None:
+            # print("Warning: velocity_ratio is not set. Radial velocity will be returned in units of (time/distance).")
+        if system != "":
+            rv += self.derived_params['systemic_velocity']
         return rv
     
     def xyz(self, t, system=None):

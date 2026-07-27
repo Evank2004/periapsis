@@ -47,7 +47,7 @@ class RadialVelocityData(SystemData):
         self.rv_err = rv_err
 
     def chi2(self, orbit: Orbit):
-        vz = orbit.radial_velocity(self.t, system=self.system)
+        vz = orbit.rv(self.t, system=self.system)
         chi2_rv = np.sum(((self.rv - vz) / self.rv_err) ** 2)
         return chi2_rv
     

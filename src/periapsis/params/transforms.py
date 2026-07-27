@@ -50,12 +50,13 @@ from typing import Callable
 # dpmdec = proper motion offset in Dec
 # systemic_velocity = systemic velocity offset in radial velocity
 
+# TODO parallax and distance
 # TODO add log versions of some params
 # TODO add T-I C and H
 # TODO add equinoctal params
 # TODO add vector params
 # TODO add eclipsing binary/planet params
-# TODO add Delauny variables
+# TODO add Delaunay variables
 # TODO add quaternion params
 # TODO add flux of source 1/2 (and scale stuff in orbit by that - add photocenter option in addition to 1,2,relative)
 

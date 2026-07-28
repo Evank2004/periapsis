@@ -17,9 +17,13 @@ class GaiaData(SystemData):
         self.err = err
 
 
-    def chi2(self, orbit: Orbit):
+    def chi2(self, orbit: Orbit,jitter=None):
         model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac,system=self.system)
-        chi2 = np.sum(((self.x - model_x) / self.err) ** 2)
+        if "jitter" in orbit.derived_params:
+            model_err = np.sqrt(self.err**2 + orbit.derived_params["jitter"]**2)
+        else:
+            model_err = np.sqrt(self.err**2 + jitter**2) if jitter is not None else self.err
+        chi2 = np.sum(((self.x - model_x) / model_err) ** 2)
         return chi2
 
     def t_series(self):

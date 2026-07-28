@@ -1,5 +1,7 @@
 from periapsis.model import thieleinnes
 from periapsis.model import campbell
+from astropy.coordinates import get_body_barycentric, solar_system_ephemeris
+from astropy.time import Time
 import numpy as np
 
 def _build_model(results, params):
@@ -57,6 +59,7 @@ def _match_param_keys(prior_kwargs):
         'dpmdec':'dpmdec','dmuy':'dpmdec',
         'm2':'M2','M2':'M2',
         'm1':'M1','M1':'M1',
+        'jitter':'jitter'
     }
 
     normalized = {}
@@ -91,4 +94,6 @@ def _helper_for_periodogram(A,x,err):
    
 
     return mu, chi2
-    
+
+
+

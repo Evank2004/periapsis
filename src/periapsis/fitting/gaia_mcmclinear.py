@@ -5,17 +5,32 @@ from periapsis.initial.gaia_initial import GaiaInitialFit
 from periapsis.utils.helpers import _match_param_keys
 from periapsis.utils.solvers import gaia_single_motion
 from periapsis.utils.solvers import solve_kepler
+from periapsis.prior.fixed_prior import FixedPrior
+from periapsis.prior.log_uniform_prior import LogUniformPrior
 import numpy as np
 import emcee
 
 
 class MCMCGaia(Fitter):
-    def __init__(self,nwalkers,niter,m1=None,pool=None,**priors):
+    def __init__(self,nwalkers,niter,m1=None,pool=None,jitter=None,**priors):
         super().__init__(m1=m1,**priors)
         self.nwalkers = nwalkers
         self.niter = niter
         self.pool = pool
         self.sampled_params = ('P', 'e', 'Tp')
+        
+        if isinstance(jitter, FixedPrior):
+            self.jitter = float(jitter.value)
+        elif isinstance(jitter, (int, float)):
+            self.jitter = float(jitter)
+        else:
+            self.jitter = None
+            if jitter is not None:
+                self.prior_kwargs['jitter'] = jitter
+
+        if self.jitter is None:
+            self.sampled_params += ('jitter',)
+            self.prior_kwargs['jitter'] = LogUniformPrior(0.001, 0.5) #mas 
 
     def fit(self,data: GaiaData) -> FitResults:
         """Fit the Gaia data using MCMC"""
@@ -28,6 +43,8 @@ class MCMCGaia(Fitter):
 
         def matrix_method(params_dict,data):
             P,e,Tp = params_dict['P'],params_dict['e'],params_dict['Tp']
+            
+          
 
             nobs = len(data.t)
 
@@ -51,7 +68,13 @@ class MCMCGaia(Fitter):
                 Y*data.cpsi  #F
             ])
 
-            w = 1.0 / data.err
+            if 'jitter' in params_dict:
+                jitter = params_dict['jitter']
+                err = np.sqrt(data.err**2 + jitter**2)
+            else:
+                err = np.sqrt(data.err**2 + self.jitter**2) 
+
+            w = 1.0 / err
             x_w = data.x * w
             A_w = A * w[:, None]
 
@@ -66,7 +89,10 @@ class MCMCGaia(Fitter):
             mu_err = np.sqrt(np.diag(cov_mu))
 
             residuals = x_w - model_werr
-            chi2 = np.sum(residuals**2)
+            if "jitter" in params_dict:
+                chi2 = np.sum(residuals**2 + np.log(2 * np.pi * err**2))  # Include the log term for jitter (same as joker's)
+            else:
+                chi2 = np.sum(residuals**2)
 
             return mu, mu_err, chi2
    
@@ -97,8 +123,11 @@ class MCMCGaia(Fitter):
         P0 = initial_fit['P']
         e0 = initial_fit['e']
         Tp0 = initial_fit['Tp']
-
-        initial_set = [P0, e0, Tp0]
+        if "jitter" in self.sampled_params:
+            jitter0 = 0.005
+            initial_set = [P0, e0, Tp0, jitter0]
+        else:
+            initial_set = [P0, e0, Tp0]
 
         bounds = np.array(
             [[self.prior_kwargs[name].min, self.prior_kwargs[name].max] for name in param_order],
@@ -106,6 +135,8 @@ class MCMCGaia(Fitter):
         )
         lower = bounds[:, 0]
         upper = bounds[:, 1]
+       
+
         initial_params = np.clip(np.asarray(initial_set, dtype=float), lower, upper)
         
         initial = np.clip(initial_params + np.random.randn(self.nwalkers,ndim) * 1e-2, lower, upper)
@@ -138,14 +169,23 @@ class MCMCGaia(Fitter):
             
             if mu is None:
                 continue
+
+            if "jitter" in self.sampled_params:
+                P, e, Tp, jitter = sample
+                delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
+                posterior.append([P, e, Tp, jitter, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
+            else:
             
-            P, e, Tp = sample
-            delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
-            
-            posterior.append([P, e, Tp, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
+                P, e, Tp = sample
+                delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
+                posterior.append([P, e, Tp, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
+
             valid_logp.append(l_prob)
-       
-        post_labels = ['P','e','Tp','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
+
+        if "jitter" in self.sampled_params:
+            post_labels = ['P','e','Tp','jitter','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
+        else:
+            post_labels = ['P','e','Tp','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
 
         best_i = np.argmax(valid_logp)
         best_params = dict(zip(post_labels, posterior[best_i]))
@@ -168,7 +208,8 @@ class MCMCGaia(Fitter):
         results_dict['median_params'] = median_params
         results_dict['Single_motion_params'] = mu_single
         # results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
-        
+        if self.jitter is not None:
+            results_dict['jitter'] = self.jitter
         results_dict['priors'] = self.prior_kwargs
         results_dict['raw_sampler'] = None
         results_dict['backend'] = 'emcee'

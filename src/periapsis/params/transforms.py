@@ -1,5 +1,5 @@
 import numpy as np
-from periapsis.utils.solvers import solve_mass, solve_kepler
+from periapsis.utils.solvers import solve_mass, solve_kepler, solve_M2_from_mass_function
 
 from collections import defaultdict, deque
 from functools import lru_cache
@@ -49,9 +49,9 @@ from typing import Callable
 # dpmra = proper motion offset in RA
 # dpmdec = proper motion offset in Dec
 # systemic_velocity = systemic velocity offset in radial velocity
+# f1/f2 = mass function of the body1/body2
 
-# TODO parallax and distance and time retardation
-# TODO mass function (f1, f2) and transforms between mass function, M1sini, M2sini, P, K, and e
+# TODO time retardation
 # TODO add log versions of some params
 # TODO add T-I C and H
 # TODO add equinoctal params
@@ -65,12 +65,15 @@ _all_parameters = {
     'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'piomega', 'P', 'A', 'B', 'F', 'G', 'cosi', 'sini', 'Mtot', 'mu',
     'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'omega1', 'piomega1', 'A1', 'B1', 'F1', 'G1', 'M1',
     'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'omega2', 'piomega2', 'A2', 'B2', 'F2', 'G2', 'M2',
-    'Msini', 'M1sini', 'M2sini', 'n', 'K', 'q',
+    'Msini', 'M1sini', 'M2sini', 'n', 'K', 'q', 'f1', 'f2', 'minM1', 'minM2',
     'a1sini', 'a2sini',
     'Tepoch', 'Tp', 't0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
     'u01', 'u02', 'uM01', 'uM02', 'l01', 'l02', 'K1', 'K2',
-    'dx', 'dy', 'dpmra', 'dpmdec', 'systemic_velocity'
+    'dx', 'dy', 'dpmra', 'dpmdec', 'systemic_velocity',
+    'parallax', 'distance',
 }
+
+constG = 4*np.pi**2 # TODO: units
 
 def A_B_F_G_to_a_cosi_omega_Omega(A, B, F, G):
     popovic_k = (A*A + B*B + F*F + G*G) / 2.0
@@ -201,12 +204,10 @@ def a_p_to_e(a, p):
     return e
 
 def Mtot_to_mu(Mtot):
-    # TODO: units
-    return Mtot * 4*np.pi**2
+    return Mtot * constG
 
 def mu_to_Mtot(mu):
-    # TODO: units
-    return mu / (4*np.pi**2)
+    return mu / constG
 
 def mu_a_to_n(mu, a):
     n = np.sqrt(mu / np.abs(a)**3)
@@ -354,6 +355,68 @@ def Mbsini_ab_Ma_to_aasini(Mbsini, ab, Ma):
 def ab_Ma_aasini_to_Mbsini(ab, Ma, aasini):
     Mbsini = Ma * aasini / ab
     return Mbsini
+
+def Mb_Mtot_sini_to_fa(Mb, Mtot, sini):
+    fa = Mb**3 * sini**3 / Mtot**2
+    return fa
+
+def Mtot_sini_fa_to_Mb(Mtot, sini, fa):
+    Mb = np.cbrt(fa * Mtot**2) / sini
+    return Mb
+
+def sini_fa_Mb_to_Mtot(sini, fa, Mb):
+    Mtot = np.sqrt(Mb**3 * sini**3 / fa)
+    return Mtot
+
+def fa_Mb_Mtot_to_sini(fa, Mb, Mtot):
+    sini = np.cbrt(fa*Mtot**2) / Mb
+    return sini
+
+def fa_Mtot_to_Mbsini(fa, Mtot):
+    Mbsini = np.cbrt(fa * Mtot**2)
+    return Mbsini
+
+def Mtot_Mbsini_to_fa(Mtot, Mbsini):
+    fa = Mbsini**3 / Mtot**2
+    return fa
+
+def Mbsini_fa_to_Mtot(Mbsini, fa):
+    Mtot = np.sqrt(Mbsini**3 / fa)
+    return Mtot
+
+def P_Ka_e_to_fa(P, Ka, e):
+    fa = P * Ka**3 * (1-e)**(3/2) / (2*np.pi*constG)
+    return fa
+
+def Ka_e_fa_to_P(Ka, e, fa):
+    P = fa * (2*np.pi*constG) / (Ka**3 * (1-e)**(3/2))
+    return P
+
+def e_fa_P_to_Ka(e, fa, P):
+    Ka = np.cbrt(2*np.pi*constG*fa/P) / np.sqrt(1-e**2)
+    return Ka
+
+def fa_P_Ka_to_e(fa, P, Ka):
+    e = np.sqrt(1 - ((2*np.pi*constG*fa/P)**(2/3))/(Ka**2))
+    return e
+
+def Ma_fa_sini_to_Mb(Ma, fa, sini):
+    Mb = solve_M2_from_mass_function(Ma, fa, sini)
+    return Mb
+
+def Ma_fa_to_minMb(Ma, fa):
+    minMb = solve_M2_from_mass_function(Ma, fa, 1.0)
+    return minMb
+
+def parallax_to_distance(parallax):
+    # TODO: units
+    distance = 1.0 / parallax
+    return distance
+
+def distance_to_parallax(distance):
+    # TODO: units
+    parallax = 1.0 / distance
+    return parallax
 
 def add_ab(a, b):
     return a + b
@@ -534,6 +597,34 @@ _transform_graph = [
     (('M1sini', 'a1', 'M2'), ('a2sini',), Mbsini_ab_Ma_to_aasini),
     (('a2', 'M1', 'a1sini',), ('M2sini',), ab_Ma_aasini_to_Mbsini),
     (('a1', 'M2', 'a2sini',), ('M1sini',), ab_Ma_aasini_to_Mbsini),
+    (('M2', 'Mtot', 'sini',), ('f1',), Mb_Mtot_sini_to_fa),
+    (('M1', 'Mtot', 'sini',), ('f2',), Mb_Mtot_sini_to_fa),
+    (('Mtot', 'sini', 'f1',), ('M2',), Mtot_sini_fa_to_Mb),
+    (('Mtot', 'sini', 'f2',), ('M1',), Mtot_sini_fa_to_Mb),
+    (('sini', 'f1', 'M2',), ('Mtot',), sini_fa_Mb_to_Mtot),
+    (('sini', 'f2', 'M1',), ('Mtot',), sini_fa_Mb_to_Mtot),
+    (('f1', 'M2', 'Mtot',), ('sini',), fa_Mb_Mtot_to_sini),
+    (('f2', 'M1', 'Mtot',), ('sini',), fa_Mb_Mtot_to_sini),
+    (('f1', 'Mtot',), ('M2sini',), fa_Mtot_to_Mbsini),
+    (('f2', 'Mtot',), ('M1sini',), fa_Mtot_to_Mbsini),
+    (('Mtot', 'M2sini',), ('f1',), Mtot_Mbsini_to_fa),
+    (('Mtot', 'M1sini',), ('f2',), Mtot_Mbsini_to_fa),
+    (('M2sini', 'f1',), ('Mtot',), Mbsini_fa_to_Mtot),
+    (('M1sini', 'f2',), ('Mtot',), Mbsini_fa_to_Mtot),
+    (('P', 'K1', 'e',), ('f1',), P_Ka_e_to_fa),
+    (('P', 'K2', 'e',), ('f2',), P_Ka_e_to_fa),
+    (('K1', 'e', 'f1',), ('P',), Ka_e_fa_to_P),
+    (('K2', 'e', 'f2',), ('P',), Ka_e_fa_to_P),
+    (('e', 'f1', 'P',), ('K1',), e_fa_P_to_Ka),
+    (('e', 'f2', 'P',), ('K2',), e_fa_P_to_Ka),
+    (('f1', 'P', 'K1',), ('e',), fa_P_Ka_to_e),
+    (('f2', 'P', 'K2',), ('e',), fa_P_Ka_to_e),
+    (('M1', 'f1', 'sini',), ('M2',), Ma_fa_sini_to_Mb),
+    (('M2', 'f2', 'sini',), ('M1',), Ma_fa_sini_to_Mb),
+    (('M1', 'f1',), ('minM2',), Ma_fa_to_minMb),
+    (('M2', 'f2',), ('minM1',), Ma_fa_to_minMb),
+    (('parallax',), ('distance',), parallax_to_distance),
+    (('distance',), ('parallax',), distance_to_parallax),
 ]
 
 _TransformStep = tuple[tuple[str, ...], Callable, tuple[str, ...]]

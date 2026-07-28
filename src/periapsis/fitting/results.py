@@ -98,8 +98,10 @@ class FitResults:
         P_samps = self.samples.get(period_name)
         a1_samps = self.samples.get(a1_name)
         
-
-        m2_samps,f_M = solve_mass(np.asarray(a1_samps, dtype=float), np.asarray(P_samps, dtype=float), float(m1), plx=np.asarray(plx_samps, dtype=float) if plx_samps is not None else None)
+        if plx_samps is not None:
+            a1_samps = a1_samps / plx_samps  # Convert to AU if parallax is provided
+        f_M = a1_samps**3 / P_samps**2  # Mass function
+        m2_samps = solve_mass(np.asarray(a1_samps, dtype=float), np.asarray(P_samps, dtype=float), float(m1))
         m2_samps = np.where(np.isfinite(m2_samps) & (m2_samps > 0), m2_samps, np.nan)
         self.samples['M2'] = m2_samps
         self.samples['mass_function'] = f_M

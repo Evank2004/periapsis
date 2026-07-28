@@ -50,6 +50,14 @@ def red_chi2(results,data,savepath=None):
         chi2_med = data.chi2(med_model)
         orbit_dof = 2*len(data.t) - len(map_params)
     else:
+        if "jitter" not in map_params: 
+            jit = getattr(results, 'jitter', None)
+            if jit is None:
+                jit = results.samples.get('jitter', None)
+            if jit is not None:
+                map_params['jitter'] = jit
+                med_params['jitter'] = jit
+
         map_model = Orbit(**map_params)
         med_model = Orbit(**med_params)
         chi2_map = GaiaData.chi2(data,map_model)
@@ -102,6 +110,13 @@ def delta_chi2(results,data,savepath=None):
         p_value_med = chi2.sf(delta_chi2_med, delta_dof_med) #0.0027 is 3 sigma significance 
 
     else:
+        if "jitter" not in map_params: 
+            jit = getattr(results, 'jitter', None)
+            if jit is None:
+                jit = results.samples.get('jitter', None)
+            if jit is not None:
+                map_params['jitter'] = jit
+                med_params['jitter'] = jit    
         map_model = Orbit(**map_params)
         med_model = Orbit(**med_params)
         chi2_map = GaiaData.chi2(data,map_model)

@@ -3,6 +3,8 @@ from periapsis.data.gaia import GaiaData
 from periapsis.fitting.results import FitResults
 from periapsis.utils.solvers import solve_kepler
 from periapsis.utils.solvers import gaia_single_motion
+from periapsis.prior.fixed_prior import FixedPrior
+from periapsis.prior.log_uniform_prior import LogUniformPrior
 
 import numpy as np
 import ultranest
@@ -14,18 +16,29 @@ logger.addHandler(logging.NullHandler())
 logger.setLevel(logging.WARNING)
 
 class UltraNestGaia(Fitter):
-    def __init__(self,nlive,min_ess,m1=None, **priors):
+    def __init__(self,nlive,min_ess,m1=None,jitter=None, **priors):
         super().__init__(m1=m1,**priors)
         self.nlive = nlive
         self.min_ess = min_ess
+        self.sampled_params = ('P', 'e', 'Tp')
         
+        if isinstance(jitter, FixedPrior):
+            self.jitter = float(jitter.value)
+        elif isinstance(jitter, (int, float)):
+            self.jitter = float(jitter)
+        else:
+            self.jitter = None
+            if jitter is not None:
+                self.prior_kwargs['jitter'] = jitter
+        
+        if self.jitter is None:
+            self.sampled_params += ('jitter',)
+            self.prior_kwargs['jitter'] = LogUniformPrior(0.001, 0.5) #mas
         
 
     def fit(self, data: GaiaData) -> FitResults:
-        param_order = [name for name in ('P', 'e', 'Tp') if name in self.prior_kwargs]
-        if len(param_order) != 3:
-            missing = [name for name in ('P', 'e', 'Tp') if name not in self.prior_kwargs]
-            raise ValueError(f"UltranestGaia requires priors for P, e, and Tp. Missing: {missing}")
+        param_order = [name for name in self.sampled_params if name in self.prior_kwargs]
+        
         system = getattr(data, 'system', None)
 
         def matrix_method(params_dict, data):
@@ -53,7 +66,13 @@ class UltraNestGaia(Fitter):
                 Y*data.cpsi  #F
             ])
 
-            w = 1.0 / data.err
+            if 'jitter' in params_dict:
+                jitter = params_dict['jitter']
+                err = np.sqrt(data.err**2 + jitter**2)
+            else:
+                err = np.sqrt(data.err**2 + self.jitter**2) 
+
+            w = 1.0 / err
             x_w = data.x * w
             A_w = A * w[:, None]
 
@@ -68,7 +87,10 @@ class UltraNestGaia(Fitter):
             mu_err = np.sqrt(np.diag(cov_mu))
 
             residuals = x_w - model_werr
-            chi2 = np.sum(residuals**2)
+            if "jitter" in params_dict:
+                chi2 = np.sum(residuals**2 + np.log(2 * np.pi * err**2))  # Include the log term for jitter (same as joker's)
+            else:
+                chi2 = np.sum(residuals**2)
 
             return mu, mu_err, chi2
         
@@ -97,7 +119,7 @@ class UltraNestGaia(Fitter):
             return cube
         
         single_motion = gaia_single_motion(data.spsi, data.cpsi, data.plx_fac, data.t, data.x, data.err)
-
+        print("Running UltraNest with nlive =", self.nlive, "and min_ess =", self.min_ess)
         sampler = ultranest.ReactiveNestedSampler(param_order, objective, 
                 prior_transform)
         
@@ -123,18 +145,24 @@ class UltraNestGaia(Fitter):
             
             if mu is None:
                 continue
-            
-            P, e, Tp = sample
-            delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
-            
-            posterior.append([P, e, Tp, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
+
+            if "jitter" in self.sampled_params:
+                P, e, Tp, jitter = sample
+                delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
+                posterior.append([P, e, Tp, jitter, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
+            else:
+                P, e, Tp = sample
+                delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, B, G, A, F = mu
+                posterior.append([P, e, Tp, delta_alpha, delta_delta, parallax, mu_alpha, mu_delta, A, B, F, G])
             valid_logl.append(ll)
 
 
         logl = np.array(valid_logl)
         posterior = np.array(posterior)
-
-        post_labels = ['P','e','Tp','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
+        if "jitter" in self.sampled_params:
+            post_labels = ['P','e','Tp','jitter','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
+        else:
+            post_labels = ['P','e','Tp','dalpha','ddelta','parallax','mu_alpha','mu_delta',f'A{system}',f'B{system}',f'F{system}',f'G{system}']
 
         best_i = np.argmax(logl)
         best_params = dict(zip(post_labels, posterior[best_i]))
@@ -158,6 +186,8 @@ class UltraNestGaia(Fitter):
         results_dict['samples'] = posterior
         results_dict['n_samples_raw'] = int(len(ultranest_samples))
         results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
+        if self.jitter is not None:
+            results_dict['jitter'] = self.jitter
         results_dict['priors'] = self.prior_kwargs
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'ultranest'

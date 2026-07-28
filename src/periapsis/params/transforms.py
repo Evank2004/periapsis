@@ -50,7 +50,8 @@ from typing import Callable
 # dpmdec = proper motion offset in Dec
 # systemic_velocity = systemic velocity offset in radial velocity
 
-# TODO parallax and distance
+# TODO parallax and distance and time retardation
+# TODO mass function (f1, f2) and transforms between mass function, M1sini, M2sini, P, K, and e
 # TODO add log versions of some params
 # TODO add T-I C and H
 # TODO add equinoctal params

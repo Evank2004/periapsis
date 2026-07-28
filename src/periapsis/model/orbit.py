@@ -47,6 +47,18 @@ class Orbit():
         self.velocity_ratio = velocity_ratio
         self._check_params()
 
+    def __getitem__(self, key):
+        if key in self.params:
+            return self.params[key]
+        elif key in self.derived_params:
+            return self.derived_params[key]
+        elif key in self.covered_params:
+            transform = build_transform_functions(self.params, [key])
+            self.derived_params[key] = transform(**self.params)[key]
+            return self.derived_params[key]
+        else:
+            raise KeyError(f"Parameter '{key}' is not defined by the provided parameters.")
+
     def _check_params(self):
         if not self.params:
             raise ValueError("No orbital parameters provided.")

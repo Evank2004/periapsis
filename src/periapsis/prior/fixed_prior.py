@@ -4,15 +4,14 @@ import numpy as np
 class FixedPrior(Prior):
     def __init__(self, value: float):
         self.value = value
+        self.min = value
+        self.max = value
 
     def sample(self, random_state, size=1):
         return np.ones(size) * self.value
 
     def logpdf(self, x):
-        if x == self.value:
-            return 0.0
-        else:
-            return -float('inf')
+        raise NotImplementedError("FixedPrior does not have a logpdf. It is a fixed value.")
         
     def unp(self, u):
         return np.ones_like(u) * self.value

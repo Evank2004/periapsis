@@ -29,26 +29,34 @@ class Data(ABC):
         chi2 : float
             The chi-squared value of the given orbit parameters compared to the data.
         """
-
-        
         pass
+
+
     @abstractmethod
     def _astrometry(self,orbit:Orbit):
         """
-        Returns x_obs,y_obs,rv_obs, t_obs"""
-        
-        
+        Returns x_obs,y_obs"""
         pass
+
+
     @abstractmethod
     def _radial_velocity(self,orbit:Orbit):
         """
-        Returns rv_obs, t_obs"""
-        
+        Returns rv_obs"""
         pass
+
+
     @abstractmethod
     def t_series(self):
         """
         Returns the time series of the data.
+        """
+        pass
+
+    @abstractmethod
+    def dof(self):
+        """
+        Returns the degrees of freedom of the data.
         """
         pass
 

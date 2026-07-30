@@ -2,15 +2,14 @@ from abc import ABC, abstractmethod
 import numpy as np
 from periapsis.data.data import Data
 from periapsis.fitting.results import FitResults
-from periapsis.utils.helpers import _match_param_keys
 
 class Fitter(ABC):
-    def __init__(self, m1=None, **prior_kwargs):
-        """
-        A Fitter defines the configuration for fitting an orbit to data, including the priors on the orbital parameters.
-        """
-        self.m1 = m1
-        self.prior_kwargs = _match_param_keys(prior_kwargs)
+    """
+    A Fitter defines the configuration for fitting an orbit to data, including the priors on the orbital parameters.
+    """
+
+    def __init__(self, **priors):
+        self.priors = priors
 
     @abstractmethod
     def fit(self, data: Data) -> FitResults:

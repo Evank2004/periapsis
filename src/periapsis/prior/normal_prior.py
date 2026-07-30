@@ -4,6 +4,8 @@ from scipy.special import ndtri
 
 class NormalPrior(Prior):
     def __init__(self, mean: float, std: float):
+        if std <= 0:
+            raise ValueError("Standard deviation must be positive for a NormalPrior.")
         self.mean = mean
         self.std = std
 

@@ -17,15 +17,25 @@ class FitResults:
         self.sampler = self.backend
         self.m1 = samples.pop('m1', None)
         self.mass_function = samples.pop('mass_function', None)
-        self.priors = samples.pop('priors', None)
+        self.priors = samples.pop('priors', dict())
         self.Single_motion_params = samples.pop('Single_motion_params', None)
         self.Ess = samples.pop('Ess', None)
         self.tau = samples.pop('tau', None)
         self.mean_acceptance_fraction = samples.pop('mean_acceptance_fraction', None)
+        self.lnprob = samples.pop('lnprob', None)
 
         self.samples = samples
         if self.param_names is not None:
             self.samples.setdefault('param_names', self.param_names)
+
+        if self.priors is None:
+            self.priors = dict()
+
+        self.known_params = {
+            *self.param_names,
+            *{name for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)}
+        }
+        self.covered_params = covered_parameters(self.known_params)
 
 
     def __getitem__(self, key):
@@ -44,69 +54,80 @@ class FitResults:
         if self.priors is not None:
             known_params.extend([name for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)])
             known_param_values.update({name: self.priors[name].value for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)})
+
         if known_params:
             transform = build_transform_function(known_params, key)
             return transform(**known_param_values)
+
+
+    def __contains__(self, key):
+        if self.known_params is not None and key in self.known_params:
+            return True
+
+        if self.covered_params is not None and key in self.covered_params:
+            return True
+
+        return False
         
     def sample_priors(self, random_state, size=1) -> 'SampledPriors':
-        if self.priors is None:
+        if len(self.priors) == 0:
             raise ValueError("No priors are available to sample from.")
         return SampledPriors(self.priors, self.param_names, size, random_state)    
         
 
-    def add_mass_samples(self, m1=None):
-        """Add secondary-mass samples derived from the orbital samples."""
-        if m1 is None:
-            m1 = self.m1
-        if m1 is None:
-            return
+    # def add_mass_samples(self, m1=None):
+    #     """Add secondary-mass samples derived from the orbital samples."""
+    #     if m1 is None:
+    #         m1 = self.m1
+    #     if m1 is None:
+    #         return
 
-        param_names = self.param_names or self.samples.get('param_names', [])
-        if not param_names:
-            return
+    #     param_names = self.param_names or self.samples.get('param_names', [])
+    #     if not param_names:
+    #         return
 
-        period_name = next((name for name in param_names if name in {'P', 'p', 'period', 'Period'}), None)
-        a1_name = next((name for name in param_names if name in {'a1', 'a', 'semimajoraxis', 'semi_major_axis'}), None)
+    #     period_name = next((name for name in param_names if name in {'P', 'p', 'period', 'Period'}), None)
+    #     a1_name = next((name for name in param_names if name in {'a1', 'a', 'semimajoraxis', 'semi_major_axis'}), None)
 
-        if period_name is None:
-            return
+    #     if period_name is None:
+    #         return
 
-        if a1_name is None:
-            # Attempt to compute a1 from Thiele-Innes parameters if available
-            A_name = next((name for name in param_names if name in {'A','A1'}), None)
-            B_name = next((name for name in param_names if name in {'B','B1'}), None)
-            F_name = next((name for name in param_names if name in {'F','F1'}), None)
-            G_name = next((name for name in param_names if name in {'G','G1'}), None)
+    #     if a1_name is None:
+    #         # Attempt to compute a1 from Thiele-Innes parameters if available
+    #         A_name = next((name for name in param_names if name in {'A','A1'}), None)
+    #         B_name = next((name for name in param_names if name in {'B','B1'}), None)
+    #         F_name = next((name for name in param_names if name in {'F','F1'}), None)
+    #         G_name = next((name for name in param_names if name in {'G','G1'}), None)
 
-            if A_name and B_name and F_name and G_name:
-                A_samps = self.samples.get(A_name)
-                B_samps = self.samples.get(B_name)
-                F_samps = self.samples.get(F_name)
-                G_samps = self.samples.get(G_name)
+    #         if A_name and B_name and F_name and G_name:
+    #             A_samps = self.samples.get(A_name)
+    #             B_samps = self.samples.get(B_name)
+    #             F_samps = self.samples.get(F_name)
+    #             G_samps = self.samples.get(G_name)
 
-                a1_samps, _, _, _ = transform_theile(A_samps, B_samps, F_samps, G_samps)
-                self.samples['a1'] = a1_samps
-                a1_name = 'a1'
-            else:
+    #             a1_samps, _, _, _ = transform_theile(A_samps, B_samps, F_samps, G_samps)
+    #             self.samples['a1'] = a1_samps
+    #             a1_name = 'a1'
+    #         else:
                 
-                return
+    #             return
 
-        plx_samps = (
-            self.samples.get('parallax', None) if isinstance(self.samples, dict) else None
-            )
+    #     plx_samps = (
+    #         self.samples.get('parallax', None) if isinstance(self.samples, dict) else None
+    #         )
 
-        P_samps = self.samples.get(period_name)
-        a1_samps = self.samples.get(a1_name)
+    #     P_samps = self.samples.get(period_name)
+    #     a1_samps = self.samples.get(a1_name)
         
-        if plx_samps is not None:
-            a1_samps = a1_samps / plx_samps  # Convert to AU if parallax is provided
-        f_M = a1_samps**3 / P_samps**2  # Mass function
-        m2_samps = solve_mass(np.asarray(a1_samps, dtype=float), np.asarray(P_samps, dtype=float), float(m1))
-        m2_samps = np.where(np.isfinite(m2_samps) & (m2_samps > 0), m2_samps, np.nan)
-        self.samples['M2'] = m2_samps
-        self.samples['mass_function'] = f_M
-        setattr(self,'mass_function',f_M)
-        setattr(self,'M2',m2_samps)
+    #     if plx_samps is not None:
+    #         a1_samps = a1_samps / plx_samps  # Convert to AU if parallax is provided
+    #     f_M = a1_samps**3 / P_samps**2  # Mass function
+    #     m2_samps = solve_mass(np.asarray(a1_samps, dtype=float), np.asarray(P_samps, dtype=float), float(m1))
+    #     m2_samps = np.where(np.isfinite(m2_samps) & (m2_samps > 0), m2_samps, np.nan)
+    #     self.samples['M2'] = m2_samps
+    #     self.samples['mass_function'] = f_M
+    #     setattr(self,'mass_function',f_M)
+    #     setattr(self,'M2',m2_samps)
 
 
 class SampledPriors:
@@ -146,8 +167,11 @@ class SampledPriors:
             # Transform prior distributions to sampled parameters
             poss = []
             for name in param_order:
-                transform = build_transform_function(values.keys(), name)
-                poss.append(transform(**values))
+                try:
+                    transform = build_transform_function(values.keys(), name)
+                    poss.append(transform(**values))
+                except KeyError:
+                    poss.append(np.full(np.sum(bad), np.nan))
             pos[bad] = np.array(poss).T
 
             # Check bounds

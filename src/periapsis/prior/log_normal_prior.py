@@ -5,6 +5,10 @@ from scipy.special import ndtri
 
 class LogNormalPrior(Prior):
     def __init__(self, mean: float, std: float):
+        if std <= 0:
+            raise ValueError("Standard deviation must be positive for a LogNormalPrior.")
+        if mean <= 0:
+            raise ValueError("Mean must be positive for a LogNormalPrior.")
         self.mean = mean
         self.std = std
 

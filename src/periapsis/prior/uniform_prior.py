@@ -3,6 +3,8 @@ import numpy as np
 
 class UniformPrior(Prior):
     def __init__(self, lower_bound: float, upper_bound: float):
+        if lower_bound >= upper_bound:
+            raise ValueError("Lower bound must be less than upper bound for a UniformPrior.")
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 

@@ -69,7 +69,7 @@ _all_parameters = {
     'a1sini', 'a2sini',
     'Tepoch', 'Tp', 't0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
     'u01', 'u02', 'uM01', 'uM02', 'l01', 'l02', 'K1', 'K2',
-    'dx', 'dy', 'dpmra', 'dpmdec', 'systemic_velocity',
+    'dx', 'dy', 'dpmra', 'dpmdec', 'systemic_velocity', 'dalpha', 'ddelta', 'mu_alpha', 'mu_delta',
     'parallax', 'distance',
 }
 
@@ -385,11 +385,11 @@ def Mbsini_fa_to_Mtot(Mbsini, fa):
     return Mtot
 
 def P_Ka_e_to_fa(P, Ka, e):
-    fa = P * Ka**3 * (1-e)**(3/2) / (2*np.pi*constG)
+    fa = P * Ka**3 * (1-e**2)**(3/2) / (2*np.pi*constG)
     return fa
 
 def Ka_e_fa_to_P(Ka, e, fa):
-    P = fa * (2*np.pi*constG) / (Ka**3 * (1-e)**(3/2))
+    P = fa * (2*np.pi*constG) / (Ka**3 * (1-e**2)**(3/2))
     return P
 
 def e_fa_P_to_Ka(e, fa, P):
@@ -417,6 +417,10 @@ def distance_to_parallax(distance):
     # TODO: units
     parallax = 1.0 / distance
     return parallax
+
+def sini_cosi_to_i(sini, cosi):
+    i = np.arctan2(sini, cosi)
+    return i
 
 def add_ab(a, b):
     return a + b
@@ -625,6 +629,7 @@ _transform_graph = [
     (('M2', 'f2',), ('minM1',), Ma_fa_to_minMb),
     (('parallax',), ('distance',), parallax_to_distance),
     (('distance',), ('parallax',), distance_to_parallax),
+    (('sini', 'cosi',), ('i',), sini_cosi_to_i),
 ]
 
 _TransformStep = tuple[tuple[str, ...], Callable, tuple[str, ...]]

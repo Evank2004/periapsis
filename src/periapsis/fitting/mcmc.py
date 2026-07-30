@@ -1,19 +1,23 @@
+import warnings
+
 from .fitter import Fitter
 from .results import FitResults
-from periapsis.data import Data, data
+from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData
 from periapsis.prior import Prior, FixedPrior, Bounds
-from periapsis.initial import InitialFit
+from periapsis.initial import InitialGuess, AstrometryInitialGuess, RVInitialGuess, JointInitialGuess
 from periapsis.model import Orbit
 from periapsis.params import covered_parameters, build_transform_functions, overconstrained_parameters
 import numpy as np
 import emcee
-from typing import cast, Iterable
+from typing import Type, cast, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 
 class MCMCFitter(Fitter):
     def __init__(self, nwalkers: int, niter: int, sample_params: Iterable, pool=None, **priors):
-        self.prior_kwargs = priors
+        super().__init__(**priors)
+        if nwalkers <= 0 or niter <= 0:
+            raise ValueError("nwalkers and niter must be positive integers.")
         self.nwalkers = nwalkers
         self.niter = niter
         self.pool = pool
@@ -27,7 +31,7 @@ class MCMCFitter(Fitter):
             name: index for index, name in enumerate(self.param_order)
         }
         self.prior_params = set(priors.keys())
-        self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.prior_kwargs[p], Bounds)}
+        self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], Bounds)}
         self.sample_covered_params = covered_parameters(self.sample_params)
         self.prior_covered_params = covered_parameters(self.non_bound_prior_params)
         self.posterior_covered_params = covered_parameters(self.sample_params.union(self.non_bound_prior_params))
@@ -39,9 +43,13 @@ class MCMCFitter(Fitter):
 
         if self.overconstrained_priors:
             raise ValueError(f"Some priors are contradictory and must be removed or replaced with a Bounds: {sorted(self.overconstrained_priors)}.")
+
+        if any(prior_param not in self.sample_covered_params for prior_param in self.prior_params):
+            unreachable_priors = [prior_param for prior_param in self.prior_params if prior_param not in self.sample_covered_params]
+            warnings.warn(f"Some priors are not reachable from the sampled parameters and will be ignored: {sorted(unreachable_priors)}.")
         
         fixed_names = {
-            name for name, prior in self.prior_kwargs.items() if isinstance(prior, FixedPrior)
+            name for name, prior in self.priors.items() if isinstance(prior, FixedPrior)
         }
         sampled_and_fixed = self.sample_params.intersection(fixed_names)
         if sampled_and_fixed:
@@ -53,14 +61,14 @@ class MCMCFitter(Fitter):
         """
         non_bound_names = tuple(
             name 
-            for name in self.prior_kwargs 
-            if not isinstance(self.prior_kwargs[name], Bounds)
+            for name in self.priors 
+            if not isinstance(self.priors[name], Bounds)
         )
         sample_transform = build_transform_functions(non_bound_names, tuple(param_order))
         param_indexes = {name: i for i, name in enumerate(param_order)}
         derived_bound_names = tuple(
             name
-            for name, prior in self.prior_kwargs.items()
+            for name, prior in self.priors.items()
             if isinstance(prior, Bounds)
             and name not in param_indexes
             and name in self.prior_covered_params
@@ -74,7 +82,7 @@ class MCMCFitter(Fitter):
         while np.any(bad):
             # Sample initial prior distributions
             values = {}
-            for name, prior in self.prior_kwargs.items():
+            for name, prior in self.priors.items():
                 if not isinstance(prior, Bounds):
                     values[name] = prior.sample(rng, size=np.sum(bad))
             
@@ -90,7 +98,7 @@ class MCMCFitter(Fitter):
             derived_bound_values = bound_transform(**known_param_values)
             
             new_bad = np.zeros(size, dtype=bool)
-            for name, prior in self.prior_kwargs.items():
+            for name, prior in self.priors.items():
                 if isinstance(prior, Bounds):
                     if name in param_indexes:
                         if prior.lower is not None:
@@ -114,6 +122,8 @@ class MCMCFitter(Fitter):
         lp = 0.0
 
         for index, prior in context.direct_prior_items:
+            if isinstance(prior, FixedPrior):
+                continue  # Skip fixed priors
             contribution = prior.logpdf(params[index])
             if not np.isfinite(contribution):
                 return -np.inf
@@ -127,6 +137,8 @@ class MCMCFitter(Fitter):
             transform = _build_prior_transform(context.known_names, target_names)
             transformed = transform(**values)
             for name, prior in context.derived_prior_items:
+                if isinstance(prior, FixedPrior):
+                    continue  # Skip fixed priors
                 contribution = prior.logpdf(transformed[name])
                 if not np.isfinite(contribution):
                     return -np.inf
@@ -148,7 +160,7 @@ class MCMCFitter(Fitter):
         }
         fixed_items = tuple(
             (name, prior.value)
-            for name, prior in self.prior_kwargs.items()
+            for name, prior in self.priors.items()
             if isinstance(prior, FixedPrior)
         )
         known_names = tuple(
@@ -158,13 +170,15 @@ class MCMCFitter(Fitter):
 
         direct_prior_items = []
         derived_prior_items = []
-        for name, prior in self.prior_kwargs.items():
+        for name, prior in self.priors.items():
             if isinstance(prior, FixedPrior):
                 continue
             if name in param_indexes:
                 direct_prior_items.append((param_indexes[name], prior))
             elif name in reachable:
                 derived_prior_items.append((name, prior))
+            else:
+                warnings.warn(f"Prior for parameter {name} is not reachable from sampled parameters or fixed parameters. It will be ignored in the posterior evaluation.")
         # Bounds are the cheapest rejection checks, so retain stable prior order
         # within each group while evaluating Bounds first.
         direct_prior_items.sort(
@@ -182,34 +196,38 @@ class MCMCFitter(Fitter):
         
 
 
-    def fit(self, data: Data, rng: np.random.RandomState) -> FitResults:
+    def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
+        if not isinstance(data, AstrometryData) and not isinstance(data, RadialVelocityData) and not isinstance(data, JointData):
+            raise ValueError("Data must be an instance of AstrometryData or RadialVelocityData (or a combination using JointData) for MCMC.")
 
-        pm_fit = self._proper_motion_fit(data)
+        if isinstance(data, AstrometryData):
+            pm_fit = self._proper_motion_fit(data)
+        else:
+            pm_fit = None
 
-        # param_order = list(self.sample_params)
         param_order = self.param_order
         context = self._posterior_context(data)
-        
-        # initial_dict = InitialFit(data,method='Campbell', **self.prior_kwargs).get_intial()
-        # initial_guess = np.array([initial_dict[name] for name in param_order])
-        # bounds = np.array(
-            # [[self.prior_kwargs[name].min, self.prior_kwargs[name].max] for name in param_order],
-            # dtype=float,
-        # )
-        # lower = bounds[:, 0]
-        # upper = bounds[:, 1]
-        # initial_guess = np.clip(initial_guess, lower, upper)
 
         ndim = len(self.sample_params)
         # pos = np.clip(initial_guess + 1e-4 * np.random.randn(self.nwalkers, ndim), lower, upper)
         
-        pos = self._sample_priors(param_order, self.nwalkers, rng)
+        if initial is None:
+            if isinstance(data, AstrometryData):
+                initial = AstrometryInitialGuess
+            elif isinstance(data, RadialVelocityData):
+                initial = RVInitialGuess
+            elif isinstance(data, JointData):
+                initial = JointInitialGuess
+            else:
+                raise ValueError("No initial guess class provided and data type is not recognized for MCMC initial guess generation.")
+        initial_instance = initial(data, rng, **self.priors)
+        pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
+
         
         sampler = emcee.EnsembleSampler(
             self.nwalkers,
             ndim,
             self._log_posterior,
-            # args=(data, param_order, self.prior_kwargs),
             args=(context,),
             pool=self.pool,
         )
@@ -220,8 +238,18 @@ class MCMCFitter(Fitter):
         Ess = (self.niter*self.nwalkers)/tau
         mean_acceptance_fraction = np.mean(sampler.acceptance_fraction)
 
-        burn = int(np.nanmax(tau) * 2)
-        thin = max(1, int(np.nanmin(tau) * 2))
+        nanmaxtau = np.nanmax(tau)
+        nanmintau = np.nanmin(tau)
+        if not np.isnan(nanmaxtau):
+            burn = int(np.nanmax(tau) * 2)
+        else:
+            warnings.warn("Autocorrelation time could not be estimated. Setting burn-in to 0.")
+            burn = 0
+        if not np.isnan(nanmintau):
+            thin = max(1, int(np.nanmin(tau) * 2))
+        else:
+            warnings.warn("Autocorrelation time could not be estimated. Setting thinning to 1.")
+            thin = 1
 
         samples = cast(np.ndarray, sampler.get_chain(discard=burn, thin=thin, flat=True))
         lnprobs = cast(np.ndarray, sampler.get_log_prob(discard=burn, thin=thin, flat=True))
@@ -247,10 +275,9 @@ class MCMCFitter(Fitter):
         results_dict['median_params'] = median_params
         results_dict['PM_fit'] = pm_fit
         results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
-        results_dict['raw_sampler'] = None
+        results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'emcee'
-        results_dict['priors'] = self.prior_kwargs
-        # results_dict['fit_method'] = 'Campbell'
+        results_dict['priors'] = self.priors
         fit_results = FitResults(**results_dict)
         return fit_results
     

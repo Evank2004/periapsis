@@ -1,15 +1,15 @@
 import numpy as np
-from periapsis.utils.helpers import _match_param_keys
 from periapsis.utils.helpers import _helper_for_periodogram
 from periapsis.data.gaia import GaiaData
+from periapsis.params.transforms import build_transform_functions
+
+from .initial import InitialGuess
 
 
-class GaiaInitialFit():
+class GaiaInitialGuess(InitialGuess):
     """Class for obtaining initial guess for Gaia data"""
-    def __init__(self, data, **priors):
-        self.data = data
-        self.priors = _match_param_keys(priors)
-        self.rng = np.random.default_rng()
+    def __init__(self, data, rng: np.random.RandomState, **priors):
+        super().__init__(data, rng, **priors)
 
     def Delisle_periodogram(self,num_freq=10000):
         """Compute the Delisle periodogram to obtain an initial guess on Period"""
@@ -63,7 +63,7 @@ class GaiaInitialFit():
         return P_guess, max_pwr
     
 
-    def initial_guess(self):
+    def get_initial_guess(self, param_order, nwalkers):
         "Returns Period guess from Delisle periodogram and random samples of other parameters"
         P_guess, _ = self.Delisle_periodogram()
         initial = []
@@ -74,4 +74,26 @@ class GaiaInitialFit():
                 prior = self.priors[i]
                 initial.append(self.rng.uniform(prior.min,prior.max))
 
-        return dict(zip(self.priors.keys(),initial))
+        initial_fit_priors = dict(zip(self.priors.keys(),initial))
+        transform = build_transform_functions(initial_fit_priors.keys(), ('P', 'e', 'Tp',))
+        initial_fit = transform(**initial_fit_priors)
+    
+
+        P0 = initial_fit['P']
+        e0 = initial_fit['e']
+        Tp0 = initial_fit['Tp']
+        initial_set = []
+        for name in param_order:
+            if name == "jitter":
+                initial_set.append(0.005)
+            elif name not in initial_fit:
+                raise ValueError(f"Missing initial guess for parameter: {name}")
+            else:
+                initial_set.append(initial_fit[name])       
+        
+        # initial_params = np.clip(np.asarray(initial_set, dtype=float), lower, upper)
+        initial_params = np.asarray(initial_set, dtype=float)
+                
+        # initial = np.clip(initial_params + np.random.randn(self.nwalkers,len(param_order)) * 1e-2, lower, upper)
+        initial = initial_params + self.rng.normal(size=(nwalkers,len(param_order))) * 1e-2 * initial_params
+        return initial

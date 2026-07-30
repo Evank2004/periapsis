@@ -13,6 +13,17 @@ from typing import Type, cast, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
 
+
+@dataclass(frozen=True)
+class _PosteriorContext:
+    data: Data
+    param_order: tuple[str, ...]
+    fixed_items: tuple[tuple[str, object], ...]
+    direct_prior_items: tuple[tuple[int, Prior], ...]
+    derived_prior_items: tuple[tuple[str, Prior], ...]
+    known_names: tuple[str, ...]
+
+
 class MCMCFitter(Fitter):
     def __init__(self, nwalkers: int, niter: int, sample_params: Iterable, pool=None, **priors):
         super().__init__(**priors)
@@ -280,16 +291,6 @@ class MCMCFitter(Fitter):
         results_dict['priors'] = self.priors
         fit_results = FitResults(**results_dict)
         return fit_results
-    
-
-@dataclass(frozen=True)
-class _PosteriorContext:
-    data: Data
-    param_order: tuple[str, ...]
-    fixed_items: tuple[tuple[str, object], ...]
-    direct_prior_items: tuple[tuple[int, Prior], ...]
-    derived_prior_items: tuple[tuple[str, Prior], ...]
-    known_names: tuple[str, ...]
 
 
 @lru_cache(maxsize=128)

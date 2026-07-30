@@ -3,16 +3,9 @@ import numpy as np
 import emcee
 import corner
 from periapsis.fitting.results import FitResults, SampledPriors
-from periapsis.model import thieleinnes
-from periapsis.model import campbell
 from periapsis.model.orbit import Orbit
-from periapsis.utils.solvers import solve_kepler
 import matplotlib.gridspec as gridspec
 from periapsis.prior import FixedPrior
-from periapsis.utils.solvers import solve_mass
-from periapsis.utils.solvers import campbell_to_thiele
-from periapsis.utils.solvers import transform_theile
-from periapsis.utils.helpers import _build_model
 from periapsis.data.gaia import GaiaData
 from scipy.stats import gaussian_kde
 
@@ -704,7 +697,7 @@ def all_plots(results, data, scale=None, savepath=None):
         auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
         corner = corner_plot(results,savepath=savepath)
         ess_dist = ess_distribution_plot(results,savepath=savepath)
-        # posterior_prior = posterior_over_prior(results, savepath=savepath)
+        posterior_prior = posterior_over_prior(results, savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
         sky_vis=sky_motion_plot(results,data,savepath=savepath)
         multi_orb = multi_orbit_plot(results,data,savepath=savepath)
@@ -714,7 +707,7 @@ def all_plots(results, data, scale=None, savepath=None):
         return auto_corr, corner, ess_dist, orbit_vis, multi_orb, mass_dist
 
     if results.backend=='ultranest':
-        # posterior_prior = posterior_over_prior(results, savepath=savepath)
+        posterior_prior = posterior_over_prior(results, savepath=savepath)
         corner = corner_plot(results,savepath=savepath)
         orbit_vis=orbit_plot(results,data,savepath=savepath)
         sky_vis=sky_motion_plot(results,data,savepath=savepath)

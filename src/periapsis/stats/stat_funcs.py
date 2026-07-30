@@ -1,11 +1,11 @@
 import json
 
 import numpy as np
-from periapsis.utils.helpers import _build_model
 from periapsis.data.data import Data
 from periapsis.data.common import AstrometryData, RadialVelocityData
 from periapsis.data.gaia import GaiaData
 from periapsis.model.orbit import Orbit
+from periapsis.prior import FixedPrior
 from scipy.stats import chi2
 
 
@@ -34,21 +34,23 @@ def red_chi2(results,data,savepath=None):
     map_params = getattr(results, 'MAP_params', None)
     if map_params is None:
         map_params = results.samples.get('MAP_params', None)
+    map_params = dict(map_params) if map_params is not None else {}
     
     med_params = getattr(results, 'median_params', None)
     if med_params is None:
         med_params = results.samples.get('median_params', None)
+    med_params = dict(med_params) if med_params is not None else {}
 
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for reduced Chi2 calculation.")
 
     if not isinstance(data,(GaiaData)):
-        map_model = _build_model(results, map_params)
-        med_model = _build_model(results, med_params)
+        map_model = Orbit(**map_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+        med_model = Orbit(**med_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
 
         chi2_map = data.chi2(map_model)
         chi2_med = data.chi2(med_model)
-        orbit_dof = 2*len(data.t) - len(map_params)
+        orbit_dof = data.dof - len(map_params)
     else:
         if "jitter" not in map_params: 
             jit = getattr(results, 'jitter', None)
@@ -62,9 +64,16 @@ def red_chi2(results,data,savepath=None):
         med_model = Orbit(**med_params)
         chi2_map = GaiaData.chi2(data,map_model)
         chi2_med = GaiaData.chi2(data,med_model)
-        orbit_dof = len(data.t) - len(map_params) # for Gaia data, only one dimension is used for chi2 calculation
+        orbit_dof = data.dof - len(map_params) # for Gaia data, only one dimension is used for chi2 calculation
 
     
+    map_model = Orbit(**map_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+    med_model = Orbit(**med_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+
+    chi2_map = data.chi2(map_model)
+    chi2_med = data.chi2(med_model)
+
+    orbit_dof = data.dof - len(map_params)
 
       # degrees of freedom for the fit
     red_chi2_map = chi2_map / orbit_dof
@@ -85,10 +94,16 @@ def delta_chi2(results,data,savepath=None):
     map_params = getattr(results, 'MAP_params', None)
     if map_params is None:
         map_params = results.samples.get('MAP_params', None)
+    map_params = dict(map_params) if map_params is not None else {}
     
     med_params = getattr(results, 'median_params', None)
     if med_params is None:
         med_params = results.samples.get('median_params', None)
+    med_params = dict(med_params) if med_params is not None else {}
+
+    
+    map_model = Orbit(**map_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+    med_model = Orbit(**med_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
 
     if not isinstance(data,(GaiaData)):
         map_model = _build_model(results, map_params)

@@ -9,12 +9,29 @@ import numpy as np
 class GaiaData(SystemData):
     def __init__(self, spsi,cpsi,t,plx_fac,x,err,system=None):
         super().__init__(system)
-        self.spsi = spsi
-        self.cpsi = cpsi
-        self.t = t
-        self.plx_fac = plx_fac
-        self.x = x
-        self.err = err
+        self.spsi = np.atleast_1d(spsi)
+        self.cpsi = np.atleast_1d(cpsi)
+        self.t = np.atleast_1d(t)
+        self.plx_fac = np.atleast_1d(plx_fac)
+        self.x = np.atleast_1d(x)
+        self.err = np.atleast_1d(err)
+        if self.x.shape != self.t.shape:
+            raise ValueError("x must have the same shape as t")
+        if self.spsi.shape != self.t.shape:
+            self.spsi = np.broadcast_to(self.spsi, self.t.shape)
+        if self.cpsi.shape != self.t.shape:
+            self.cpsi = np.broadcast_to(self.cpsi, self.t.shape)
+        if self.plx_fac.shape != self.t.shape:
+            self.plx_fac = np.broadcast_to(self.plx_fac, self.t.shape)
+        if self.err.shape != self.x.shape:
+            self.err = np.broadcast_to(self.err, self.x.shape)
+
+    @property
+    def dof(self):
+        """
+        Returns the degrees of freedom of the data.
+        """
+        return len(self.t)
 
 
     def chi2(self, orbit: Orbit,jitter=None):

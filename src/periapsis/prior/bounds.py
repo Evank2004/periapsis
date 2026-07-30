@@ -5,7 +5,10 @@ class Bounds(Prior):
     def __init__(self, lower: float = None, upper: float = None):
         self.lower = lower
         self.upper = upper
-        assert lower is not None or upper is not None, "At least one of `lower` or `upper` must be specified for a Bounds."
+        if lower is None and upper is None:
+            raise ValueError("At least one of `lower` or `upper` must be specified for a Bounds.")
+        if lower is not None and upper is not None and lower > upper:
+            raise ValueError("Lower bound cannot be greater than upper bound.")
 
     def sample(self, random_state, size=1):
         raise NotImplementedError("Bounds does not support sampling.")

@@ -1,32 +1,50 @@
+import warnings
+
+from periapsis.data import Data, AstrometryData, RadialVelocityData, GaiaData, JointData
+
 from .fitter import Fitter
-from periapsis.data.data import Data
 from periapsis.fitting.results import FitResults
 from periapsis.utils.solvers import solve_kepler
-from periapsis.initial.initial import InitialFit
+from periapsis.initial import InitialGuess, AstrometryInitialGuess, RVInitialGuess, GaiaInitialGuess, JointInitialGuess
 from periapsis.prior import FixedPrior, Bounds
 from periapsis.utils.solvers import transform_theile
-from periapsis.utils.helpers import _match_param_keys
 from periapsis.utils.solvers import solve_mass
+from periapsis.params.transforms import covered_parameters, build_transform_functions
 import numpy as np
 import matplotlib.pyplot as plt
 import emcee
+from typing import Type
 
 class MCMCLinearFitter(Fitter):
-    def __init__(self,nwalkers,niter, m1=None,m2_max=None, **priors):
-        super().__init__(m1=m1, **priors)
+    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'), **priors):
+        super().__init__(**priors)
         self.nwalkers = nwalkers
         self.niter = niter
-        self.sampled_params = ('P', 'e', 'Tp')
-        self.m2_max = m2_max
+        self.covered_params = covered_parameters(sampled_params)
+        if any(param not in self.covered_params for param in ('P', 'e', 'Tp')):
+            raise ValueError("MCMCGaia requires sampled_params to define 'P', 'e', and 'Tp'.")
+        # TODO - Raise a warning if user is sampling more params than necessary
+        self.sampled_params = frozenset(sampled_params)
+        self.param_order = tuple(sampled_params)
+        if len(self.sampled_params) != len(self.param_order):
+            raise ValueError("Duplicate parameters found in sampled_params.")
+        self.fixed_prior_params = {p for p in self.priors.keys() if isinstance(self.priors[p], FixedPrior)}
 
-    def fit(self, data: Data) -> FitResults:
-        param_order = [name for name in self.sampled_params if name in self.prior_kwargs]
+        self.prior_covered_params = covered_parameters(self.priors.keys())
+        if any(param not in self.prior_covered_params for param in sampled_params):
+            missing = [param for param in sampled_params if param not in self.prior_covered_params]
+            raise ValueError(f"Missing priors for sampled parameters: {missing}")
+
+
+    def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
+        if not isinstance(data, AstrometryData):
+            raise ValueError("MCMCLinearFitter currently supports AstrometryData.")
+
+        param_order = self.param_order
+        param_transforms = build_transform_functions(param_order, ('P', 'e', 'Tp',))
         ndim = len(param_order)
 
-        if ndim != len(self.sampled_params):
-            missing = [name for name in self.sampled_params if name not in self.prior_kwargs]
-            raise ValueError(f"MCMCLinearFitter requires priors for {self.sampled_params}; missing {missing}")
-
+        # TODO normalize ref_epoch
         ref_epoch = getattr(data, 'ref_epoch', 0.0)
         
         def matrix_method(params_dict,data,E):
@@ -73,77 +91,39 @@ class MCMCLinearFitter(Fitter):
             chi2 = np.sum(resids**2)
             
             return mu, chi2
-        
-            
-        def _check_offsets_m2(params,mu):
-            dx = mu[0]
-            dpmra = mu[1]
-            A = mu[2]
-            F = mu[3]
-            dy = mu[4]
-            dpmdec = mu[5]
-            B = mu[6]
-            G = mu[7]
-
-            params_dict = _match_param_keys(dict(zip(param_order, params)))
-            
-            for name,value in [('dx', dx), ('dpmra', dpmra), ('dy', dy), ('dpmdec', dpmdec)] :
-                prior = self.prior_kwargs.get(name)
-                if prior is not None and hasattr(prior, 'min') and hasattr(prior, 'max'):
-                    if not (prior.min <= value <= prior.max):
-                       return True
-            if self.m1 is not None and self.m2_max is not None:
-                a1, _, _, _ = transform_theile(A, B, F, G)
-                m2 = solve_mass(a1, params_dict['P'], self.m1)
-                if (m2 > self.m2_max or m2 < 0):
-                    return True
-            return False
-
-        def objective(params, data):
-            try:          
-                params_dict = _match_param_keys(dict(zip(param_order, params)))
-
-                dt = data.t - ref_epoch
-                ti = dt - params_dict['Tp'] * params_dict['P']
-
-                M = 2 * np.pi * ti / params_dict['P']
-                E = solve_kepler(M, params_dict['e'])
-
-                mu, chi2 = matrix_method(params_dict, data, E)
-
-                dx = mu[0]
-                dpmra = mu[1]
-                A = mu[2]
-                F = mu[3]
-                dy = mu[4]
-                dpmdec = mu[5]
-                B = mu[6]
-                G = mu[7]
-            except ZeroDivisionError:
-                return -np.inf
-
-            if _check_offsets_m2(params, mu):
-                return -np.inf
-
-            return chi2 
+    
         
 
         def lnprob(params, data):
+            params_dict = param_transforms(**dict(zip(param_order,params)))
 
-            ln_prior = 0
-            for name,val in zip(param_order, params):
-                prior = self.prior_kwargs.get(name)
-                if prior is not None:
-                    ln_prior += prior.logpdf(val)
-                    if not np.isfinite(ln_prior):
+            dt = data.t - ref_epoch
+            ti = dt - params_dict['Tp']
+
+            M = 2 * np.pi * ti / params_dict['P']
+            E = solve_kepler(M, params_dict['e'])
+
+            mu, chi2 = matrix_method(params_dict, data, E)
+
+            ln_prior = 0.0
+
+            for name, prior in self.priors.items():
+                if isinstance(prior, FixedPrior):
+                    continue  # Skip fixed priors
+                try:
+                    transform = build_transform_functions([*self.sampled_params, "dx", "dpmra", f"A{data.system}", f"F{data.system}", "dy", "dpmdec", f"B{data.system}", f"G{data.system}", *self.fixed_prior_params], [name])
+                    val = transform(
+                        **{name: params[i] for i, name in enumerate(self.param_order)},
+                        **{**{name: self.priors[name].value for name in self.fixed_prior_params}, "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7]},
+                    )[name]
+                    if not np.isfinite(val):
                         return -np.inf
-                else:
-                    print(f"Warning:Missing prior for {name}.")
+                    ln_prior += prior.logpdf(val)
+                except KeyError:
+                    # If the parameter is not reachable from the sampled_params or mu, skip it
+                    warnings.warn(f"Parameter {name} is not reachable from sampled_params or mu. Skipping prior evaluation for this parameter.")
+                    continue
 
-            
-
-
-            chi2 = objective(params, data)
             if not np.isfinite(chi2):
                 return -np.inf
             
@@ -151,32 +131,27 @@ class MCMCLinearFitter(Fitter):
 
             return ln_prior + ln_likelihood
         
-        pm_fit = self._proper_motion_fit(data)
+        if isinstance(data, AstrometryData):
+            pm_fit = self._proper_motion_fit(data)
+        else:
+            pm_fit = dict()
 
-        initial_fit = InitialFit(
-                data,
-                method='Campbell',
-                **self.prior_kwargs,
-            ).get_intial()
-
-        P0 = initial_fit['P']
-        e0 = initial_fit['e']
-        Tp0 = initial_fit['Tp']
-
-        initial_params = [P0, e0, Tp0]
-        
-        bounds = np.array(
-            [[self.prior_kwargs[name].min, self.prior_kwargs[name].max] for name in param_order],
-            dtype=float,
-        )
-        lower = bounds[:, 0]
-        upper = bounds[:, 1]
-        initial_params = np.clip(np.asarray(initial_params, dtype=float), lower, upper)
-        
-        initial = np.clip(initial_params + np.random.randn(self.nwalkers,ndim) * 1e-2, lower, upper)
+        if initial is None:
+            if isinstance(data, AstrometryData):
+                initial = AstrometryInitialGuess
+            elif isinstance(data, RadialVelocityData):
+                initial = RVInitialGuess
+            elif isinstance(data, GaiaData):
+                initial = GaiaInitialGuess
+            elif isinstance(data, JointData):
+                initial = JointInitialGuess
+            else:
+                raise ValueError("No initial guess class provided and data type is not recognized for linearized MCMC initial guess generation.")
+        initial_instance = initial(data, rng, **self.priors)
+        pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
 
         sampler = emcee.EnsembleSampler(self.nwalkers, ndim, lnprob, args=(data,))
-        sampler.run_mcmc(initial, self.niter,progress=True)
+        sampler.run_mcmc(pos, self.niter,progress=True)
 
         chain = sampler.get_chain()
         param_means = chain.mean(axis=1)
@@ -187,8 +162,20 @@ class MCMCLinearFitter(Fitter):
 
         maf = np.mean(sampler.acceptance_fraction)
 
-        burn = int(np.nanmax(tau) * 2)
-        thin = int(np.nanmin(tau) * 2)
+        nanmaxtau = np.nanmax(tau)
+        nanmintau = np.nanmin(tau)
+
+        if not np.isnan(nanmaxtau):
+            burn = int(np.nanmax(tau) * 2)
+        else:
+            warnings.warn("Autocorrelation time could not be estimated. Setting burn-in to 0.")
+            burn = 0
+
+        if not np.isnan(nanmintau):
+            thin = int(np.nanmin(tau) * 2)
+        else:
+            warnings.warn("Autocorrelation time could not be estimated. Setting thinning to 1.")
+            thin = 1
 
         samples = sampler.get_chain(discard=burn,thin=thin,flat=True)
         lnprobs = sampler.get_log_prob(discard=burn,thin=thin,flat=True)
@@ -197,8 +184,9 @@ class MCMCLinearFitter(Fitter):
         
         full_posterior = [] 
         for param in samples:
-            P,e,Tp = param
-            M = 2*np.pi * (data.t - ref_epoch - Tp*P) / P
+            transformed_param = param_transforms(**dict(zip(param_order, param)))
+            P,e,Tp = transformed_param["P"], transformed_param["e"], transformed_param["Tp"]
+            M = 2*np.pi * (data.t - ref_epoch - Tp) / P
             E = solve_kepler(M,e)
             mu, _ = matrix_method({'e': e}, data, E)
             dx = mu[0]
@@ -209,9 +197,9 @@ class MCMCLinearFitter(Fitter):
             dpmdec = mu[5]
             B = mu[6]
             G = mu[7]
-            full_posterior.append((P,e,Tp,A,B,F,G,dx,dy,dpmra,dpmdec))
+            full_posterior.append((*param,A,B,F,G,dx,dy,dpmra,dpmdec))
 
-        post_labels = ['P','e','Tp','A','B','F','G','dx','dy','dpmra','dpmdec']
+        post_labels = [*param_order,f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec']
 
         best_i = np.argmax(lnprobs)
         best_params = dict(zip(post_labels, full_posterior[best_i]))
@@ -238,15 +226,11 @@ class MCMCLinearFitter(Fitter):
         results_dict['raw_sampler'] = None
         results_dict['backend'] = 'emcee'
         results_dict['fit_method'] = 'linear'
-        results_dict['priors'] = self.prior_kwargs
+        results_dict['priors'] = self.priors
+        # TODO: normalize ref_epoch
         if results_dict['ref_epoch'] is not None:
             results_dict['priors']['Tepoch'] = FixedPrior(results_dict['ref_epoch'])
-        if self.m2_max is not None and 'M2' not in results_dict['priors']:
-            results_dict['priors']['M2'] = Bounds(0.0, self.m2_max)
-        if self.m1 is not None and 'M1' not in results_dict['priors']:
-            results_dict['priors']['M1'] = FixedPrior(self.m1)
         fit_results = FitResults(**results_dict)
-        fit_results.add_mass_samples(m1=self.m1)
         return fit_results
         
         

@@ -138,20 +138,17 @@ def campbell_to_thiele(a1,cosi,w,long):
 
     return A, B, F, G
 
-def solve_mass(a1,P,m1,plx=None,max_iter=15,tol=1e-6):
+def solve_mass(a1,P,m1,max_iter=15,tol=1e-6):
     'Solves for the secondary mass M2 given the'
     'primary mass M1, and the samples for semimajor axis a1 and period P'
-    if plx is not None:
-        a1 = a1 / plx #convert to AU
     Ps23 = P**(2./3.)
 
     #initial guess 
     K = a1 / (Ps23 * m1**(1./3.))
     K = np.clip(K,0.0,None)
     M = m1 * (1. + 1.4*K**1.135 + 0.743*K**3.163)
-    f_M = a1**3. / P**2. #mass function
 
-    for i in range(max_iter):
+    for _ in range(max_iter):
         Ps23divM23 = Ps23 * M**(-2./3.)
 
         f  = (M - m1) * Ps23divM23 - a1
@@ -170,7 +167,42 @@ def solve_mass(a1,P,m1,plx=None,max_iter=15,tol=1e-6):
                 f"Max |Δ| = {max_delta}"
             )
     M2 = M - m1
-    return M2,f_M
+    return M2
+
+def solve_M2_from_mass_function(M1, f1, sini, tol=1e-6, max_iter=1000):
+    """
+    Solves for the true companion mass (M2) using the Newton-Raphson method.
+    """
+    sin3 = sini**3
+    
+    # Calculate asymptotes
+    m2_low = (f1 * M1**2)**(1/3) / sini  # Dominates when M2 << M1
+    m2_high = f1 / sin3                  # Dominates when M2 >> M1
+    
+    # A starting guess that guarantees we approach the root from above,
+    # ensuring the derivative prevents oscillation.
+    m2 = m2_low + m2_high
+    
+    for _ in range(max_iter):
+        # Cubic function: h(M2) = M2^3 * sin^3(i) - f1 * (M1 + M2)^2
+        h = m2**3 * sin3 - f1 * (M1 + m2)**2
+        h_prime = 3 * m2**2 * sin3 - 2 * f1 * (M1 + m2)
+        
+        delta = h/h_prime
+        m2 -= delta
+        
+        if np.all(np.abs(delta) < tol):
+            return m2   
+    else:
+        not_converged = (np.abs(delta) > tol) & np.isfinite(delta)
+        if np.any(not_converged):
+            max_delta = np.nanmax(np.abs(delta[not_converged]))
+            print(
+                f"Warning: max iterations reached without full convergence "
+                f"on {np.sum(not_converged)} inputs. "
+                f"Max |Δ| = {max_delta}"
+            )
+    return m2
 
 
 def gaia_single_motion(spsi,cpsi,t,plx_fac,x,err):

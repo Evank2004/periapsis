@@ -1,37 +1,69 @@
+from periapsis.data.common import AstrometryData
+from periapsis.params.transforms import build_transform_functions, overconstrained_parameters, covered_parameters
+from periapsis.model import Orbit
 from .fitter import Fitter
 from periapsis.data.data import Data
-from periapsis.data.common import AstrometryData
 from periapsis.fitting.results import FitResults
-from periapsis.initial.initial import InitialFit
 from periapsis.utils.solvers import solve_kepler
-from periapsis.utils.solvers import transform_theile
-from periapsis.utils.solvers import solve_mass
 from periapsis.prior import FixedPrior, Bounds
-from scipy.optimize import dual_annealing
-from periapsis.utils.helpers import _match_param_keys
 import numpy as np
 import ultranest
-from typing import Any, cast
-import logging
-
-logger = logging.getLogger("ultranest")
-logger.addHandler(logging.NullHandler())
-logger.setLevel(logging.WARNING)
 
 
 class UltranestLinearFitter(Fitter):
-    def __init__(self,nlive,min_ess, m1=None, m2_max=None, **priors):
-        super().__init__(m1=m1, **priors)
-        self.nlive = nlive
+    def __init__(self, output_params=('P', 'e', 'Tp',), min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
+        super().__init__(**priors)
+        self.min_num_live_points = min_num_live_points
         self.min_ess = min_ess
-        self.m2_max = m2_max
+        self.dlogz = dlogz
+        self.dKL = dKL
+        self.frac_remain = frac_remain
+        self.Lepsilon = Lepsilon
+        self.max_iters = max_iters
+        self.max_ncalls = max_ncalls
+        self.output_params = frozenset(output_params)
+        self.output_param_order = tuple(output_params)
+        self.prior_params = set(priors.keys())
+        self.fixed_prior_params = {p for p in self.prior_params if isinstance(self.priors[p], FixedPrior)}
+        self.non_fixed_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], FixedPrior)}
+        self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], Bounds)}
+        self.bound_params = {p for p in self.prior_params if isinstance(self.priors[p], Bounds)}
+        self.non_bound_fixed_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], (Bounds, FixedPrior))}
+        self.sample_order = tuple(self.non_bound_fixed_prior_params)
+        self.output_covered_params = covered_parameters(self.output_params)
+        self.prior_covered_params = covered_parameters(self.non_bound_prior_params)
+        self.posterior_covered_params = covered_parameters(self.output_params.union(self.non_bound_prior_params))
+        self.overconstrained_priors = overconstrained_parameters(self.non_bound_prior_params)
+
+        if any(param not in self.prior_covered_params for param in output_params):
+            missing = [param for param in output_params if param not in self.prior_covered_params]
+            raise ValueError(f"Missing priors to constrain sampled parameters: {missing}")
+
+        if self.overconstrained_priors:
+            raise ValueError(f"Overconstrained priors: {self.overconstrained_priors}. Please remove one of the priors for these parameters. Optionally replace with a Bounds prior if you want to constrain the parameter without sampling it.")
+        
+        self.prior_to_sampled_transform = build_transform_functions(self.non_bound_prior_params, output_params)
         
 
-    def fit(self, data: Data) -> FitResults:
-        param_order = [name for name in ('P', 'e', 'Tp') if name in self.prior_kwargs]
-        if len(param_order) != 3:
-            missing = [name for name in ('P', 'e', 'Tp') if name not in self.prior_kwargs]
-            raise ValueError(f"UltranestLinearFitter requires priors for P, e, and Tp. Missing: {missing}")
+    def fit(self, data: Data, quiet = False) -> FitResults:
+        if not isinstance(data, AstrometryData):
+            raise ValueError("UltranestLinearFitter currently supports AstrometryData.")
+
+        param_order = self.sample_order
+        full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
+        matrix_output_params = ["dx", "dpmra", f"A{data.system}", f"F{data.system}", "dy", "dpmdec", f"B{data.system}", f"G{data.system}"]
+        standard_param_transform = build_transform_functions([*full_param_order, *self.fixed_prior_params], ('P', 'e', 'Tp',))
+        likelihood_transform = build_transform_functions([*full_param_order, *self.fixed_prior_params, *matrix_output_params], self.bound_params)
+
+        def prior_transform(cube):
+            cube = np.array(cube, copy=True)
+            sampled_priors = {}
+            i = 0
+            for name in param_order:
+                sampled_priors[name] = self.priors[name].unp(cube[i])
+                i += 1
+            params = self.prior_to_sampled_transform(**sampled_priors, **{name: self.priors[name].value for name in self.fixed_prior_params})
+            return np.array([*[sampled_priors[name] for name in param_order], *[params[name] for name in self.output_param_order if name not in param_order]])
        
         ref_epoch = getattr(data, 'ref_epoch', 0.0)
         reject_logl = -1e300
@@ -76,94 +108,78 @@ class UltranestLinearFitter(Fitter):
             
             return mu, chi2
         
-        def objective(data, params):
-            try:
-                params_dict = _match_param_keys(dict(zip(param_order, params)))
+        def objective(data, params_dict):
+            dt = data.t - ref_epoch
+            ti = dt - (params_dict['Tp'] - ref_epoch)
 
-                dt = data.t - ref_epoch
-                ti = dt - params_dict['Tp'] * params_dict['P']
+            M = 2 * np.pi * ti / params_dict['P']
+            E = solve_kepler(M, params_dict['e'])
 
-                M = 2 * np.pi * ti / params_dict['P']
-                E = solve_kepler(M, params_dict['e'])
+            mu, chi2 = matrix_method(params_dict, data, E)
 
-                mu, chi2 = matrix_method(params_dict, data, E)
-
-                dx = mu[0]
-                dpmra = mu[1]
-                A = mu[2]
-                F = mu[3]
-                dy = mu[4]
-                dpmdec = mu[5]
-                B = mu[6]
-                G = mu[7]
-            except ZeroDivisionError:
-                return np.inf
-
-            
-            for name, value in [('dx', dx), ('dpmra', dpmra), ('dy', dy), ('dpmdec', dpmdec)]:
-                prior = self.prior_kwargs.get(name)
-                if prior is not None and hasattr(prior, 'min') and hasattr(prior, 'max'):
-                    if not (prior.min <= value <= prior.max):
-                        return np.inf
-
-            if self.m1 is not None and self.m2_max is not None:
-                a1, _, _, _ = transform_theile(A, B, F, G)
-                m2 = solve_mass(a1, params_dict['P'], self.m1)
-                if (not np.isfinite(m2)) or m2 > self.m2_max or m2 < 0:
-                    return np.inf
-
-            return chi2
+            return mu, chi2
         
-            
-
         def log_likelihood(params):
+            standard_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
+            params_dict = dict(zip(standard_param_order, params))
+            params_dict.update({name: self.priors[name].value for name in self.fixed_prior_params})
+            standard_params_dict = standard_param_transform(**params_dict)
+            mu, chi2 = objective(data, standard_params_dict)
 
-            chi2 = objective(data, params)
-            if not np.isfinite(chi2):
-                return reject_logl
+            full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order], *matrix_output_params]
+            param_dict = dict(zip(full_param_order, params))
+            param_dict.update({name: self.priors[name].value for name in self.fixed_prior_params})
+            param_dict.update({name: mu[i] for i, name in enumerate(matrix_output_params)})
+            if "Tepoch" not in param_dict:
+                param_dict["Tepoch"] = ref_epoch
+            bound_param_dict = likelihood_transform(**param_dict)
+            for name in self.bound_params:
+                if not (self.priors[name].lower <= bound_param_dict[name] <= self.priors[name].upper):
+                    return reject_logl # TODO possibly slope inwards towards the bounds instead of hard cutoff
 
-            return -0.5*chi2 
-        
-        def prior_transform(cube):
-            # UltraNest requires tranforming a unit hypercube
-            cube = np.array(cube)
-            for i, name in enumerate(param_order):
-                prior = self.prior_kwargs.get(name)
-                if prior is not None:
-                    cube[i] = prior.unp(cube[i])
-                else:
-                    raise ValueError(f"Missing prior transformer for parameter: {name}")
-            return cube
+            model = Orbit(**param_dict)
+            chi2 = data.chi2(model)
+            return -0.5 * chi2   
 
         pm_fit = self._proper_motion_fit(data)
 
         sampler = ultranest.ReactiveNestedSampler(
-            param_order,
-            log_likelihood,
-            prior_transform,
-            draw_multiple=False,
-            vectorized=False,
+            param_names=tuple(param_order),
+            loglike=log_likelihood, 
+            transform=prior_transform,
+            derived_param_names=tuple([name for name in self.output_param_order if name not in param_order]),
+            wrapped_params=None, # TODO
         )
 
-        results = cast(dict[str, Any], sampler.run(
-            min_num_live_points=self.nlive,
+        results = sampler.run(
+            min_num_live_points=self.min_num_live_points,
             min_ess=self.min_ess,
-            frac_remain=0.5,
-            show_status=False,
-            viz_callback=cast(Any, False),
-        ))
+            dlogz=self.dlogz,
+            dKL=self.dKL,
+            frac_remain=self.frac_remain,
+            Lepsilon=self.Lepsilon,
+            max_iters=self.max_iters,
+            max_ncalls=self.max_ncalls,
+            show_status=not quiet,
+            viz_callback=False if quiet else 'auto',
+        )
 
         ultranest_samples = np.array(results['samples'])
 
+        standard_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
+        params_dict = dict(zip(standard_param_order, ultranest_samples.T))
+        params_dict.update({name: self.priors[name].value for name in self.fixed_prior_params})
+        standard_params_dict = standard_param_transform(**params_dict)
+
         full_posterior = []
         valid_logl = []
-        for param in ultranest_samples:
-            P,e,Tp = param
+        for i, param in enumerate(ultranest_samples):
+            P,e,Tp = standard_params_dict['P'][i], standard_params_dict['e'][i], standard_params_dict['Tp'][i]
             ll = log_likelihood(param)
             if (not np.isfinite(ll)) or (ll <= reject_logl / 2):
                 continue
 
-            M = 2*np.pi * (data.t - ref_epoch - Tp*P) / P
+            M = 2*np.pi * (data.t - Tp) / P
             E = solve_kepler(M,e)
             params_dict = {'P': P, 'e': e, 'Tp': Tp}
             try:
@@ -184,13 +200,13 @@ class UltranestLinearFitter(Fitter):
         if len(full_posterior) == 0:
             raise RuntimeError(
                 "UltraNest produced no valid posterior samples after nuisance-parameter cutoffs. "
-                "Try widening nuisance priors or relaxing m2_max."
+                "Try widening nuisance priors."
             )
 
         logl = np.array(valid_logl)
         full_posterior_arr = np.array(full_posterior)
 
-        post_labels = ['P','e','Tp','A','B','F','G','dx','dy','dpmra','dpmdec']
+        post_labels = ['P','e','Tp',f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec']
 
         best_i = int(np.argmax(logl))
         best_params = dict(zip(post_labels, full_posterior[best_i]))
@@ -203,7 +219,7 @@ class UltranestLinearFitter(Fitter):
 
         results_dict: dict[str, object] = {label: np.array(columns[label]) for label in post_labels}
         
-        results_dict['ESS'] = results['ess']
+        results_dict['Ess'] = results['ess']
         results_dict['logZ'] = results['logz']
         results_dict['logZerr'] = results['logzerr']
         results_dict['param_names'] = post_labels
@@ -219,17 +235,12 @@ class UltranestLinearFitter(Fitter):
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'ultranest'
         results_dict['fit_method'] = 'linear'
-        results_dict['priors'] = self.prior_kwargs
+        results_dict['priors'] = self.priors
 
         if results_dict['ref_epoch'] is not None:
             results_dict['priors']['Tepoch'] = FixedPrior(results_dict['ref_epoch'])
-        if self.m2_max is not None and 'M2' not in results_dict['priors']:
-            results_dict['priors']['M2'] = Bounds(0.0, self.m2_max)
-        if self.m1 is not None and 'M1' not in results_dict['priors']:
-            results_dict['priors']['M1'] = FixedPrior(self.m1)
 
         fit_results = FitResults(**results_dict)
-        fit_results.add_mass_samples(m1=self.m1)
         return fit_results
 
 

@@ -3,6 +3,10 @@ import numpy as np
 
 class LogUniformPrior(Prior):
     def __init__(self, lower_bound: float, upper_bound: float):
+        if lower_bound <= 0 or upper_bound <= 0:
+            raise ValueError("Bounds must be positive for a LogUniformPrior.")
+        if lower_bound >= upper_bound:
+            raise ValueError("Lower bound must be less than upper bound for a LogUniformPrior.")
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 

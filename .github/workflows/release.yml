@@ -1,0 +1,86 @@
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Verify release version
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import tomllib
+
+          tag = os.environ["RELEASE_TAG"]
+          match = re.fullmatch(
+              r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)",
+              tag,
+          )
+          if match is None:
+              raise SystemExit(
+                  f"Invalid release tag {tag!r}; expected vMAJOR.MINOR.PATCH"
+              )
+
+          with open("pyproject.toml", "rb") as file:
+              project_version = tomllib.load(file)["project"]["version"]
+
+          tag_version = ".".join(match.groups())
+          if project_version != tag_version:
+              raise SystemExit(
+                  f"Version mismatch: tag={tag_version!r}, "
+                  f"pyproject.toml={project_version!r}"
+              )
+
+          print(f"Validated release version {project_version}")
+          PY
+      - name: Build release distributions
+        run: |
+          # NOTE: put your own distribution build steps here.
+          python -m pip install build
+          python -m build
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists
+          path: dist/
+
+  pypi-publish:
+    runs-on: ubuntu-latest
+
+    needs:
+      - release-build
+
+    permissions:
+      # IMPORTANT: this permission is mandatory for trusted publishing
+      id-token: write
+
+    # Dedicated environments with protections for publishing are strongly recommended.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/periapsis
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v5
+        with:
+          name: release-dists
+          path: dist/
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33

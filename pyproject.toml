@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "periapsis"
-version = "0.1.0"
+version = "0.5.0"
 authors = [
     {name = "Evan Kerr", email ="evan.kerr@utah.edu"},
     {name = "Matthew Whitaker", email ="matthew.whitaker@utah.edu"},

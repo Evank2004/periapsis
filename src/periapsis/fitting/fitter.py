@@ -42,7 +42,7 @@ class Fitter(ABC):
         results : dict
             The results of the proper motion fit
         """
-        ref_epoch = getattr(data, 'ref_epoch', np.mean(data.t))
+        ref_epoch = getattr(data, 'ref_epoch', np.mean(data.t)) #FIXME Tepoch in fixed priors?
         dt = data.t - ref_epoch
 
         if getattr(data, 'mu_x', None) is not None and getattr(data, 'mu_y', None) is not None:

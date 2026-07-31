@@ -38,7 +38,7 @@ class Orbit():
 
         velocity_ratio optionally gives the conversion factor to convert from units of (time/distance) to the preferred units for velocity. If none is specified, a warning will be raised whenever a method that computes velocity is called.
         """
-        self._params = kwparams
+        self._params = dict(kwparams)
         if 'Tepoch' not in self._params:
             self._params['Tepoch'] = 0.0
         self._covered_params = covered_parameters(set(self.params.keys()))
@@ -118,18 +118,17 @@ class Orbit():
         system = "" if system == "relative" else str(system)
 
         self._ensure_derived_params(_astrometry_param_names[system])
-
-        ref_epoch = self.derived_params['Tepoch']
         
-        dt = np.asarray(t) - ref_epoch
+        t = np.asarray(t)
 
-        M = 2 * np.pi / self.derived_params['P'] * (dt - (self.derived_params['Tp']-ref_epoch))
+        M = 2 * np.pi / self.derived_params['P'] * (t - (self.derived_params['Tp']))
         E = solve_kepler(M, self.derived_params['e'])
         X = (np.cos(E) - self.derived_params['e'])
         Y = (np.sqrt(1 - self.derived_params['e']**2) * np.sin(E))
         alpha = self.derived_params[f'A{system}'] * X + self.derived_params[f'F{system}'] * Y
         delta = self.derived_params[f'B{system}'] * X + self.derived_params[f'G{system}'] * Y
 
+        dt = t - self.derived_params['Tepoch']
         alpha = alpha + self.derived_params['dx'] + self.derived_params['dpmra'] * dt
         delta = delta + self.derived_params['dy'] + self.derived_params['dpmdec'] * dt
         return alpha, delta
@@ -150,8 +149,9 @@ class Orbit():
         X = (np.cos(E) - self.derived_params['e'])
         Y = (np.sqrt(1 - self.derived_params['e']**2) * np.sin(E))
 
-        wss = ((self.derived_params['dalpha']+self.derived_params['mu_alpha']*t)*spsi
-                + (self.derived_params['ddelta']+self.derived_params['mu_delta']*t)*cpsi
+        dt = t - self.derived_params['Tepoch']
+        wss = ((self.derived_params['dalpha']+self.derived_params['mu_alpha']*dt)*spsi
+                + (self.derived_params['ddelta']+self.derived_params['mu_delta']*dt)*cpsi
                 + self.derived_params['parallax']*par_factor)
 
         wk = ((self.derived_params[f'B{system}']*X + self.derived_params[f'G{system}']*Y)*spsi
@@ -172,10 +172,9 @@ class Orbit():
 
         self._ensure_derived_params(_rv_param_names[system])
         
-        ref_epoch = self.derived_params['Tepoch']
-        dt = np.asarray(t) - ref_epoch
+        t = np.asarray(t)
 
-        M = 2 * np.pi / self.derived_params['P'] * (dt - (self.derived_params['Tp']-ref_epoch))
+        M = 2 * np.pi / self.derived_params['P'] * (t - self.derived_params['Tp'])
         E = solve_kepler(M, self.derived_params['e'])
         true_anomaly = 2 * np.arctan2(np.sqrt(1 + self.derived_params['e']) * np.sin(E / 2), np.sqrt(1 - self.derived_params['e']) * np.cos(E / 2))
         rv = self.derived_params[f'K{system}'] * (np.cos(true_anomaly + self.derived_params[f'omega{system}']) + self.derived_params[f'e'] * np.cos(self.derived_params[f'omega{system}']))
@@ -199,8 +198,6 @@ class Orbit():
 
         self._ensure_derived_params(_xyz_param_names[system])
 
-        ref_epoch = self.derived_params['Tepoch']
-
         raise NotImplementedError("The xyz method is not implemented yet.")
         x=float('nan')
         y=float('nan')
@@ -220,8 +217,6 @@ class Orbit():
 
         self._ensure_derived_params(_vxyz_param_names[system])
         # raise ValueError(f"Insufficient orbital parameters provided to compute 3D velocity. Unable to calculate parameters for system {system}: {_vxyz_param_names[system] - self.covered_params}")
-        
-        ref_epoch = self.derived_params['Tepoch']
 
         if self.velocity_ratio is None:
             print("Warning: velocity_ratio is not set. Velocities will be returned in units of (time/distance).")

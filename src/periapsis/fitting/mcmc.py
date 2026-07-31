@@ -42,6 +42,7 @@ class MCMCFitter(Fitter):
             name: index for index, name in enumerate(self.param_order)
         }
         self.prior_params = set(priors.keys())
+        self.fixed_prior_params = {p for p in self.prior_params if isinstance(self.priors[p], FixedPrior)}
         self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], Bounds)}
         self.sample_covered_params = covered_parameters(self.sample_params)
         self.prior_covered_params = covered_parameters(self.non_bound_prior_params)
@@ -55,8 +56,8 @@ class MCMCFitter(Fitter):
         if self.overconstrained_priors:
             raise ValueError(f"Some priors are contradictory and must be removed or replaced with a Bounds: {sorted(self.overconstrained_priors)}.")
 
-        if any(prior_param not in self.sample_covered_params for prior_param in self.prior_params):
-            unreachable_priors = [prior_param for prior_param in self.prior_params if prior_param not in self.sample_covered_params]
+        if any(prior_param not in self.sample_covered_params and not isinstance(self.priors[prior_param], FixedPrior) for prior_param in self.prior_params):
+            unreachable_priors = [prior_param for prior_param in self.prior_params if prior_param not in self.sample_covered_params and not isinstance(self.priors[prior_param], FixedPrior)]
             warnings.warn(f"Some priors are not reachable from the sampled parameters and will be ignored: {sorted(unreachable_priors)}.")
         
         fixed_names = {
@@ -271,6 +272,9 @@ class MCMCFitter(Fitter):
         best_i = np.argmax(lnprobs)
         best_params = dict(zip(param_order, samples[best_i]))
         median_params = dict(zip(param_order, np.median(samples, axis=0)))
+        for prior in self.fixed_prior_params:
+            best_params[prior] = self.priors[prior].value
+            median_params[prior] = self.priors[prior].value
         
         results_dict = {}
         for i, name in enumerate(param_order):

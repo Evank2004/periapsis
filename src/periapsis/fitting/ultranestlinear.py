@@ -211,6 +211,9 @@ class UltranestLinearFitter(Fitter):
         best_i = int(np.argmax(logl))
         best_params = dict(zip(post_labels, full_posterior[best_i]))
         median_params = dict(zip(post_labels, np.median(full_posterior_arr, axis=0)))
+        for prior in self.fixed_prior_params:
+            best_params[prior] = self.priors[prior].value
+            median_params[prior] = self.priors[prior].value
 
         columns = {label: [] for label in post_labels}
         for sample in full_posterior:

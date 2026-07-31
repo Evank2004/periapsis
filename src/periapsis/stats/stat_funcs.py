@@ -44,13 +44,15 @@ def red_chi2(results,data,savepath=None):
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for reduced Chi2 calculation.")
 
+    num_free_params = len(map_params) - len([p for p in map_params if isinstance(results.priors.get(p), FixedPrior)])
+
     if not isinstance(data,(GaiaData)):
-        map_model = Orbit(**map_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
-        med_model = Orbit(**med_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+        map_model = Orbit(**map_params)
+        med_model = Orbit(**med_params)
 
         chi2_map = data.chi2(map_model)
         chi2_med = data.chi2(med_model)
-        orbit_dof = data.dof - len(map_params)
+        orbit_dof = data.dof - num_free_params
     else:
         if "jitter" not in map_params: 
             jit = getattr(results, 'jitter', None)
@@ -64,16 +66,16 @@ def red_chi2(results,data,savepath=None):
         med_model = Orbit(**med_params)
         chi2_map = GaiaData.chi2(data,map_model)
         chi2_med = GaiaData.chi2(data,med_model)
-        orbit_dof = data.dof - len(map_params) # for Gaia data, only one dimension is used for chi2 calculation
+        orbit_dof = data.dof - num_free_params # for Gaia data, only one dimension is used for chi2 calculation
 
     
-    map_model = Orbit(**map_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
-    med_model = Orbit(**med_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
 
     chi2_map = data.chi2(map_model)
     chi2_med = data.chi2(med_model)
 
-    orbit_dof = data.dof - len(map_params)
+    orbit_dof = data.dof - num_free_params
 
       # degrees of freedom for the fit
     red_chi2_map = chi2_map / orbit_dof
@@ -101,9 +103,11 @@ def delta_chi2(results,data,savepath=None):
         med_params = results.samples.get('median_params', None)
     med_params = dict(med_params) if med_params is not None else {}
 
+    num_free_params = len(map_params) - len([p for p in map_params if isinstance(results.priors.get(p), FixedPrior)])
+
     
-    map_model = Orbit(**map_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
-    med_model = Orbit(**med_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
 
     if not isinstance(data,(GaiaData)):
         map_model = _build_model(results, map_params)
@@ -113,7 +117,7 @@ def delta_chi2(results,data,savepath=None):
         pm_dof = results.PM_fit['dof']
         chi2_map = data.chi2(map_model)
         chi2_med = data.chi2(med_model)
-        orbit_dof = 2*len(data.t) - len(map_params)
+        orbit_dof = 2*len(data.t) - num_free_params
 
         delta_chi2_map = pm_chi2 - chi2_map #if delta_chi2 > 0, orbit fit is better
         delta_chi2_med = pm_chi2 - chi2_med
@@ -136,7 +140,7 @@ def delta_chi2(results,data,savepath=None):
         med_model = Orbit(**med_params)
         chi2_map = GaiaData.chi2(data,map_model)
         chi2_med = GaiaData.chi2(data,med_model)
-        orbit_dof = len(data.t) - len(map_params)
+        orbit_dof = len(data.t) - num_free_params
 
         single_chi2 = results.Single_motion_params['chi2']
         single_dof = results.Single_motion_params['dof']

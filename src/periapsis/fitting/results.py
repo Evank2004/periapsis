@@ -31,9 +31,10 @@ class FitResults:
         if self.priors is None:
             self.priors = dict()
 
+        self.fixed_params = {name for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)}
         self.known_params = {
             *self.param_names,
-            *{name for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)}
+            *self.fixed_params
         }
         self.covered_params = covered_parameters(self.known_params)
 

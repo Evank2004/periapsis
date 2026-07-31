@@ -232,6 +232,9 @@ class UltranestGaiaFitter(Fitter):
         best_i = np.argmax(logl)
         best_params = dict(zip(post_labels, posterior[best_i]))
         median_params = dict(zip(post_labels, np.median(posterior, axis=0)))
+        for prior in self.fixed_prior_params:
+            best_params[prior] = self.priors[prior].value
+            median_params[prior] = self.priors[prior].value
 
         columns = {label: [] for label in post_labels}
         for sample in posterior:

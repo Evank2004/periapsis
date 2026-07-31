@@ -128,6 +128,9 @@ class UltranestFitter(Fitter):
         best_i = np.argmax(logl)
         best_params = dict(zip(param_order, samples[best_i]))
         median_params = dict(zip(param_order, np.median(samples, axis=0)))
+        for prior in self.fixed_prior_params:
+            best_params[prior] = self.priors[prior].value
+            median_params[prior] = self.priors[prior].value
                
         
         results_dict = {}

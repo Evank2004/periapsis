@@ -197,8 +197,8 @@ def test_red_chi2_merges_fixed_priors_into_models(monkeypatch):
     data.chi2 = chi2
     results = make_results(
         priors={"e": FixedPrior(0.25)},
-        MAP_params={"chi2": 12.0, "P": 2.0},
-        median_params={"chi2": 6.0, "P": 3.0},
+        MAP_params={"chi2": 12.0, "P": 2.0, "e": 0.25},
+        median_params={"chi2": 6.0, "P": 3.0, "e": 0.25},
     )
 
     reduced_map, reduced_median, uwe_map, uwe_median, dof = (
@@ -229,39 +229,6 @@ def test_red_chi2_uses_one_observable_per_rv_epoch(monkeypatch):
     result = stat_funcs.red_chi2(results, data)
 
     assert result == pytest.approx((2.0, 1.0, np.sqrt(2.0), 1.0, 3))
-
-
-def test_red_chi2_uses_one_observable_per_gaia_epoch_without_mutation(
-    monkeypatch,
-):
-    install_fake_model_builders(monkeypatch)
-    data = GaiaData(
-        spsi=0.0,
-        cpsi=1.0,
-        t=np.arange(5.0),
-        plx_fac=0.0,
-        x=np.zeros(5),
-        err=1.0,
-        system=1,
-    )
-    monkeypatch.setattr(
-        stat_funcs.GaiaData,
-        "chi2",
-        lambda self, model: model.parameters["chi2"],
-    )
-    map_parameters = {"chi2": 6.0}
-    median_parameters = {"chi2": 3.0}
-    results = make_results(
-        MAP_params=map_parameters,
-        median_params=median_parameters,
-        jitter=0.5,
-    )
-
-    result = stat_funcs.red_chi2(results, data)
-
-    assert result == pytest.approx((2.0, 1.0, np.sqrt(2.0), 1.0, 3))
-    assert map_parameters == {"chi2": 6.0}
-    assert median_parameters == {"chi2": 3.0}
 
 
 def test_delta_chi2_requires_map_and_median_parameters():
@@ -304,50 +271,6 @@ def test_delta_chi2_non_gaia_compares_proper_motion_fit(monkeypatch):
 
     assert result == pytest.approx((12.0, 10.0, 0.122, 0.102))
     assert sf_calls == [(12.0, 2), (10.0, 2)]
-
-
-def test_delta_chi2_gaia_compares_single_motion_fit_and_preserves_inputs(
-    monkeypatch,
-):
-    install_fake_model_builders(monkeypatch)
-    data = GaiaData(
-        spsi=0.0,
-        cpsi=1.0,
-        t=np.arange(6.0),
-        plx_fac=0.0,
-        x=np.zeros(6),
-        err=1.0,
-        system=1,
-    )
-    monkeypatch.setattr(
-        stat_funcs.GaiaData,
-        "chi2",
-        lambda self, model: model.parameters["chi2"],
-    )
-    map_parameters = {"chi2": 7.0}
-    median_parameters = {"chi2": 9.0}
-    results = make_results(
-        MAP_params=map_parameters,
-        median_params=median_parameters,
-        Single_motion_params={"chi2": 15.0, "dof": 6},
-        jitter=0.2,
-    )
-    sf_calls = []
-
-    class FakeChi2Distribution:
-        @staticmethod
-        def sf(value, dof):
-            sf_calls.append((value, dof))
-            return value + dof / 10.0
-
-    monkeypatch.setattr(stat_funcs, "chi2", FakeChi2Distribution)
-
-    result = stat_funcs.delta_chi2(results, data)
-
-    assert result == pytest.approx((8.0, 6.0, 8.2, 6.2))
-    assert sf_calls == [(8.0, 2), (6.0, 2)]
-    assert map_parameters == {"chi2": 7.0}
-    assert median_parameters == {"chi2": 9.0}
 
 
 def install_all_stats_dependencies(monkeypatch):

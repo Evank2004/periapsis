@@ -593,12 +593,103 @@ def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
         print(f"Saved multi-orbit plot to {savepath}")
     return fig
 
+def distribution(results, param, scale='linear', unit='', savepath=None):
+    '''
+    Plots distribution of a parameter from posterior samples
+    '''
+    try:
+        samples = results[param]
+    except KeyError:
+        print(f'No {param} samples found in results.')
+        return None
+
+    med = np.median(samples)
+    p16 = np.percentile(samples, 16)
+    p84 = np.percentile(samples, 84)
+    par_m2sig = np.percentile(samples, 2.5)
+    par_p2sig = np.percentile(samples, 97.5)
+
+    if scale == 'linear':
+        kde = gaussian_kde(samples)
+        x = np.linspace(samples.min(), samples.max(), 1000)
+        pdf = kde(x)
+        #normalize the pdf
+        pdf /= np.trapezoid(pdf, x)
+
+        bins = np.linspace(samples.min(), samples.max(), 40)
+
+        fig,ax=plt.subplots()
+        ax.hist(samples,bins=bins,
+                 density = True, alpha = 0.5, histtype='step',
+                 color='gray',label='Samples')
+        
+        ax.plot(x,pdf,'r-', lw=2.0,label='KDE')
+
+        ax.axvspan(p16,p84,color='tab:blue',alpha=0.35,
+                    label=fr'$1\,\sigma$  [{p16:.2f},{p84:.2f}] {unit}')
+        
+        ax.axvspan(par_m2sig,par_p2sig,color='tab:blue',
+            alpha=0.25,
+            label=fr'$2\,\sigma$  [{par_m2sig:.2f},{par_p2sig:.2f}] {unit}')
+
+        ax.axvline(med,color='k',linestyle='--'
+            ,label=fr'Median = {med:.2f} {unit}')
+
+        ax.set_xlabel(f"{param} [{unit}]")
+        ax.set_ylabel("Probability Density")
+        ax.legend(loc='upper right')
+        if savepath is not None:
+            fig.savefig(savepath,dpi=300)
+            print(f"Saved distribution plot to {savepath}")
+        return fig
+    
+    if scale == 'log':
+        kde = gaussian_kde(np.log10(samples))
+        x = np.linspace(np.log10(samples).min(), np.log10(samples).max(), 1000)
+        pdf = kde(x)
+        #normalize the pdf
+        pdf /= np.trapezoid(pdf, x)
+
+        bins = np.logspace(np.log10(samples).min(), np.log10(samples).max(), 40)
+
+        fig,ax=plt.subplots()
+
+        ax.hist(samples,bins=bins,
+                 density = True, alpha = 0.5, histtype='step',
+                 color='gray',label='Samples')
+        
+        ax.plot(10**x,pdf,'r-', lw=2.0,label='KDE')
+
+        ax.axvspan(p16,p84,color='tab:blue',alpha=0.35,
+                    label=fr'$1\,\sigma$  [{p16:.2f},{p84:.2f}] {unit}')
+        
+        ax.axvspan(par_m2sig,par_p2sig,color='tab:blue',
+            alpha=0.25,
+            label=fr'$2\,\sigma$  [{par_m2sig:.2f},{par_p2sig:.2f}] {unit}')
+        
+        ax.axvline(med,color='k',linestyle='--'
+            ,label=fr'Median = {med:.2f} {unit}')
+        
+
+        ax.set_xlim(par_m2sig*0.8, par_p2sig*1.2)
+        ax.set_xscale('log')
+        ax.set_xlabel(f"{param} [{unit}]")
+        ax.set_ylabel("Probability Density")
+        ax.legend(loc='upper right')
+
+        if savepath is not None:
+            fig.savefig(savepath,dpi=300)
+            print(f"Saved distribution plot to {savepath}")
+        return fig
+
+
+
 def mass_distribution(results,scale='linear',savepath=None):
     '''
     Plots distribution of secondary mass (M2) from posterior samples
     '''
     try:
-        M2_samples = results.samples['M2']
+        M2_samples = results['M2']
     except KeyError:
         print('No M2 samples found in results.')
         return None
@@ -716,4 +807,4 @@ def all_plots(results, data, scale=None, savepath=None):
         
                 
 
-        return corner, orbit_vis, multi_orb, mass_dist
+        return posterior_prior, corner, orbit_vis, sky_vis, multi_orb, mass_dist

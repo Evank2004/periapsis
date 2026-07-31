@@ -59,7 +59,8 @@ from typing import Callable
 # TODO add eclipsing binary/planet params
 # TODO add Delaunay variables
 # TODO add quaternion params
-# TODO add flux of source 1/2 (and scale stuff in orbit by that - add photocenter option in addition to 1,2,relative)
+# TODO add flux of source 1/2 (and scale stuff in orbit by that - add photocenter option in addition to 1,2,relative). Flux ratio
+# Photocenter scaling factor from Eq. 3 of Lam+2026
 
 _all_parameters = {
     'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'piomega', 'P', 'A', 'B', 'F', 'G', 'cosi', 'sini', 'Mtot', 'mu',

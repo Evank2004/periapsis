@@ -75,6 +75,8 @@ def red_chi2(results,data,savepath=None):
 
     orbit_dof = data.dof - len(map_params)
 
+
+
       # degrees of freedom for the fit
     red_chi2_map = chi2_map / orbit_dof
     red_chi2_med = chi2_med / orbit_dof
@@ -102,12 +104,11 @@ def delta_chi2(results,data,savepath=None):
     med_params = dict(med_params) if med_params is not None else {}
 
     
-    map_model = Orbit(**map_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
-    med_model = Orbit(**med_params, **{name: p.value for name, p in results.priors.items() if isinstance(p, FixedPrior)})
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
 
     if not isinstance(data,(GaiaData)):
-        map_model = _build_model(results, map_params)
-        med_model = _build_model(results, med_params)
+        
 
         pm_chi2 = results.PM_fit['chi2']
         pm_dof = results.PM_fit['dof']

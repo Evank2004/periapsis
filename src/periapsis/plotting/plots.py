@@ -357,15 +357,15 @@ def orbit_plot(results, data, system=1, savepath=None):
     ax2 = fig.add_subplot(gs[1, 0])
     ax3 = fig.add_subplot(gs[:, 1])
 
-    ax1.errorbar(dt_obs, x_obs, yerr=data.x_err, fmt='o',markersize=4,zorder=2)
+    ax1.errorbar(dt_obs, x_obs, yerr=data.x_err,color='k', fmt='o',markersize=4,zorder=2)
     ax1.plot(dt_model, x_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
     ax1.plot(dt_model, x_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
 
-    ax2.errorbar(dt_obs, y_obs, yerr=data.y_err, fmt='o',markersize=4,zorder=2)
+    ax2.errorbar(dt_obs, y_obs, yerr=data.y_err,color='k', fmt='o',markersize=4,zorder=2)
     ax2.plot(dt_model, y_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
     ax2.plot(dt_model, y_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
 
-    ax3.scatter(x_obs, y_obs, color='tab:blue',s=15,zorder=2)
+    ax3.scatter(x_obs, y_obs, color='k',s=15,zorder=2)
     ax3.plot(x_map, y_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
     ax3.plot(x_med, y_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
     ax3.set_aspect('equal',adjustable = 'datalim')
@@ -444,7 +444,7 @@ def sky_motion_plot(results, data, savepath=None):
     ra_lin_map = x0 + mu_x*dt + map_dpmra*dt + map_dx
     dec_lin_map = y0 + mu_y*dt + map_dpmdec*dt + map_dy
     ra_lin_med = x0 + mu_x*dt + med_dpmra*dt + med_dx
-    dec_lin_med = y0 + mu_y*dt + med_dpmdec*dt
+    dec_lin_med = y0 + mu_y*dt + med_dpmdec*dt + med_dy
 
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
@@ -681,6 +681,115 @@ def mass_distribution(results,scale='linear',savepath=None):
             fig.savefig(savepath,dpi=300)
             print(f"Saved mass distribution plot to {savepath}")
         return fig
+
+def rv_fit_plot(results, data,unit_conv=1, savepath=None):
+    '''
+    Plots radial velocity fit over time
+    '''
+    tfold = np.linspace(data.t.min(), data.t.max(), 1000)
+
+    Map_fit = Orbit(**results.MAP_params)
+    med_fit = Orbit(**results.median_params)
+
+    fig,ax=plt.subplots()
+    ax.plot(tfold, Map_fit.rv(tfold), label='MAP Fit', color='red', linestyle='-')
+    ax.plot(tfold, med_fit.rv(tfold), label='Median Fit',color='purple', linestyle='--',alpha=0.7)
+    ax.errorbar(data.t, data.rv*unit_conv, yerr=data.rv_err*unit_conv, fmt='o', color='k', markersize=4)
+    ax.set_xlabel('Time')
+    ax.set_ylabel('RV') #TODO: make this able to provide units
+    ax.legend(loc='best')
+
+    if savepath is not None:
+        fig.savefig(savepath, dpi=300)
+        print(f"Saved radial velocity fit plot to {savepath}")
+    return fig
+
+def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove unit_conv once units are normalized
+    '''
+    Plots phase-folded radial velocity fit
+    '''
+    P = results.MAP_params['P']
+    P_med = results.median_params['P']
+    phase = np.mod(data.t,P)
+    tfold = np.linspace(data.t.min(), data.t.max(), 1000)
+    phase_fold = np.mod(tfold,P)
+    map_fit = Orbit(**results.MAP_params)
+
+    phase_med = np.mod(data.t,P_med)
+    phase_fold_med = np.mod(tfold,P_med)
+    med_fit = Orbit(**results.median_params)
+   
+
+    fig,ax=plt.subplots()
+    ax.errorbar(phase, data.rv, yerr=data.rv_err, fmt='o', color='k', markersize=4,label='Data (MAP Phase)')
+    ax.scatter(phase_fold,map_fit.rv(tfold)/unit_conv, label='MAP Fit', color='red', s=10)
+    ax.errorbar(phase_med, data.rv, yerr=data.rv_err, fmt='o', color='k', markersize=4,alpha=0.6,label='Data (Median Phase)')
+    ax.scatter(phase_fold_med, med_fit.rv(tfold)/unit_conv, label='Median Fit', color='purple', linestyle='--', alpha=0.6)
+
+    ax.set_xlabel('Phase')
+    ax.set_ylabel('RV') #TODO: make this able to provide units
+    ax.legend(loc='best')
+
+    if savepath is not None:
+        fig.savefig(savepath, dpi=300)
+        print(f"Saved phase-folded radial velocity plot to {savepath}")
+    return fig
+
+def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
+    '''
+    Plots multiple radial velocity fits from posterior samples
+    '''
+    tfold = np.linspace(data.t.min(), data.t.max(), 1000)
+
+    param_names = results.param_names
+    samples = results.samples.get('samples', None)
+    if samples is None:
+        if not param_names:
+            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+    
+        sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
+        if len(sample_arrays) != len(param_names):
+            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+        samples = np.column_stack(sample_arrays)
+    
+
+    map_params = getattr(results, 'MAP_params', None)
+    if map_params is None:
+        map_params = results.samples.get('MAP_params', None)
+
+    med_params = getattr(results, 'median_params', None)
+    if med_params is None:
+        med_params = results.samples.get('median_params', None)
+
+    fixed_prior_params = {}
+    for k, p in results.priors.items():
+        if isinstance(p, FixedPrior):
+            map_params[k] = p.value
+            med_params[k] = p.value
+            fixed_prior_params[k] = p.value
+
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
+
+    idx = np.random.choice(samples.shape[0], size=min(Nplot, samples.shape[0]), replace=False)
+    samps = samples[idx]
+
+    fig,ax=plt.subplots()
+    for samp in samps:
+        model = Orbit(**dict(zip(param_names, samp)), **fixed_prior_params)
+        ax.plot(tfold, model.rv(tfold), color='tab:blue', alpha=0.3)
+
+    ax.plot(tfold, map_model.rv(tfold), label='MAP Fit', color='red', linestyle='-')
+    ax.plot(tfold, med_model.rv(tfold), label='Median Fit', color='purple', linestyle='--', alpha=0.7)
+    ax.errorbar(data.t, data.rv*unit_conv, yerr=data.rv_err*unit_conv, fmt='o', color='k', markersize=4)
+    ax.set_xlabel('Time')
+    ax.set_ylabel('RV') #TODO: make this able to provide units
+    ax.legend(loc='best')
+ 
+    if savepath is not None:
+        fig.savefig(savepath, dpi=300)
+        print(f"Saved multi-radial velocity fit plot to {savepath}")
+    return fig
 
 
         

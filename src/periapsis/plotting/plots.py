@@ -6,7 +6,7 @@ from periapsis.fitting.results import FitResults, SampledPriors
 from periapsis.model.orbit import Orbit
 import matplotlib.gridspec as gridspec
 from periapsis.prior import FixedPrior
-from periapsis.data.gaia import GaiaData
+from periapsis import GaiaData,RadialVelocityData
 from scipy.stats import gaussian_kde
 
 rng_plots = np.random.default_rng(5377)
@@ -40,7 +40,7 @@ def mcmc_autocorrelation_plot(results,savepath=None):
     ax.set_ylabel('Autocorrelation')
     ax.legend(loc='best',ncol=3,fontsize='small')
     if savepath is not None:
-        fig.savefig(savepath,dpi=300)
+        fig.savefig(f'{savepath}/mcmc_autocorrelation_plot.png',dpi=300)
         print(f"Saved autocorrelation plot to {savepath}")
 
     return fig
@@ -58,7 +58,7 @@ def corner_plot(results,params=None,savepath=None):
         color='tab:blue',labels=param_names,show_titles=True,verbose=False,
         title_fmt='.2f',plot_datapoints=False,plot_contours=True,fill_contours=True,quiet=True)
     if savepath is not None:
-        fig.savefig(savepath,dpi=300)
+        fig.savefig(f'{savepath}/corner.png',dpi=300)
         print(f"Saved corner plot to {savepath}")
     return fig
 
@@ -86,7 +86,7 @@ def ess_distribution_plot(results,savepath=None):
     # ax.axhline(1000, color='r', linestyle='--', label='ESS=1000')
     ax.legend()
     if savepath is not None:
-        fig.savefig(savepath,bbox_inches= 'tight',dpi=300)
+        fig.savefig(f'{savepath}/ess_dist.png',bbox_inches= 'tight',dpi=300)
         print(f"Saved ESS distribution plot to {savepath}")
     return fig
 
@@ -127,7 +127,7 @@ def prior_dist_plot(sampled_priors: SampledPriors, params=None, savepath=None, b
         axes[j].axis('off')
 
     if savepath is not None:
-        fig.savefig(savepath,dpi=300)
+        fig.savefig(f'{savepath}/prior_dist.png',dpi=300)
         print(f"Saved prior distribution plot to {savepath}")
     
     return fig
@@ -152,7 +152,7 @@ def prior_histogram_2d(sampled_priors: SampledPriors, param_x, param_y, savepath
     ax.set_title(f'2D Prior Histogram: {param_x} vs {param_y}')
 
     if savepath is not None:
-        fig.savefig(savepath,dpi=300)
+        fig.savefig(f'{savepath}/prior_2dhist.png',dpi=300)
         print(f"Saved 2D prior histogram plot to {savepath}")
 
     return fig
@@ -184,7 +184,7 @@ def prior_conditional_histogram_2d(sampled_priors: SampledPriors, param_fixed, p
     ax.set_title(f'Conditional 2D Histogram: {param_other} vs {param_fixed}')
 
     if savepath is not None:
-        fig.savefig(savepath, dpi=300)
+        fig.savefig(f'{savepath}/conditional_2dhist.png', dpi=300)
         print(f"Saved conditional 2D histogram plot to {savepath}")
 
     return fig
@@ -263,7 +263,7 @@ def posterior_over_prior(results: FitResults, params=None, savepath=None, random
         axes[j].axis('off')
     
     if savepath is not None:
-        fig.savefig(savepath,dpi=300)
+        fig.savefig(f'{savepath}/posterior_over_prior.png',dpi=300)
         print(f"Saved posterior over prior plot to {savepath}")
     
     return fig
@@ -312,7 +312,7 @@ def orbit_plot(results, data, system=1, savepath=None):
         ax.invert_xaxis()
 
         if savepath is not None:
-            fig.savefig(savepath, dpi=300)
+            fig.savefig(f'{savepath}/orbit_plot.png', dpi=300)
             print(f"Saved orbit plot to {savepath}")
         return fig
 
@@ -372,7 +372,7 @@ def orbit_plot(results, data, system=1, savepath=None):
     ax3.legend()
 
     if savepath is not None:
-        fig.savefig(savepath, dpi=300)
+        fig.savefig(f'{savepath}/orbit_plot.png', dpi=300)
         print(f"Saved orbit plot to {savepath}")
     return fig
 
@@ -399,7 +399,7 @@ def sky_motion_plot(results, data, savepath=None):
         ax.legend(loc='best')
         ax.invert_xaxis()
         if savepath is not None:
-            fig.savefig(savepath, dpi=300)
+            fig.savefig(f'{savepath}/sky_motion.png', dpi=300)
             print(f"Saved sky motion plot to {savepath}")
 
         return fig
@@ -468,7 +468,7 @@ def sky_motion_plot(results, data, savepath=None):
     ax.legend(loc='best')
 
     if savepath is not None:
-        fig.savefig(savepath, dpi=300)
+        fig.savefig(f'{savepath}/sky_motion.png', dpi=300)
         print(f"Saved sky motion plot to {savepath}")
 
     return fig
@@ -517,7 +517,7 @@ def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
         ax.invert_xaxis()
         ax.legend(fontsize='small', loc='best')
         if savepath is not None:
-            fig.savefig(savepath, dpi=300)
+            fig.savefig(f'{savepath}/multi_orbit.png', dpi=300)
             print(f"Saved multi-orbit plot to {savepath}")
         return fig
 
@@ -589,7 +589,7 @@ def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
     ax.legend(fontsize='small', loc='best')
 
     if savepath is not None:
-        fig.savefig(savepath, dpi=300)
+        fig.savefig(f'{savepath}/multi_orbit.png', dpi=300)
         print(f"Saved multi-orbit plot to {savepath}")
     return fig
 
@@ -639,7 +639,7 @@ def distribution(results, param, scale='linear', unit='', savepath=None):
         ax.set_ylabel("Probability Density")
         ax.legend(loc='upper right')
         if savepath is not None:
-            fig.savefig(savepath,dpi=300)
+            fig.savefig(f'{savepath}/distribution_plot.png',dpi=300)
             print(f"Saved distribution plot to {savepath}")
         return fig
     
@@ -678,7 +678,7 @@ def distribution(results, param, scale='linear', unit='', savepath=None):
         ax.legend(loc='upper right')
 
         if savepath is not None:
-            fig.savefig(savepath,dpi=300)
+            fig.savefig(f'{savepath}/distribution_plot.png',dpi=300)
             print(f"Saved distribution plot to {savepath}")
         return fig
 
@@ -730,7 +730,7 @@ def mass_distribution(results,scale='linear',savepath=None):
         ax.set_ylabel("Probability Density")
         ax.legend(loc='upper right')
         if savepath is not None:
-            fig.savefig(savepath,dpi=300)
+            fig.savefig(f'{savepath}/mass_dist.png',dpi=300)
             print(f"Saved mass distribution plot to {savepath}")
         return fig
 
@@ -769,7 +769,7 @@ def mass_distribution(results,scale='linear',savepath=None):
         ax.legend(loc='upper right')
 
         if savepath is not None:
-            fig.savefig(savepath,dpi=300)
+            fig.savefig(f'{savepath}/log_mass_dist.png',dpi=300)
             print(f"Saved mass distribution plot to {savepath}")
         return fig
 
@@ -777,21 +777,22 @@ def rv_fit_plot(results, data,unit_conv=1, savepath=None):
     '''
     Plots radial velocity fit over time
     '''
+    system = data.system 
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
 
     Map_fit = Orbit(**results.MAP_params)
     med_fit = Orbit(**results.median_params)
 
     fig,ax=plt.subplots()
-    ax.plot(tfold, Map_fit.rv(tfold), label='MAP Fit', color='red', linestyle='-')
-    ax.plot(tfold, med_fit.rv(tfold), label='Median Fit',color='purple', linestyle='--',alpha=0.7)
+    ax.plot(tfold, Map_fit.rv(tfold,system), label='MAP Fit', color='red', linestyle='-')
+    ax.plot(tfold, med_fit.rv(tfold,system), label='Median Fit',color='purple', linestyle='--',alpha=0.7)
     ax.errorbar(data.t, data.rv*unit_conv, yerr=data.rv_err*unit_conv, fmt='o', color='k', markersize=4)
     ax.set_xlabel('Time')
     ax.set_ylabel('RV') #TODO: make this able to provide units
-    ax.legend(loc='best')
+    ax.legend(loc='upper right')
 
     if savepath is not None:
-        fig.savefig(savepath, dpi=300)
+        fig.savefig(f'{savepath}/rv_fit.png', dpi=300)
         print(f"Saved radial velocity fit plot to {savepath}")
     return fig
 
@@ -799,30 +800,39 @@ def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove 
     '''
     Plots phase-folded radial velocity fit
     '''
+    system = data.system
     P = results.MAP_params['P']
     P_med = results.median_params['P']
-    phase = np.mod(data.t,P)
-    tfold = np.linspace(data.t.min(), data.t.max(), 1000)
-    phase_fold = np.mod(tfold,P)
+    tp_med = np.median(results['Tp'])
+    Tp_map = Orbit(**results.MAP_params)['Tp']
+    
+
+    phase = (data.t - Tp_map+0.5*P) / P %1
+
+    
+    tfold = np.linspace(Tp_map-0.5*P, Tp_map + 0.5*P, 10000)
+    phase_fold = (tfold-Tp_map+0.5*P)/P
     map_fit = Orbit(**results.MAP_params)
 
-    phase_med = np.mod(data.t,P_med)
-    phase_fold_med = np.mod(tfold,P_med)
+    tfold_med = np.linspace(tp_med-0.5*P_med,tp_med + 0.5*P_med,10000)
+    phase_fold_med = (tfold_med-tp_med+0.5*P_med)/ P_med
     med_fit = Orbit(**results.median_params)
-   
+
+    sort_map = np.argsort(phase_fold)
+    sort_med = np.argsort(phase_fold_med)
 
     fig,ax=plt.subplots()
-    ax.errorbar(phase, data.rv, yerr=data.rv_err, fmt='o', color='k', markersize=4,label='Data (MAP Phase)')
-    ax.scatter(phase_fold,map_fit.rv(tfold)/unit_conv, label='MAP Fit', color='red', s=10)
-    ax.errorbar(phase_med, data.rv, yerr=data.rv_err, fmt='o', color='k', markersize=4,alpha=0.6,label='Data (Median Phase)')
-    ax.scatter(phase_fold_med, med_fit.rv(tfold)/unit_conv, label='Median Fit', color='purple', linestyle='--', alpha=0.6)
+    ax.errorbar(phase, data.rv, yerr=data.rv_err, fmt='o', color='k', markersize=4)
+
+    ax.plot(phase_fold[sort_map],map_fit.rv(tfold,system)[sort_map]/unit_conv, label='MAP Fit', color='red',lw=1.5,linestyle='-')   
+    ax.plot(phase_fold_med[sort_med], med_fit.rv(tfold_med,system)[sort_med]/unit_conv, label='Median Fit', color='purple',lw=1.5,linestyle='--', alpha=0.5)
 
     ax.set_xlabel('Phase')
     ax.set_ylabel('RV') #TODO: make this able to provide units
     ax.legend(loc='best')
 
     if savepath is not None:
-        fig.savefig(savepath, dpi=300)
+        fig.savefig(f'{savepath}/phase_fold_rv.png', dpi=300)
         print(f"Saved phase-folded radial velocity plot to {savepath}")
     return fig
 
@@ -831,6 +841,7 @@ def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     Plots multiple radial velocity fits from posterior samples
     '''
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
+    system = data.system
 
     param_names = results.param_names
     samples = results.samples.get('samples', None)
@@ -868,23 +879,99 @@ def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     fig,ax=plt.subplots()
     for samp in samps:
         model = Orbit(**dict(zip(param_names, samp)), **fixed_prior_params)
-        ax.plot(tfold, model.rv(tfold), color='tab:blue', alpha=0.3)
+        ax.plot(tfold, model.rv(tfold,system), color='tab:blue', alpha=0.3)
 
-    ax.plot(tfold, map_model.rv(tfold), label='MAP Fit', color='red', linestyle='-')
-    ax.plot(tfold, med_model.rv(tfold), label='Median Fit', color='purple', linestyle='--', alpha=0.7)
+    ax.plot(tfold, map_model.rv(tfold,system), label='MAP Fit', color='red', linestyle='-')
+    ax.plot(tfold, med_model.rv(tfold,system), label='Median Fit', color='purple', linestyle='--', alpha=0.7)
     ax.errorbar(data.t, data.rv*unit_conv, yerr=data.rv_err*unit_conv, fmt='o', color='k', markersize=4)
     ax.set_xlabel('Time')
     ax.set_ylabel('RV') #TODO: make this able to provide units
     ax.legend(loc='best')
  
     if savepath is not None:
-        fig.savefig(savepath, dpi=300)
+        fig.savefig(f'{savepath}/rv_multi_fit.png', dpi=300)
         print(f"Saved multi-radial velocity fit plot to {savepath}")
     return fig
 
+def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
+    '''
+    Plots multiple phase-folded RV fits
+    '''
+    system = data.system
+    
+    param_names = results.param_names
+    samples = results.samples.get('samples', None)
+    if samples is None:
+        if not param_names:
+            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+        
+        sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
+        if len(sample_arrays) != len(param_names):
+            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+        samples = np.column_stack(sample_arrays)
+        
+    
+    map_params = getattr(results, 'MAP_params', None)
+    if map_params is None:
+        map_params = results.samples.get('MAP_params', None)
+    
+    med_params = getattr(results, 'median_params', None)
+    if med_params is None:
+        med_params = results.samples.get('median_params', None)
+    
+    fixed_prior_params = {}
+    for k, p in results.priors.items():
+        if isinstance(p, FixedPrior):
+            map_params[k] = p.value
+            med_params[k] = p.value
+            fixed_prior_params[k] = p.value
+    
+    map_model = Orbit(**map_params)
+    med_model = Orbit(**med_params)
+    
+    idx = np.random.choice(samples.shape[0], size=min(Nplot, samples.shape[0]), replace=False)
+    samps = samples[idx]
+
+    P_map = map_params['P']
+    Tp_map = map_model['Tp']
+    phase_map = (data.t - Tp_map + 0.5*P_map) / P_map % 1
+    tfold_map = np.linspace(Tp_map - 0.5*P_map, Tp_map + 0.5*P_map, 10000)
+    phase_fold_map = (tfold_map - Tp_map + 0.5*P_map) / P_map
+    rv_map = map_model.rv(tfold_map, system)
+
+    P_med = med_params['P']
+    Tp_med = med_model['Tp']
+    phase_med = (data.t - Tp_med + 0.5*P_med) / P_med % 1
+    tfold_med = np.linspace(Tp_med - 0.5*P_med, Tp_med + 0.5*P_med, 10000)
+    phase_fold_med = (tfold_med - Tp_med + 0.5*P_med) / P_med
+    rv_med = med_model.rv(tfold_med, system)
+    
+
+    fig,ax=plt.subplots()
+    for samp in samps:
+        model = Orbit(**dict(zip(param_names, samp)), **fixed_prior_params)
+        P_samp = model['P']
+        Tp_samp = model['Tp']
+        tfold_samp = np.linspace(Tp_samp - 0.5*P_samp, Tp_samp + 0.5*P_samp, 10000)
+        phase_fold_samp = (tfold_samp - Tp_samp + 0.5*P_samp) / P_samp
+        rv_samp = model.rv(tfold_samp, system)
+        ax.plot(phase_fold_samp, rv_samp/unit_conv, color='tab:blue', alpha=0.3)
+
+    ax.errorbar(phase_map, data.rv, yerr=data.rv_err, fmt='o', color='k', markersize=4)
+    ax.plot(phase_fold_map, rv_map/unit_conv, label='MAP Fit', color='red', lw=1.5, linestyle='-')
+    ax.plot(phase_fold_med, rv_med/unit_conv, label='Median Fit', color='purple', lw=1.5, linestyle='--', alpha=0.7)
+
+    ax.set_xlabel('Phase')
+    ax.set_ylabel('RV') #TODO: make this able to provide units
+    ax.legend(loc='best')
+
+    if savepath is not None:
+        fig.savefig(f'{savepath}/multi_phase.png', dpi=300)
+        print(f"Saved multi-phase-folded radial velocity plot to {savepath}")
+    return fig
 
         
-def all_plots(results, data, scale=None, savepath=None):
+def all_plots(results, data, scale=None,unit_conv=1, savepath=None):
     '''
     Generates all diagnostic and orbit plots
     '''
@@ -893,27 +980,51 @@ def all_plots(results, data, scale=None, savepath=None):
         scale = 'linear'
 
     if results.backend=='emcee':
+        if isinstance(data,RadialVelocityData):
+            auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
+            corner = corner_plot(results,savepath=savepath)
+            ess_dist = ess_distribution_plot(results,savepath=savepath)
+            posterior_prior = posterior_over_prior(results, savepath=savepath)
+            rv_fit = rv_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            phase_fold = phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            multi_rv = rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            m2min_dist = distribution(results, 'minM2', scale=scale, unit='M$_\odot$', savepath=savepath)
+            return auto_corr, corner, ess_dist, posterior_prior, rv_fit, phase_fold, multi_rv, m2min_dist
 
-        auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
-        corner = corner_plot(results,savepath=savepath)
-        ess_dist = ess_distribution_plot(results,savepath=savepath)
-        posterior_prior = posterior_over_prior(results, savepath=savepath)
-        orbit_vis=orbit_plot(results,data,savepath=savepath)
-        sky_vis=sky_motion_plot(results,data,savepath=savepath)
-        multi_orb = multi_orbit_plot(results,data,savepath=savepath)
-        mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
+        else:
+
+            auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
+            corner = corner_plot(results,savepath=savepath)
+            ess_dist = ess_distribution_plot(results,savepath=savepath)
+            posterior_prior = posterior_over_prior(results, savepath=savepath)
+            orbit_vis=orbit_plot(results,data,savepath=savepath)
+            sky_vis=sky_motion_plot(results,data,savepath=savepath)
+            multi_orb = multi_orbit_plot(results,data,savepath=savepath)
+            mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
 
 
-        return auto_corr, corner, ess_dist, orbit_vis, multi_orb, mass_dist
+            return auto_corr, corner, ess_dist, orbit_vis, multi_orb, mass_dist
 
     if results.backend=='ultranest':
-        posterior_prior = posterior_over_prior(results, savepath=savepath)
-        corner = corner_plot(results,savepath=savepath)
-        orbit_vis=orbit_plot(results,data,savepath=savepath)
-        sky_vis=sky_motion_plot(results,data,savepath=savepath)
-        multi_orb = multi_orbit_plot(results,data,savepath=savepath)
-        mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
-        
-                
+        if isinstance(data,RadialVelocityData):
+            posterior_prior = posterior_over_prior(results, savepath=savepath)
+            corner = corner_plot(results,savepath=savepath)
+            rv_fit = rv_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            phase_fold = phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            multi_rv = rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+            m2min_dist = distribution(results, 'minM2', scale=scale, unit='M$_\odot$', savepath=savepath)
 
-        return posterior_prior, corner, orbit_vis, sky_vis, multi_orb, mass_dist
+            return posterior_prior, corner, rv_fit, phase_fold, multi_rv, m2min_dist
+
+        else:
+
+            posterior_prior = posterior_over_prior(results, savepath=savepath)
+            corner = corner_plot(results,savepath=savepath)
+            orbit_vis=orbit_plot(results,data,savepath=savepath)
+            sky_vis=sky_motion_plot(results,data,savepath=savepath)
+            multi_orb = multi_orbit_plot(results,data,savepath=savepath)
+            mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
+
+            return posterior_prior, corner, orbit_vis, sky_vis, multi_orb, mass_dist

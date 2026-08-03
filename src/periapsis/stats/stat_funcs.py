@@ -111,7 +111,7 @@ def delta_chi2(results,data,savepath=None):
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
 
-    if not isinstance(data,(GaiaData)):
+    if not isinstance(data,(GaiaData,RadialVelocityData)):
         
 
         pm_chi2 = results.PM_fit['chi2']
@@ -127,9 +127,11 @@ def delta_chi2(results,data,savepath=None):
         delta_dof_med = np.abs(pm_dof - orbit_dof)
         
         p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
-        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med) #0.0027 is 3 sigma significance 
+        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med) #0.0027 is 3 sigma significance
 
-    else:
+        sig_significance = (pm_chi2 - pm_dof) / np.sqrt(2*pm_dof) #sigma significance of orbit fit over proper motion fit
+
+    elif isinstance(data,(GaiaData)):
         if "jitter" not in map_params: 
             jit = getattr(results, 'jitter', None)
             if jit is None:
@@ -137,8 +139,6 @@ def delta_chi2(results,data,savepath=None):
             if jit is not None:
                 map_params['jitter'] = jit
                 med_params['jitter'] = jit    
-        map_model = Orbit(**map_params)
-        med_model = Orbit(**med_params)
         chi2_map = GaiaData.chi2(data,map_model)
         chi2_med = GaiaData.chi2(data,med_model)
         orbit_dof = len(data.t) - num_free_params
@@ -153,9 +153,27 @@ def delta_chi2(results,data,savepath=None):
 
         p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
         p_value_med = chi2.sf(delta_chi2_med, delta_dof_med)
- 
 
-    return delta_chi2_map, delta_chi2_med, p_value_map, p_value_med
+        sig_significance = (single_chi2 - single_dof) / np.sqrt(2*single_dof) #sigma significance of orbit fit over single motion fit
+
+    elif isinstance(data,(RadialVelocityData)):
+        gamma_chi2 = results.gamma_fit['chi2']
+        gamma_dof = results.gamma_fit['dof']
+        chi2_map = data.chi2(map_model)
+        chi2_med = data.chi2(med_model)
+        orbit_dof = len(data.t) - num_free_params
+
+        delta_chi2_map = gamma_chi2 - chi2_map
+        delta_chi2_med = gamma_chi2 - chi2_med
+        delta_dof_map = np.abs(gamma_dof - orbit_dof)
+        delta_dof_med = np.abs(gamma_dof - orbit_dof)
+
+        p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
+        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med)
+
+        sig_significance = (gamma_chi2 - gamma_dof) / np.sqrt(2*gamma_dof) 
+
+    return delta_chi2_map, delta_chi2_med, p_value_map, p_value_med,sig_significance
     
 def credible_intervals(results):
     '''
@@ -184,7 +202,7 @@ def credible_intervals(results):
 
 def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
     red_chi2_map, red_chi2_med,uwe_map,uwe_med,orbit_dof = red_chi2(results,data)
-    delta_chi2_map, delta_chi2_med,p_map,p_med = delta_chi2(results,data)
+    delta_chi2_map, delta_chi2_med,p_map,p_med,sig_significance = delta_chi2(results,data)
     intervals = credible_intervals(results)
     
 
@@ -198,6 +216,7 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
         'delta_chi2_med': delta_chi2_med,
         'p_value_map': p_map,
         'p_value_med': p_med,
+        'sigma_significance': sig_significance,
         'credible_intervals': intervals
     }
     if getattr(results, 'backend', None) == 'emcee':
@@ -214,11 +233,11 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
         }
     }
 
-    if 'M2' in results.samples:
+    if results['M2'] is not None:
         fit_results['derived_fit_params'] = {
             'M2': {
-                'median': float(np.median(results.samples['M2'])),
-                'credible_intervals': _credible_interval_summary(results.samples['M2']),
+                'median': float(np.median(results['M2'])),
+                'credible_intervals': _credible_interval_summary(results['M2']),
             
             }
         }
@@ -233,7 +252,7 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
             json.dump(stats, f, indent=indent, sort_keys=True, default=_json_default)
         with open(savepath/"fit_results.json", "w") as f:
             json.dump(fit_results, f, indent=indent, sort_keys=True, default=_json_default)
-            
+    
 
     return stats,fit_results
     

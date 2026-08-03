@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import numpy as np
+from scipy.linalg import lstsq as ls
 from periapsis.data.data import Data
 from periapsis.fitting.results import FitResults
 
@@ -56,14 +57,29 @@ class Fitter(ABC):
     
             dof = 2 * len(data.t) - 2
         else:
+            if not (
+                np.all(np.isfinite(data.x))
+                and np.all(np.isfinite(data.x_err))
+                and np.all(np.isfinite(dt))
+            ):
+                raise ValueError(
+                    "Data contains NaN or Inf values in x, x_err, or time arrays."
+            )
+            if not (
+                np.all(np.isfinite(data.y))
+                and np.all(np.isfinite(data.y_err))
+            ):
+                raise ValueError(
+                "Data contains NaN or Inf values in y or y_err arrays."
+            )
             
             A_x = np.vstack([np.ones_like(dt)/data.x_err,dt/data.x_err]).T
             b_x = data.x/data.x_err
-            x0,mu_x = np.linalg.lstsq(A_x, b_x,rcond=None)[0]
+            x0,mu_x = ls(A_x, b_x,lapack_driver="gelsy")[0]
         
             A_y = np.vstack([np.ones_like(dt)/data.y_err,dt/data.y_err]).T
             b_y = data.y/data.y_err
-            y0,mu_y = np.linalg.lstsq(A_y, b_y,rcond=None)[0]
+            y0,mu_y = ls(A_y, b_y,lapack_driver="gelsy")[0]
             dof = 2*len(data.t)-4
 
         chi2_x = np.sum((data.x-(x0+mu_x*dt))**2/data.x_err**2)
@@ -84,4 +100,18 @@ class Fitter(ABC):
             'dpmdec': pm_fit['params']['mu_y'],
         }
 
-    
+    def _systemic_velocity(self,data:Data):
+        '''
+        Returns the systemic velocity of the system from the data
+        '''
+
+        rv = data.rv 
+        rv_err = data.rv_err
+        N = len(rv)
+        w = 1/rv_err**2
+        gamma = np.sum(rv*w)/np.sum(w)
+
+        chi2 = np.sum(((rv-gamma)/rv_err)**2)
+        dof = N-1
+
+        return {'gamma':gamma,'chi2':chi2,'dof':dof}

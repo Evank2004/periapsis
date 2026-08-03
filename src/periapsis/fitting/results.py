@@ -19,6 +19,7 @@ class FitResults:
         self.mass_function = samples.pop('mass_function', None)
         self.priors = samples.pop('priors', dict())
         self.Single_motion_params = samples.pop('Single_motion_params', None)
+        self.gamma_fit = samples.pop('gamma_fit', None)
         self.Ess = samples.pop('Ess', None)
         self.tau = samples.pop('tau', None)
         self.mean_acceptance_fraction = samples.pop('mean_acceptance_fraction', None)

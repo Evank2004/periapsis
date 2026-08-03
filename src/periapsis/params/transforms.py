@@ -74,6 +74,11 @@ _all_parameters = {
     'parallax', 'distance',
 }
 
+wrapped_parameters = {
+    "omega", "Omega", "piomega", "omega1", "piomega1", "omega2", "piomega2",
+    "t0", "M0", "L0", "E0", "nu0", "l0", "uM0", "u0", "u01", "u02", "uM01", "uM02", "l01", "l02"
+}
+
 constG = 4*np.pi**2 # TODO: units
 
 def A_B_F_G_to_a_cosi_omega_Omega(A, B, F, G):

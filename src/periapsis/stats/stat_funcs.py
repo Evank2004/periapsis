@@ -131,7 +131,7 @@ def delta_chi2(results,data,savepath=None):
 
         sig_significance = (pm_chi2 - pm_dof) / np.sqrt(2*pm_dof) #sigma significance of orbit fit over proper motion fit
 
-    elif isinstance(data,(GaiaData)):
+    elif isinstance(data,GaiaData):
         if "jitter" not in map_params: 
             jit = getattr(results, 'jitter', None)
             if jit is None:
@@ -156,7 +156,7 @@ def delta_chi2(results,data,savepath=None):
 
         sig_significance = (single_chi2 - single_dof) / np.sqrt(2*single_dof) #sigma significance of orbit fit over single motion fit
 
-    elif isinstance(data,(RadialVelocityData)):
+    elif isinstance(data,RadialVelocityData):
         gamma_chi2 = results.gamma_fit['chi2']
         gamma_dof = results.gamma_fit['dof']
         chi2_map = data.chi2(map_model)

@@ -5,13 +5,10 @@ from periapsis.data import Data, AstrometryData, RadialVelocityData, GaiaData, J
 from .fitter import Fitter
 from periapsis.fitting.results import FitResults
 from periapsis.utils.solvers import solve_kepler
-from periapsis.initial import InitialGuess, AstrometryInitialGuess, RVInitialGuess, GaiaInitialGuess, JointInitialGuess
-from periapsis.prior import FixedPrior, Bounds
-from periapsis.utils.solvers import transform_theile
-from periapsis.utils.solvers import solve_mass
+from periapsis.initial import InitialGuess, AstrometryLinearInitialGuess, RVInitialGuess, GaiaInitialGuess, JointInitialGuess
+from periapsis.prior import FixedPrior
 from periapsis.params.transforms import covered_parameters, build_transform_functions
 import numpy as np
-import matplotlib.pyplot as plt
 import emcee
 from typing import Type
 
@@ -20,7 +17,8 @@ class MCMCLinearFitter(Fitter):
         super().__init__(**priors)
         self.nwalkers = nwalkers
         self.niter = niter
-        self.covered_params = covered_parameters(sampled_params)
+        self.fixed_prior_params = {p for p in self.priors.keys() if isinstance(self.priors[p], FixedPrior)}
+        self.covered_params = covered_parameters({*sampled_params, *self.fixed_prior_params})
         if any(param not in self.covered_params for param in ('P', 'e', 'Tp')):
             raise ValueError("MCMCLinearFitter requires sampled_params to define 'P', 'e', and 'Tp'.")
         # TODO - Raise a warning if user is sampling more params than necessary
@@ -28,12 +26,12 @@ class MCMCLinearFitter(Fitter):
         self.param_order = tuple(sampled_params)
         if len(self.sampled_params) != len(self.param_order):
             raise ValueError("Duplicate parameters found in sampled_params.")
-        self.fixed_prior_params = {p for p in self.priors.keys() if isinstance(self.priors[p], FixedPrior)}
-
         self.prior_covered_params = covered_parameters(self.priors.keys())
         if any(param not in self.prior_covered_params for param in sampled_params):
             missing = [param for param in sampled_params if param not in self.prior_covered_params]
             raise ValueError(f"Missing priors for sampled parameters: {missing}")
+        self.early_prior_params = {p for p in self.priors.keys() if not isinstance(self.priors[p], FixedPrior) and p in self.covered_params}
+        self.late_prior_params = {p for p in self.priors.keys() if not isinstance(self.priors[p], FixedPrior) and p not in self.covered_params}
 
 
     def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
@@ -41,61 +39,88 @@ class MCMCLinearFitter(Fitter):
             raise ValueError("MCMCLinearFitter currently supports AstrometryData.")
 
         param_order = self.param_order
-        param_transforms = build_transform_functions(param_order, ('P', 'e', 'Tp',))
+        param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, ('P', 'e', 'Tp',))
         ndim = len(param_order)
 
         # TODO normalize ref_epoch
         ref_epoch = getattr(data, 'ref_epoch', 0.0)
-        
-        def matrix_method(params_dict,data,E):
+
+        # Matrix method cached variables
+        mm_nobs = len(data.t)
+        mm_dt = data.t - ref_epoch
+        mm_M = np.zeros((2*mm_nobs, 8))
+        mm_M[:mm_nobs,0] = 1 # dx
+        mm_M[:mm_nobs,1] = mm_dt # pmra
+        mm_M[mm_nobs:,4] = 1 # dy
+        mm_M[mm_nobs:,5] = mm_dt # pmdec
+        mm_eta = np.concatenate((data.x, data.y))
+        mm_sigma = np.concatenate((data.x_err, data.y_err))
+        mm_w = 1/mm_sigma
+        mm_eta_w = mm_eta * mm_w
+
+        def matrix_method(params_dict, E):
             
-            nobs = len(data.t)
-            dt = data.t - ref_epoch
+            # nobs = len(data.t)
+            # dt = data.t - ref_epoch
 
-            M = np.zeros((2*nobs,8))
+            # M = np.zeros((2*nobs,8))
 
-            eta =np.concatenate((data.x,data.y))
-            sigma = np.concatenate((data.x_err,data.y_err))
+            # eta =np.concatenate((data.x,data.y))
+            # sigma = np.concatenate((data.x_err,data.y_err))
     
 
             X = np.cos(E) - params_dict['e']
             Y = np.sqrt(1-params_dict['e']**2)*np.sin(E)
 
-            M[:nobs,0] = 1 #dx
-            M[:nobs,1] = dt #pmra
-            M[:nobs,2] = X # A
-            M[:nobs,3] = Y # F
+            # M[:nobs,0] = 1 #dx
+            # M[:nobs,1] = dt #pmra
+            mm_M[:mm_nobs,2] = X # A
+            mm_M[:mm_nobs,3] = Y # F
 
             # now bottom half y obs
-            M[nobs:,4] = 1 #dy
-            M[nobs:,5] = dt #pmdec
-            M[nobs:,6] = X # B
-            M[nobs:,7] = Y # G
+            # M[nobs:,4] = 1 #dy
+            # M[nobs:,5] = dt #pmdec
+            mm_M[mm_nobs:,6] = X # B
+            mm_M[mm_nobs:,7] = Y # G
 
             #now we need to get covariance matrix
             # which diagnol matrix, with err_x^2 on top and err_y^2 on bottom
             # so we can just say C^-1 is equivalent to (A*w) ....
-            w = 1/sigma # just do 1/sigma to keep track of where the weights have been applied
+            # w = 1/sigma # just do 1/sigma to keep track of where the weights have been applied
             # now we can calculate M^T C^-1 M and M^T C^-1 eta
-            eta_w = eta * w 
-            M_w = M * w[:, None] # multiply each row of M by corresponding weight
+            # eta_w = eta * w 
+            M_w = mm_M * mm_w[:, None] # multiply each row of M by corresponding weight
 
             MTM = M_w.T @ M_w
-            MT_eta = M_w.T @ eta_w # matching equation
+            MT_eta = M_w.T @ mm_eta_w # matching equation
             # now we can solve for mu using np.linalg.solve
             mu = np.linalg.solve(MTM, MT_eta) # dx,pmra,B,G,dy,pmdec,A,F
 
             model_werr = M_w @ mu # this is the model prediction with the error already over
             # this is (obs - model)/err
-            resids = eta_w - model_werr
+            resids = mm_eta_w - model_werr
             chi2 = np.sum(resids**2)
             
             return mu, chi2
     
-        
 
+        early_prior_transforms = build_transform_functions([*self.sampled_params, *self.fixed_prior_params], self.early_prior_params)
+        late_prior_transforms = build_transform_functions([*self.sampled_params, "dx", "dpmra", f"A{data.system}", f"F{data.system}", "dy", "dpmdec", f"B{data.system}", f"G{data.system}", *self.fixed_prior_params], self.late_prior_params)
         def lnprob(params, data):
-            params_dict = param_transforms(**dict(zip(param_order,params)))
+            # Evaulate priors for parameters that don't need full orbit solution, short circuiting if any are invalid
+            ln_prior = 0.0
+            early_transformed = early_prior_transforms(
+                **dict(zip(param_order, params)),
+                **{name: self.priors[name].value for name in self.fixed_prior_params}
+            )
+            for name in self.early_prior_params:
+                val = early_transformed[name]
+                if not np.isfinite(val):
+                    return -np.inf
+                ln_prior += self.priors[name].logpdf(val)
+            
+            # Calculate full orbit solution and chi2
+            params_dict = param_transforms(**dict(zip(param_order,params)), **{name: self.priors[name].value for name in self.fixed_prior_params})
 
             dt = data.t - ref_epoch
             ti = dt - params_dict['Tp']
@@ -103,26 +128,21 @@ class MCMCLinearFitter(Fitter):
             M = 2 * np.pi * ti / params_dict['P']
             E = solve_kepler(M, params_dict['e'])
 
-            mu, chi2 = matrix_method(params_dict, data, E)
+            mu, chi2 = matrix_method(params_dict, E)
 
-            ln_prior = 0.0
-
-            for name, prior in self.priors.items():
-                if isinstance(prior, FixedPrior):
-                    continue  # Skip fixed priors
-                try:
-                    transform = build_transform_functions([*self.sampled_params, "dx", "dpmra", f"A{data.system}", f"F{data.system}", "dy", "dpmdec", f"B{data.system}", f"G{data.system}", *self.fixed_prior_params], [name])
-                    val = transform(
-                        **{name: params[i] for i, name in enumerate(self.param_order)},
-                        **{**{name: self.priors[name].value for name in self.fixed_prior_params}, "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7]},
-                    )[name]
-                    if not np.isfinite(val):
-                        return -np.inf
-                    ln_prior += prior.logpdf(val)
-                except KeyError:
-                    # If the parameter is not reachable from the sampled_params or mu, skip it
-                    warnings.warn(f"Parameter {name} is not reachable from sampled_params or mu. Skipping prior evaluation for this parameter.")
-                    continue
+            # Evaluate priors for parameters that require full orbit solution, short circuiting if any are invalid
+            late_transformed = late_prior_transforms(
+                **dict(zip(param_order, params)),
+                **{
+                    **{name: self.priors[name].value for name in self.fixed_prior_params},
+                    "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7]
+                }
+            )
+            for name in self.late_prior_params:
+                val = late_transformed[name]
+                if not np.isfinite(val):
+                    return -np.inf
+                ln_prior += self.priors[name].logpdf(val)
 
             if not np.isfinite(chi2):
                 return -np.inf
@@ -138,7 +158,7 @@ class MCMCLinearFitter(Fitter):
 
         if initial is None:
             if isinstance(data, AstrometryData):
-                initial = AstrometryInitialGuess
+                initial = AstrometryLinearInitialGuess
             elif isinstance(data, RadialVelocityData):
                 initial = RVInitialGuess
             elif isinstance(data, GaiaData):
@@ -184,11 +204,11 @@ class MCMCLinearFitter(Fitter):
         
         full_posterior = [] 
         for param in samples:
-            transformed_param = param_transforms(**dict(zip(param_order, param)))
+            transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
             P,e,Tp = transformed_param["P"], transformed_param["e"], transformed_param["Tp"]
             M = 2*np.pi * (data.t - ref_epoch - Tp) / P
             E = solve_kepler(M,e)
-            mu, _ = matrix_method({'e': e}, data, E)
+            mu, _ = matrix_method({'e': e}, E)
             dx = mu[0]
             dpmra = mu[1]
             A = mu[2]

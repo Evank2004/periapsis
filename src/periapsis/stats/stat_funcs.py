@@ -26,6 +26,25 @@ def _credible_interval_summary(samples):
         '+2sigma': p2sig,
     }
 
+
+def _get_result_value(results, name, default=None):
+    if isinstance(results, dict):
+        return results.get(name, default)
+
+    if hasattr(results, '__getitem__'):
+        try:
+            return results[name]
+        except (KeyError, TypeError, IndexError):
+            pass
+
+    if hasattr(results, 'samples'):
+        samples = getattr(results, 'samples')
+        if isinstance(samples, dict) and name in samples:
+            return samples[name]
+
+    return getattr(results, name, default)
+
+
 def red_chi2(results,data,savepath=None):
     '''
     Returns reduced Chi2 value for the MAP and median fit
@@ -195,8 +214,9 @@ def credible_intervals(results):
 
         credible_intervals[label] = _credible_interval_summary(samples)
 
-    if 'M2' in results.samples:
-        credible_intervals['M2'] = _credible_interval_summary(results.samples['M2'])
+    m2_samples = _get_result_value(results, 'M2')
+    if m2_samples is not None:
+        credible_intervals['M2'] = _credible_interval_summary(m2_samples)
 
     return credible_intervals
 
@@ -233,12 +253,12 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
         }
     }
 
-    if results['M2'] is not None:
+    m2_samples = _get_result_value(results, 'M2')
+    if m2_samples is not None:
         fit_results['derived_fit_params'] = {
             'M2': {
-                'median': float(np.median(results['M2'])),
-                'credible_intervals': _credible_interval_summary(results['M2']),
-            
+                'median': float(np.median(m2_samples)),
+                'credible_intervals': _credible_interval_summary(m2_samples),
             }
         }
 

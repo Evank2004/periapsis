@@ -73,8 +73,9 @@ class MCMCGaiaFitter(Fitter):
             M = 2*np.pi * ti/P
             E = solve_kepler(M,e)
 
+            
             X = np.cos(E) - e
-            Y = np.sqrt(1-e**2)*np.sin(E)
+            Y = np.sqrt(1.0 - e**2) * np.sin(E)
 
             A = np.column_stack([
                 data.spsi, #delta_alpha

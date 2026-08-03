@@ -990,7 +990,7 @@ def all_plots(results, data, scale=None,unit_conv=1, savepath=None):
             multi_rv = rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
             multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
             m2min_dist = distribution(results, 'minM2', scale=scale, unit='M$_\odot$', savepath=savepath)
-            return auto_corr, corner, ess_dist, posterior_prior, rv_fit, phase_fold, multi_rv, m2min_dist
+            return auto_corr, corner, ess_dist, posterior_prior, rv_fit, phase_fold, multi_rv, multi_phase, m2min_dist
 
         else:
 
@@ -1016,7 +1016,7 @@ def all_plots(results, data, scale=None,unit_conv=1, savepath=None):
             multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
             m2min_dist = distribution(results, 'minM2', scale=scale, unit='M$_\odot$', savepath=savepath)
 
-            return posterior_prior, corner, rv_fit, phase_fold, multi_rv, m2min_dist
+            return posterior_prior, corner, rv_fit, phase_fold, multi_rv, multi_phase, m2min_dist
 
         else:
 

@@ -1,5 +1,5 @@
 from periapsis.data.common import AstrometryData
-from periapsis.params.transforms import build_transform_functions, overconstrained_parameters, covered_parameters
+from periapsis.params.transforms import build_transform_functions, overconstrained_parameters, covered_parameters, wrapped_parameters
 from periapsis.model import Orbit
 from .fitter import Fitter
 from periapsis.data.data import Data
@@ -148,7 +148,7 @@ class UltranestLinearFitter(Fitter):
             loglike=log_likelihood, 
             transform=prior_transform,
             derived_param_names=tuple([name for name in self.output_param_order if name not in param_order]),
-            wrapped_params=None, # TODO
+            wrapped_params=[name in wrapped_parameters for name in param_order],
         )
 
         results = sampler.run(

@@ -11,6 +11,7 @@ import periapsis.initial.rv_initial as rv_module
 from periapsis.data import AstrometryData, GaiaData, RadialVelocityData
 from periapsis.initial import (
     AstrometryInitialGuess,
+    AstrometryLinearInitialGuess,
     GaiaInitialGuess,
     InitialGuess,
     JointInitialGuess,
@@ -93,6 +94,7 @@ def test_initial_package_exports_all_initial_guess_classes():
     assert initial_package.__all__ == [
         "InitialGuess",
         "AstrometryInitialGuess",
+        "AstrometryLinearInitialGuess",
         "RVInitialGuess",
         "GaiaInitialGuess",
         "JointInitialGuess",
@@ -103,6 +105,7 @@ def test_initial_package_exports_all_initial_guess_classes():
     "guess_class",
     [
         AstrometryInitialGuess,
+        AstrometryLinearInitialGuess,
         RVInitialGuess,
         GaiaInitialGuess,
         JointInitialGuess,

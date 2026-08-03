@@ -1,11 +1,11 @@
-from periapsis.data.data import Data
 from periapsis.model.orbit import Orbit
 import numpy as np
-from scipy.optimize import minimize,differential_evolution
+from scipy.optimize import minimize, differential_evolution
 from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks
-from periapsis.params.transforms import covered_parameters, build_transform_functions
+from periapsis.params.transforms import build_transform_functions
 from periapsis.prior.fixed_prior import FixedPrior
+from periapsis.utils.solvers import solve_kepler
 
 from .initial import InitialGuess
 
@@ -134,3 +134,119 @@ class AstrometryInitialGuess(InitialGuess):
             poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers))
         pos = np.column_stack(poss)
         return pos
+
+
+class AstrometryLinearInitialGuess(AstrometryInitialGuess):
+    def __init__(self, data, rng, **priors):
+        super().__init__(data, rng, **priors)
+        self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
+
+    def neg_lnlike(self,params,data,priors,param_in):
+        params_dict = dict(zip(param_in,params))
+        lp = self.ln_prior(params_dict, priors)
+        if np.isinf(lp):
+            return -np.inf
+
+        PeTp_params = self.PeTp_transform(**params_dict)
+        _, chi2 = matrix_method(PeTp_params, data)
+        
+        return 0.5*chi2 - lp
+
+    def get_initial_guess(self, param_order, nwalkers):
+        """
+        Returns an intial guess on fitted parameters based on the data
+        """
+        param_in = []
+        a1_guess, p_guess = self.lomb_scargle()
+        initial_points = []
+        for i in self.priors:
+            param_in.append(i)
+            prior = self.priors[i]
+            if i == "a":
+                initial_points.append(a1_guess)
+            elif i == "P":
+                initial_points.append(p_guess)
+            else:
+                initial_points.append(prior.sample(self.rng, size=1)[0])
+
+        transform = build_transform_functions(param_in, param_order)
+
+        bounds = self._bounds(param_in)
+        lower = np.array([b[0] for b in bounds], dtype=float)
+        upper = np.array([b[1] for b in bounds], dtype=float)
+        initial_points = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
+
+        result = differential_evolution(
+            self.neg_lnlike, 
+            bounds=bounds, 
+            args=(self.data, self.priors,param_in), 
+            maxiter=2000,
+            polish=False
+        )
+
+        orbit = minimize(
+            self.neg_lnlike, 
+            x0=result.x,
+            method='L-BFGS-B', 
+            args=(self.data, self.priors,param_in), 
+            bounds=bounds,
+            options={'maxiter': 2000}
+        )
+
+        best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
+        
+        best_values = transform(**best_prior_values)
+        poss = []
+        for name in param_order:
+            poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers))
+        pos = np.column_stack(poss)
+        return pos
+
+
+def matrix_method(params_dict,data):
+    P,e,Tp = params_dict["P"], params_dict["e"], params_dict["Tp"]
+    Ma = 2*np.pi * (data.t - Tp) / P
+    E = solve_kepler(Ma,e)
+
+    nobs = len(data.t)
+    dt = data.t - data.ref_epoch
+
+    M = np.zeros((2*nobs,8))
+
+    eta =np.concatenate((data.x,data.y))
+    sigma = np.concatenate((data.x_err,data.y_err))
+
+
+    X = np.cos(E) - params_dict['e']
+    Y = np.sqrt(1-params_dict['e']**2)*np.sin(E)
+
+    M[:nobs,0] = 1 #dx
+    M[:nobs,1] = dt #pmra
+    M[:nobs,2] = X # A
+    M[:nobs,3] = Y # F
+
+    # now bottom half y obs
+    M[nobs:,4] = 1 #dy
+    M[nobs:,5] = dt #pmdec
+    M[nobs:,6] = X # B
+    M[nobs:,7] = Y # G
+
+    #now we need to get covariance matrix
+    # which diagnol matrix, with err_x^2 on top and err_y^2 on bottom
+    # so we can just say C^-1 is equivalent to (A*w) ....
+    w = 1/sigma # just do 1/sigma to keep track of where the weights have been applied
+    # now we can calculate M^T C^-1 M and M^T C^-1 eta
+    eta_w = eta * w 
+    M_w = M * w[:, None] # multiply each row of M by corresponding weight
+
+    MTM = M_w.T @ M_w
+    MT_eta = M_w.T @ eta_w # matching equation
+    # now we can solve for mu using np.linalg.solve
+    mu = np.linalg.solve(MTM, MT_eta) # dx,pmra,B,G,dy,pmdec,A,F
+
+    model_werr = M_w @ mu # this is the model prediction with the error already over
+    # this is (obs - model)/err
+    resids = eta_w - model_werr
+    chi2 = np.sum(resids**2)
+    
+    return mu, chi2    

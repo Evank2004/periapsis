@@ -5,7 +5,7 @@ from .fitter import Fitter
 from periapsis.model.orbit import Orbit
 from periapsis.data.data import Data
 from periapsis.fitting.results import FitResults
-from periapsis.params.transforms import covered_parameters, build_transform_functions, overconstrained_parameters
+from periapsis.params.transforms import covered_parameters, build_transform_functions, overconstrained_parameters, wrapped_parameters
 
 import numpy as np
 import ultranest
@@ -106,7 +106,7 @@ class UltranestFitter(Fitter):
             loglike=log_likelihood, 
             transform=prior_transform,
             derived_param_names=tuple([name for name in self.output_param_order if name not in param_order]),
-            wrapped_params=None, # TODO
+            wrapped_params=[name in wrapped_parameters for name in param_order],
         )
         results = sampler.run(
             min_num_live_points=self.min_num_live_points,

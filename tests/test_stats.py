@@ -269,7 +269,7 @@ def test_delta_chi2_non_gaia_compares_proper_motion_fit(monkeypatch):
 
     result = stat_funcs.delta_chi2(results, data)
 
-    assert result == pytest.approx((12.0, 10.0, 0.122, 0.102))
+    assert result == pytest.approx((12.0, 10.0, 0.122, 0.102, 3.0))
     assert sf_calls == [(12.0, 2), (10.0, 2)]
 
 
@@ -282,7 +282,7 @@ def install_all_stats_dependencies(monkeypatch):
     monkeypatch.setattr(
         stat_funcs,
         "delta_chi2",
-        lambda results, data: (12.0, 10.0, 0.01, 0.02),
+        lambda results, data: (12.0, 10.0, 0.01, 0.02, 3.0),
     )
     monkeypatch.setattr(
         stat_funcs,

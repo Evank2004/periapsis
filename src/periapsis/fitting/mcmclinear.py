@@ -20,7 +20,7 @@ class MCMCLinearFitter(Fitter):
         self.fixed_prior_params = {p for p in self.priors.keys() if isinstance(self.priors[p], FixedPrior)}
         self.covered_params = covered_parameters({*sampled_params, *self.fixed_prior_params})
         if any(param not in self.covered_params for param in ('P', 'e', 'Tp')):
-            raise ValueError("MCMCLinear requires sampled_params to define 'P', 'e', and 'Tp'.")
+            raise ValueError("MCMCLinearFitter requires sampled_params to define 'P', 'e', and 'Tp'.")
         # TODO - Raise a warning if user is sampling more params than necessary
         self.sampled_params = frozenset(sampled_params)
         self.param_order = tuple(sampled_params)

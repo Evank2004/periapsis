@@ -8,7 +8,7 @@ from periapsis.utils.solvers import gaia_single_motion
 from periapsis.prior.fixed_prior import FixedPrior
 from periapsis.prior.log_uniform_prior import LogUniformPrior
 from periapsis.model import Orbit
-from periapsis.params.transforms import covered_parameters, build_transform_functions, overconstrained_parameters
+from periapsis.params.transforms import covered_parameters, build_transform_functions, overconstrained_parameters, wrapped_parameters
 
 import numpy as np
 import ultranest
@@ -99,8 +99,9 @@ class UltranestGaiaFitter(Fitter):
             M = 2*np.pi * ti/P
             E = solve_kepler(M,e)
 
+            
             X = np.cos(E) - e
-            Y = np.sqrt(1-e**2)*np.sin(E)
+            Y = np.sqrt(1.0 - e**2) * np.sin(E)
 
             A = np.column_stack([
                 data.spsi, #delta_alpha
@@ -182,7 +183,7 @@ class UltranestGaiaFitter(Fitter):
             loglike=log_likelihood, 
             transform=prior_transform,
             derived_param_names=tuple([name for name in self.output_param_order if name not in param_order]),
-            wrapped_params=None, # TODO
+            wrapped_params=[name in wrapped_parameters for name in param_order],
         )
         
         results = sampler.run(

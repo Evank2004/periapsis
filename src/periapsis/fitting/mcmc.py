@@ -217,6 +217,11 @@ class MCMCFitter(Fitter):
         else:
             pm_fit = None
 
+        if isinstance(data,RadialVelocityData):
+            gamma_fit = self._systemic_velocity(data)
+        else:
+            gamma_fit = None
+
         param_order = self.param_order
         context = self._posterior_context(data)
 
@@ -289,6 +294,7 @@ class MCMCFitter(Fitter):
         results_dict['MAP_params'] = best_params
         results_dict['median_params'] = median_params
         results_dict['PM_fit'] = pm_fit
+        results_dict['gamma_fit'] = gamma_fit
         results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'emcee'

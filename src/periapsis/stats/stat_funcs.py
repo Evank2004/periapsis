@@ -262,6 +262,15 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
             }
         }
 
+    mmin_samples = _get_result_value(results, 'minM2')
+    if isinstance(data,RadialVelocityData) and mmin_samples is not None:
+        fit_results.setdefault('derived_fit_params', {})['minM2'] = {
+            'median': float(np.median(mmin_samples)),
+            'credible_intervals': _credible_interval_summary(mmin_samples),
+        }
+        
+
+
     if pretty_print:
         print(json.dumps(stats, indent=indent, sort_keys=True, default=_json_default))
         print("\n" + "=" * 80 + "\n")

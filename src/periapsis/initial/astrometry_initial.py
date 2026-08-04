@@ -1,10 +1,10 @@
 from periapsis.model.orbit import Orbit
 import numpy as np
-from scipy.optimize import minimize, differential_evolution
+from scipy.optimize import minimize, differential_evolution, NonlinearConstraint, LinearConstraint
 from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks
 from periapsis.params.transforms import build_transform_functions
-from periapsis.prior.fixed_prior import FixedPrior
+from periapsis.prior import FixedPrior, Bounds
 from periapsis.utils.solvers import solve_kepler
 
 from .initial import InitialGuess
@@ -13,16 +13,19 @@ class AstrometryInitialGuess(InitialGuess):
     """Class for obtaining an intial guess on fitted parameters"""
     def __init__(self, data, rng, **priors):
         super().__init__(data, rng, **priors)
+        
 
     
     def lomb_scargle(self):
         """Returns an initial guess on the period and semi major axis 
         based on a Lomb-Scargle periodogram"""
         prior_p = self.priors.get('P')
-        p_min = prior_p.min if prior_p is not None else 0.1
-        p_max = prior_p.max if prior_p is not None else 1000
+        if prior_p is None:
+            raise ValueError("Computing a periodogram requires a direct prior on the period 'P'. Please transform your priors to include a direct prior on 'P' or use a different method for initial guess.")
+        p_min = prior_p.min
+        p_max = prior_p.max
         
-        frequency = np.linspace(1/p_max,1/p_min,1000)
+        frequency = np.linspace(1/p_max,1/p_min,100000)
         p1 = LombScargle(self.data.t,self.data.x,self.data.x_err)
         p2 = LombScargle(self.data.t,self.data.y,self.data.y_err)
         
@@ -46,10 +49,10 @@ class AstrometryInitialGuess(InitialGuess):
         p_guess = 1/best_frequency
         return a1_guess, p_guess 
     
-    def _bounds(self,param_names):
+    def _bounds(self,prior_param_names):
         """Returns bounds on the fitted parameters based on the priors"""
         bounds = []
-        for name in param_names:
+        for name in prior_param_names:
             prior = self.priors.get(name)
             if prior is not None:
                 bounds.append((prior.min, prior.max))
@@ -90,9 +93,11 @@ class AstrometryInitialGuess(InitialGuess):
         param_in = []
         a1_guess, p_guess = self.lomb_scargle()
         initial_points = []
-        for i in self.priors:
-            param_in.append(i)
+        for i in self.priors.keys():
             prior = self.priors[i]
+            if isinstance(prior, Bounds):
+                continue
+            param_in.append(i)
             if i == "a":
                 initial_points.append(a1_guess)
             elif i == "P":
@@ -117,12 +122,23 @@ class AstrometryInitialGuess(InitialGuess):
             polish=False
         )
 
+        def bounds_transform_fn(bound):
+            transform = build_transform_functions(param_in, [bound])
+            return lambda x: transform(**dict(zip(param_in, x)))[bound]
+
+        constraints = []
+        for name, bound in self.priors.items():
+            if not isinstance(bound, Bounds):
+                continue
+            constraints.append(NonlinearConstraint(bounds_transform_fn(name),  bound.lower, bound.upper))
+
         orbit = minimize(
             self.neg_lnlike, 
             x0=result.x,
-            method='L-BFGS-B', 
+            method='SLSQP', 
             args=(self.data, self.priors,param_in), 
             bounds=bounds,
+            constraints=constraints,
             options={'maxiter': 2000}
         )
 
@@ -131,7 +147,7 @@ class AstrometryInitialGuess(InitialGuess):
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:
-            poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers))
+            poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers) * best_values[name])
         pos = np.column_stack(poss)
         return pos
 
@@ -188,7 +204,7 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
             self.neg_lnlike, 
             x0=result.x,
             method='L-BFGS-B', 
-            args=(self.data, self.priors,param_in), 
+            args=(self.data, self.priors,param_in),
             bounds=bounds,
             options={'maxiter': 2000}
         )

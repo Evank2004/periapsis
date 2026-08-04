@@ -440,7 +440,7 @@ def test_lomb_scargle_combines_both_coordinates_and_uses_prior_range(
 
     axis_guess, period_guess = guess.lomb_scargle()
 
-    expected_frequency = np.linspace(0.1, 0.5, 1000)[best_index]
+    expected_frequency = np.linspace(0.1, 0.5, 100000)[best_index]
     assert axis_guess == pytest.approx(np.hypot(5.0, 13.0))
     assert period_guess == pytest.approx(1.0 / expected_frequency)
     assert len(frequencies_seen) == 2
@@ -469,10 +469,8 @@ def test_lomb_scargle_uses_default_period_range_without_a_period_prior(
 
     monkeypatch.setattr(astrometry_module, "LombScargle", FakeLombScargle)
 
-    _axis, period = guess.lomb_scargle()
-
-    assert period == pytest.approx(1000.0)
-    assert ranges == [(0.001, 10.0), (0.001, 10.0)]
+    with pytest.raises(ValueError, match="Computing a periodogram requires a direct prior on the period 'P'"):
+        guess.lomb_scargle()
 
 
 def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
@@ -497,8 +495,8 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
         calls["global"] = (function, bounds, args, maxiter, polish)
         return SimpleNamespace(x=np.array([3.0, 6.0, 0.3]))
 
-    def fake_minimize(function, x0, method, args, bounds, options):
-        calls["local"] = (function, x0, method, args, bounds, options)
+    def fake_minimize(function, x0, method, args, bounds, constraints, options):
+        calls["local"] = (function, x0, method, args, bounds, constraints, options)
         return SimpleNamespace(x=np.array([20.0, 20.0, -1.0]))
 
     monkeypatch.setattr(
@@ -510,7 +508,7 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
 
     result = guess.get_initial_guess(["P", "e"], nwalkers=2)
 
-    expected = np.array([[8.0, 0.0], [8.0001, 0.0001]])
+    expected = np.array([[8.0, 0.0], [8.0008, 0.0000]])
     np.testing.assert_allclose(result, expected)
     assert eccentricity_prior.sample_calls == [(rng, 1)]
     assert calls["global"][1:] == (
@@ -520,9 +518,10 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
         False,
     )
     assert calls["local"][2:] == (
-        "L-BFGS-B",
+        "SLSQP",
         (data, guess.priors, ["a", "P", "e"]),
         [(1.0, 10.0), (2.0, 8.0), (0.0, 0.9)],
+        [],
         {"maxiter": 2000},
     )
 

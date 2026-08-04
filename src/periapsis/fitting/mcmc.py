@@ -44,7 +44,7 @@ class MCMCFitter(Fitter):
         self.prior_params = set(priors.keys())
         self.fixed_prior_params = {p for p in self.prior_params if isinstance(self.priors[p], FixedPrior)}
         self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], Bounds)}
-        self.sample_covered_params = covered_parameters(self.sample_params)
+        self.sample_covered_params = covered_parameters([*self.sample_params, *self.fixed_prior_params])
         self.prior_covered_params = covered_parameters(self.non_bound_prior_params)
         self.posterior_covered_params = covered_parameters(self.sample_params.union(self.non_bound_prior_params))
         self.overconstrained_priors = overconstrained_parameters(self.non_bound_prior_params)

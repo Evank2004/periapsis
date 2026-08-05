@@ -101,7 +101,7 @@ class MCMCLinearFitter(Fitter):
 
 
         def _orbit_coord_func(params_dict,data):
-            dt = data.t - ref_epoch
+            dt = data.t 
             ti = dt - params_dict['Tp']
             M = 2 * np.pi * ti / params_dict['P']
             E = solve_kepler(M, params_dict['e'])

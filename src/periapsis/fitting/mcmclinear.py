@@ -35,8 +35,8 @@ class MCMCLinearFitter(Fitter):
 
 
     def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
-        if not isinstance(data, AstrometryData):
-            raise ValueError("MCMCLinearFitter currently supports AstrometryData.")
+        if isinstance(data,GaiaData):
+            raise ValueError("MCMCLinearFitter does not support GaiaData. Use MCMCGaiaFitter instead.")   
 
         param_order = self.param_order
         param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, ('P', 'e', 'Tp',))

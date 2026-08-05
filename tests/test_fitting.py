@@ -165,14 +165,14 @@ def test_mcmc_linear_fitter_runs_with_astrometry_data():
     results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
-def test_mcmc_linear_fitter_does_not_run_with_rv_data():
-    fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
-    t = np.linspace(0, 10, 100)
-    v = model.rv(t, system=1)
-    data = RadialVelocityData(t, v, 0.01, system=1)
-    with pytest.raises(ValueError):
-        fitter.fit(data, rng=np.random.default_rng(0))
+# def test_mcmc_linear_fitter_does_not_run_with_rv_data():
+#     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_priors)
+#     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+#     t = np.linspace(0, 10, 100)
+#     v = model.rv(t, system=1)
+#     data = RadialVelocityData(t, v, 0.01, system=1)
+#     with pytest.raises(ValueError):
+#         fitter.fit(data, rng=np.random.default_rng(0))
 
 def test_mcmc_linear_fitter_does_not_run_with_joint_data():
     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_priors)

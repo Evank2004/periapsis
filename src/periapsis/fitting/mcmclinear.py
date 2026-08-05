@@ -35,8 +35,8 @@ class MCMCLinearFitter(Fitter):
 
 
     def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
-        if not isinstance(data, AstrometryData):
-            raise ValueError("MCMCLinearFitter currently supports AstrometryData.")
+        if isinstance(data,GaiaData):
+            raise ValueError("MCMCLinearFitter does not support GaiaData. Use MCMCGaiaFitter instead.")   
 
         param_order = self.param_order
         param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, ('P', 'e', 'Tp',))
@@ -46,42 +46,103 @@ class MCMCLinearFitter(Fitter):
         ref_epoch = getattr(data, 'ref_epoch', 0.0)
 
         # Matrix method cached variables
-        mm_nobs = len(data.t)
-        mm_dt = data.t - ref_epoch
-        mm_M = np.zeros((2*mm_nobs, 8))
-        mm_M[:mm_nobs,0] = 1 # dx
-        mm_M[:mm_nobs,1] = mm_dt # pmra
-        mm_M[mm_nobs:,4] = 1 # dy
-        mm_M[mm_nobs:,5] = mm_dt # pmdec
-        mm_eta = np.concatenate((data.x, data.y))
-        mm_sigma = np.concatenate((data.x_err, data.y_err))
-        mm_w = 1/mm_sigma
-        mm_eta_w = mm_eta * mm_w
+        if isinstance(data, AstrometryData):
+            mm_nobs = len(data.t)
+            mm_dt = data.t - ref_epoch
+            mm_M = np.zeros((2*mm_nobs, 8))
+            mm_M[:mm_nobs,0] = 1 # dx
+            mm_M[:mm_nobs,1] = mm_dt # pmra
+            mm_M[mm_nobs:,4] = 1 # dy
+            mm_M[mm_nobs:,5] = mm_dt # pmdec
 
-        def matrix_method(params_dict, E):
-            
-            # nobs = len(data.t)
-            # dt = data.t - ref_epoch
+            mm_eta = np.concatenate((data.x, data.y))
+            mm_sigma = np.concatenate((data.x_err, data.y_err))
+            mm_w = 1/mm_sigma
+            mm_eta_w = mm_eta * mm_w
+            data_type = 'astrometry'
+        
+        
+        elif isinstance(data, RadialVelocityData):
+            mm_nobs = len(data.t)
+            mm_dt = data.t - ref_epoch
+            mm_M = np.zeros((mm_nobs, 3))
+            mm_M[:,0] = 1 # gamma
 
-            # M = np.zeros((2*nobs,8))
+            mm_eta = data.rv
+            mm_sigma = data.rv_err
+            mm_w = 1/mm_sigma
+            mm_eta_w = mm_eta * mm_w
+            data_type = 'rv'
 
-            # eta =np.concatenate((data.x,data.y))
-            # sigma = np.concatenate((data.x_err,data.y_err))
-    
+        elif isinstance(data,JointData):
+            astro_data = data.as_astrometry_data()
+            rv_data = data.as_radial_velocity_data()
+            astro_nobs = len(astro_data.t)
+            rv_nobs = len(rv_data.t)
+            dt_astro = astro_data.t - ref_epoch
+            dt_rv = rv_data.t - ref_epoch
 
+            n_rows = 2*astro_nobs + rv_nobs
+            ncols = 11
+
+            mm_M = np.zeros((n_rows, ncols))
+            mm_M[:astro_nobs,0] = 1 # dx
+            mm_M[:astro_nobs,1] = dt_astro # pmra
+            mm_M[astro_nobs:2*astro_nobs,4] = 1 # dy
+            mm_M[astro_nobs:2*astro_nobs,5] = dt_astro # pmdec
+            mm_M[2*astro_nobs:,8] = 1 # gamma
+
+            mm_eta = np.concatenate((astro_data.x, astro_data.y, rv_data.rv))
+            mm_sigma = np.concatenate((astro_data.x_err, astro_data.y_err, rv_data.rv_err))
+            mm_w = 1/mm_sigma
+            mm_eta_w = mm_eta * mm_w
+            data_type = 'joint'
+
+
+
+        def _orbit_coord_func(params_dict,data):
+            dt = data.t - ref_epoch
+            ti = dt - params_dict['Tp']
+            M = 2 * np.pi * ti / params_dict['P']
+            E = solve_kepler(M, params_dict['e'])
             X = np.cos(E) - params_dict['e']
             Y = np.sqrt(1-params_dict['e']**2)*np.sin(E)
+            nu = 2 * np.arctan2(np.sqrt(1+params_dict['e'])*np.sin(E/2), np.sqrt(1-params_dict['e'])*np.cos(E/2))
+            return X,Y,nu
 
-            # M[:nobs,0] = 1 #dx
-            # M[:nobs,1] = dt #pmra
-            mm_M[:mm_nobs,2] = X # A
-            mm_M[:mm_nobs,3] = Y # F
+        def matrix_method(params_dict):
+            
+            if data_type == 'astrometry':
+                X,Y,_ = _orbit_coord_func(params_dict,data)
+                # M[:nobs,0] = 1 #dx
+                # M[:nobs,1] = dt #pmra
+                mm_M[:mm_nobs,2] = X # A
+                mm_M[:mm_nobs,3] = Y # F
 
-            # now bottom half y obs
-            # M[nobs:,4] = 1 #dy
-            # M[nobs:,5] = dt #pmdec
-            mm_M[mm_nobs:,6] = X # B
-            mm_M[mm_nobs:,7] = Y # G
+                # now bottom half y obs
+                # M[nobs:,4] = 1 #dy
+                # M[nobs:,5] = dt #pmdec
+                mm_M[mm_nobs:,6] = X # B
+                mm_M[mm_nobs:,7] = Y # G
+
+            elif data_type == 'rv':
+                _,_,nu = _orbit_coord_func(params_dict,data)
+                mm_M[mm_nobs,1] = np.cos(nu) + params_dict['e'] # h
+                mm_M[mm_nobs,2] = np.sin(nu) # c
+
+            elif data_type == 'joint':
+                X_a,Y_a,_ = _orbit_coord_func(params_dict,data._astrometry)
+                _,_,nu_rv = _orbit_coord_func(params_dict,data._radial_velocity)
+                # astrometry part
+                mm_M[:astro_nobs,2] = X_a # A
+                mm_M[:astro_nobs,3] = Y_a # F
+                mm_M[astro_nobs:2*astro_nobs,6] = X_a # B
+                mm_M[astro_nobs:2*astro_nobs,7] = Y_a # G
+                # rv part
+                mm_M[2*astro_nobs:,9] = np.cos(nu_rv) + params_dict['e'] # h
+                mm_M[2*astro_nobs:,10] = np.sin(nu_rv) # c
+
+
 
             #now we need to get covariance matrix
             # which diagnol matrix, with err_x^2 on top and err_y^2 on bottom
@@ -100,6 +161,8 @@ class MCMCLinearFitter(Fitter):
             # this is (obs - model)/err
             resids = mm_eta_w - model_werr
             chi2 = np.sum(resids**2)
+            
+    
             
             return mu, chi2
     
@@ -122,22 +185,28 @@ class MCMCLinearFitter(Fitter):
             # Calculate full orbit solution and chi2
             params_dict = param_transforms(**dict(zip(param_order,params)), **{name: self.priors[name].value for name in self.fixed_prior_params})
 
-            dt = data.t - ref_epoch
-            ti = dt - params_dict['Tp']
-
-            M = 2 * np.pi * ti / params_dict['P']
-            E = solve_kepler(M, params_dict['e'])
-
-            mu, chi2 = matrix_method(params_dict, E)
+            mu, chi2 = matrix_method(params_dict)
 
             # Evaluate priors for parameters that require full orbit solution, short circuiting if any are invalid
-            late_transformed = late_prior_transforms(
-                **dict(zip(param_order, params)),
-                **{
-                    **{name: self.priors[name].value for name in self.fixed_prior_params},
-                    "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7]
-                }
-            )
+            if data_type == 'astrometry':
+                late_transformed = late_prior_transforms(
+                    **dict(zip(param_order, params)),
+                    **{**{name: self.priors[name].value for name in self.fixed_prior_params},
+                       "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7]}
+                )
+            elif data_type == 'rv':
+                late_transformed = late_prior_transforms(
+                    **dict(zip(param_order, params)),
+                    **{**{name: self.priors[name].value for name in self.fixed_prior_params},
+                       "gamma": mu[0], f"h{data.system}": mu[1], f"c{data.system}": mu[2]}
+                )
+            elif data_type == 'joint':
+                late_transformed = late_prior_transforms(
+                    **dict(zip(param_order, params)),
+                    **{**{name: self.priors[name].value for name in self.fixed_prior_params},
+                       "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7], "gamma": mu[8], f"h{data.system}": mu[9], f"c{data.system}": mu[10]}
+                )
+            
             for name in self.late_prior_params:
                 val = late_transformed[name]
                 if not np.isfinite(val):
@@ -203,23 +272,55 @@ class MCMCLinearFitter(Fitter):
        
         
         full_posterior = [] 
-        for param in samples:
-            transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
-            P,e,Tp = transformed_param["P"], transformed_param["e"], transformed_param["Tp"]
-            M = 2*np.pi * (data.t - ref_epoch - Tp) / P
-            E = solve_kepler(M,e)
-            mu, _ = matrix_method({'e': e}, E)
-            dx = mu[0]
-            dpmra = mu[1]
-            A = mu[2]
-            F = mu[3]
-            dy = mu[4]
-            dpmdec = mu[5]
-            B = mu[6]
-            G = mu[7]
-            full_posterior.append((*param,A,B,F,G,dx,dy,dpmra,dpmdec))
+        if data_type == 'astrometry':
 
-        post_labels = [*param_order,f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec']
+            for param in samples:
+                transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
+                
+                mu, _ = matrix_method(transformed_param)
+                dx = mu[0]
+                dpmra = mu[1]
+                A = mu[2]
+                F = mu[3]
+                dy = mu[4]
+                dpmdec = mu[5]
+                B = mu[6]
+                G = mu[7]
+                full_posterior.append((*param,A,B,F,G,dx,dy,dpmra,dpmdec))
+
+            post_labels = [*param_order,f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec']
+
+        elif data_type == 'rv':
+            for param in samples:
+                transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
+                
+                mu, _ = matrix_method(transformed_param)
+                gamma = mu[0]
+                h = mu[1]
+                c = mu[2]
+                full_posterior.append((*param,h,c,gamma))
+
+            post_labels = [*param_order,f'h{data.system}',f'c{data.system}','gamma']
+
+        elif data_type == 'joint':
+            for param in samples:
+                transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
+                
+                mu, _ = matrix_method(transformed_param)
+                dx = mu[0]
+                dpmra = mu[1]
+                A = mu[2]
+                F = mu[3]
+                dy = mu[4]
+                dpmdec = mu[5]
+                B = mu[6]
+                G = mu[7]
+                gamma = mu[8]
+                h = mu[9]
+                c = mu[10]
+                full_posterior.append((*param,A,B,F,G,dx,dy,dpmra,dpmdec,h,c,gamma))
+
+            post_labels = [*param_order,f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec',f'h{data.system}',f'c{data.system}','gamma']
 
         best_i = np.argmax(lnprobs)
         best_params = dict(zip(post_labels, full_posterior[best_i]))

@@ -178,6 +178,8 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         for i in self.priors:
             param_in.append(i)
             prior = self.priors[i]
+            if isinstance(prior, Bounds):
+                continue
             if i == "a":
                 initial_points.append(a1_guess)
             elif i == "P":
@@ -185,12 +187,22 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
             else:
                 initial_points.append(prior.sample(self.rng, size=1)[0])
 
-        transform = build_transform_functions(param_in, param_order)
 
         bounds = self._bounds(param_in)
         lower = np.array([b[0] for b in bounds], dtype=float)
         upper = np.array([b[1] for b in bounds], dtype=float)
         initial_points = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
+
+        def bounds_transform_fn(bound):
+            transform = build_transform_functions(param_in, [bound])
+            return lambda x: transform(**dict(zip(param_in, x)))[bound]
+        
+        constraints = []
+        for name, bound in self.priors.items():
+            if not isinstance(bound, Bounds):
+                continue
+            constraints.append(NonlinearConstraint(bounds_transform_fn(name),  bound.lower, bound.upper))
+        
 
         result = differential_evolution(
             self.neg_lnlike, 
@@ -203,14 +215,15 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         orbit = minimize(
             self.neg_lnlike, 
             x0=result.x,
-            method='L-BFGS-B', 
+            method='SLSQP', 
             args=(self.data, self.priors,param_in),
             bounds=bounds,
+            constraints=constraints,
             options={'maxiter': 2000}
         )
 
         best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
-        
+        transform = build_transform_functions(param_in, param_order)
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:

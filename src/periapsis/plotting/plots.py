@@ -426,11 +426,6 @@ def sky_motion_plot(results, data, savepath=None):
             med_params[k] = p.value
             fixed_prior_params[k] = p.value
 
-    x0 = results.PM_fit['params']['x0']
-    y0 = results.PM_fit['params']['y0']
-    mu_x = results.PM_fit['params']['mu_x']
-    mu_y = results.PM_fit['params']['mu_y']
-
     map_dx = map_params.get('dx', 0)
     map_dy = map_params.get('dy', 0)
     map_dpmra = map_params.get('dpmra', 0)

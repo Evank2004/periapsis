@@ -239,7 +239,6 @@ class MCMCLinearFitter(Fitter):
                 raise ValueError("No initial guess class provided and data type is not recognized for linearized MCMC initial guess generation.")
         initial_instance = initial(data, rng, **self.priors)
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
-        print(f'initial pos= {pos}')
         sampler = emcee.EnsembleSampler(self.nwalkers, ndim, lnprob, args=(data,))
         sampler.run_mcmc(pos, self.niter,progress=True)
 

@@ -426,11 +426,6 @@ def sky_motion_plot(results, data, savepath=None):
             med_params[k] = p.value
             fixed_prior_params[k] = p.value
 
-    x0 = results.PM_fit['params']['x0']
-    y0 = results.PM_fit['params']['y0']
-    mu_x = results.PM_fit['params']['mu_x']
-    mu_y = results.PM_fit['params']['mu_y']
-
     map_dx = map_params.get('dx', 0)
     map_dy = map_params.get('dy', 0)
     map_dpmra = map_params.get('dpmra', 0)
@@ -441,28 +436,28 @@ def sky_motion_plot(results, data, savepath=None):
     med_dpmra = med_params.get('dpmra', 0)
     med_dpmdec = med_params.get('dpmdec', 0)
 
-    ra_lin_map = x0 + mu_x*dt + map_dpmra*dt + map_dx
-    dec_lin_map = y0 + mu_y*dt + map_dpmdec*dt + map_dy
-    ra_lin_med = x0 + mu_x*dt + med_dpmra*dt + med_dx
-    dec_lin_med = y0 + mu_y*dt + med_dpmdec*dt + med_dy
+    ra_lin_map =  map_dpmra*dt + map_dx
+    dec_lin_map =  map_dpmdec*dt + map_dy
+    ra_lin_med =  med_dpmra*dt + med_dx
+    dec_lin_med =  med_dpmdec*dt + med_dy
 
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
     ra_map, dec_map = map_model.astrometry(tfold, system=1)
     ra_med, dec_med = med_model.astrometry(tfold, system=1)
 
-    ra_map_full = ra_lin_map + ra_map
-    dec_map_full = dec_lin_map + dec_map
-    ra_med_full = ra_lin_med + ra_med
-    dec_med_full = dec_lin_med + dec_med
+    ra_map_full =  ra_map
+    dec_map_full = dec_map
+    ra_med_full =  ra_med
+    dec_med_full = dec_med
 
     fig,ax = plt.subplots()
 
-    ax.plot(ra_lin_map,dec_lin_map,label='Map Linear Model',color='red',linestyle='--',zorder=1,alpha=0.7)
-    ax.plot(ra_lin_med,dec_lin_med,label='Median Linear Model',color='purple',linestyle='--',zorder=1,alpha=0.7)
-    ax.plot(ra_map_full,dec_map_full,label='Map Sky Track',color='red',linestyle='-',zorder=1)
-    ax.plot(ra_med_full,dec_med_full,label='Median Sky Track',color='purple',linestyle='-',zorder=1)
-    ax.scatter(data.x,data.y,color='k',s=15,zorder=3)
+    ax.plot(ra_lin_map,dec_lin_map,label='Map Linear Model',color='red',linestyle='--',zorder=2,alpha=0.7)
+    ax.plot(ra_lin_med,dec_lin_med,label='Median Linear Model',color='purple',linestyle='--',zorder=2,alpha=0.7)
+    ax.plot(ra_map_full,dec_map_full,label='Map Sky Track',color='red',linestyle='-',zorder=2)
+    ax.plot(ra_med_full,dec_med_full,label='Median Sky Track',color='purple',linestyle='-',zorder=2)
+    ax.scatter(data.x,data.y,color='k',s=15,zorder=1)
 
     ax.set_aspect('equal',adjustable='datalim')
     ax.legend(loc='best')

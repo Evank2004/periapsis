@@ -101,7 +101,7 @@ class MCMCLinearFitter(Fitter):
 
 
         def _orbit_coord_func(params_dict,data):
-            dt = data.t - ref_epoch
+            dt = data.t 
             ti = dt - params_dict['Tp']
             M = 2 * np.pi * ti / params_dict['P']
             E = solve_kepler(M, params_dict['e'])
@@ -127,8 +127,9 @@ class MCMCLinearFitter(Fitter):
 
             elif data_type == 'rv':
                 _,_,nu = _orbit_coord_func(params_dict,data)
-                mm_M[mm_nobs,1] = np.cos(nu) + params_dict['e'] # h
-                mm_M[mm_nobs,2] = np.sin(nu) # c
+                # nu is an array of length mm_nobs; assign per-row
+                mm_M[:,1] = np.cos(nu) + params_dict['e'] # h
+                mm_M[:,2] = np.sin(nu) # c
 
             elif data_type == 'joint':
                 X_a,Y_a,_ = _orbit_coord_func(params_dict,data._astrometry)
@@ -238,7 +239,6 @@ class MCMCLinearFitter(Fitter):
                 raise ValueError("No initial guess class provided and data type is not recognized for linearized MCMC initial guess generation.")
         initial_instance = initial(data, rng, **self.priors)
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
-
         sampler = emcee.EnsembleSampler(self.nwalkers, ndim, lnprob, args=(data,))
         sampler.run_mcmc(pos, self.niter,progress=True)
 
@@ -292,8 +292,7 @@ class MCMCLinearFitter(Fitter):
 
         elif data_type == 'rv':
             for param in samples:
-                transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
-                
+                transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})                
                 mu, _ = matrix_method(transformed_param)
                 gamma = mu[0]
                 h = mu[1]

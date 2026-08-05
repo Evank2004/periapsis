@@ -176,10 +176,10 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         a1_guess, p_guess = self.lomb_scargle()
         initial_points = []
         for i in self.priors:
-            param_in.append(i)
             prior = self.priors[i]
             if isinstance(prior, Bounds):
                 continue
+            param_in.append(i)
             if i == "a":
                 initial_points.append(a1_guess)
             elif i == "P":

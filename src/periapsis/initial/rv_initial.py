@@ -132,7 +132,9 @@ class RVInitialGuess(InitialGuess):
 
         poss = []
         for name in param_order:
-            poss.append(guess[name] + self.rng.normal(0, 1e-4, size=nwalkers))
+            base = guess[name]
+            scale = max(1e-8, 1e-6 * max(1.0, abs(base)))
+            poss.append(base + self.rng.normal(0, scale, size=nwalkers))
         pos = np.column_stack(poss)
         return pos
              

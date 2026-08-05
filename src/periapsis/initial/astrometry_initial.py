@@ -147,7 +147,10 @@ class AstrometryInitialGuess(InitialGuess):
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:
-            poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers) * best_values[name])
+            base = best_values[name]
+            # absolute jitter floor to ensure walkers are linearly independent
+            scale = max(1e-8, 1e-6 * max(1.0, abs(base)))
+            poss.append(base + self.rng.normal(0, scale, size=nwalkers))
         pos = np.column_stack(poss)
         return pos
 
@@ -176,10 +179,10 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         a1_guess, p_guess = self.lomb_scargle()
         initial_points = []
         for i in self.priors:
-            param_in.append(i)
             prior = self.priors[i]
             if isinstance(prior, Bounds):
                 continue
+            param_in.append(i)
             if i == "a":
                 initial_points.append(a1_guess)
             elif i == "P":
@@ -227,7 +230,9 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:
-            poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers))
+            base = best_values[name]
+            scale = max(1e-8, 1e-6 * max(1.0, abs(base)))
+            poss.append(base + self.rng.normal(0, scale, size=nwalkers))
         pos = np.column_stack(poss)
         return pos
 

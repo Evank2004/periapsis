@@ -75,10 +75,12 @@ class MCMCLinearFitter(Fitter):
             data_type = 'rv'
 
         elif isinstance(data,JointData):
-            astro_nobs = len(data.astrometry.t)
-            dt_astro = data.astrometry.t - ref_epoch
-            rv_nobs = len(data.rv.t)
-            dt_rv = data.rv.t - ref_epoch
+            astro_data = data.as_astrometry_data()
+            rv_data = data.as_radial_velocity_data()
+            astro_nobs = len(astro_data.t)
+            rv_nobs = len(rv_data.t)
+            dt_astro = astro_data.t - ref_epoch
+            dt_rv = rv_data.t - ref_epoch
 
             n_rows = 2*astro_nobs + rv_nobs
             ncols = 11
@@ -90,8 +92,8 @@ class MCMCLinearFitter(Fitter):
             mm_M[astro_nobs:2*astro_nobs,5] = dt_astro # pmdec
             mm_M[2*astro_nobs:,8] = 1 # gamma
 
-            mm_eta = np.concatenate((data.astrometry.x, data.astrometry.y, data.rv.rv))
-            mm_sigma = np.concatenate((data.astrometry.x_err, data.astrometry.y_err, data.rv.rv_err))
+            mm_eta = np.concatenate((astro_data.x, astro_data.y, rv_data.rv))
+            mm_sigma = np.concatenate((astro_data.x_err, astro_data.y_err, rv_data.rv_err))
             mm_w = 1/mm_sigma
             mm_eta_w = mm_eta * mm_w
             data_type = 'joint'

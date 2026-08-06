@@ -8,6 +8,7 @@ import matplotlib.gridspec as gridspec
 from periapsis.prior import FixedPrior
 from periapsis import GaiaData,RadialVelocityData
 from scipy.stats import gaussian_kde
+import periapsis.params as par
 
 rng_plots = np.random.default_rng(5377)
 
@@ -275,11 +276,11 @@ def _apply_center_offset(x, y, params, dt, center=True):
     if params is None or not center:
         return np.asarray(x), np.asarray(y)
 
-    dx = params.get('dx', 0)
-    dy = params.get('dy', 0)
-    dpmra = params.get('dpmra', 0)
-    dpmdec = params.get('dpmdec', 0)
-    return np.asarray(x) - dx - dpmra * dt, np.asarray(y) - dy - dpmdec * dt
+    dalpha = params.get(par.dalpha, 0)
+    ddelta = params.get(par.ddelta, 0)
+    mu_alpha = params.get(par.mu_alpha, 0)
+    mu_delta = params.get(par.mu_delta, 0)
+    return np.asarray(x) - dalpha - mu_alpha * dt, np.asarray(y) - ddelta - mu_delta * dt
 
 
 def orbit_plot(results, data, system=1, savepath=None):
@@ -426,20 +427,20 @@ def sky_motion_plot(results, data, savepath=None):
             med_params[k] = p.value
             fixed_prior_params[k] = p.value
 
-    map_dx = map_params.get('dx', 0)
-    map_dy = map_params.get('dy', 0)
-    map_dpmra = map_params.get('dpmra', 0)
-    map_dpmdec = map_params.get('dpmdec', 0)
+    map_dalpha = map_params.get(par.dalpha, 0)
+    map_ddelta = map_params.get(par.ddelta, 0)
+    map_mu_alpha = map_params.get(par.mu_alpha, 0)
+    map_mu_delta = map_params.get(par.mu_delta, 0)
 
-    med_dx = med_params.get('dx', 0)
-    med_dy = med_params.get('dy', 0)
-    med_dpmra = med_params.get('dpmra', 0)
-    med_dpmdec = med_params.get('dpmdec', 0)
+    med_dalpha = med_params.get(par.dalpha, 0)
+    med_ddelta = med_params.get(par.ddelta, 0)
+    med_mu_alpha = med_params.get(par.mu_alpha, 0)
+    med_mu_delta = med_params.get(par.mu_delta, 0)
 
-    ra_lin_map =  map_dpmra*dt + map_dx
-    dec_lin_map =  map_dpmdec*dt + map_dy
-    ra_lin_med =  med_dpmra*dt + med_dx
-    dec_lin_med =  med_dpmdec*dt + med_dy
+    ra_lin_map =  map_mu_alpha*dt + map_dalpha
+    dec_lin_map =  map_mu_delta*dt + map_ddelta
+    ra_lin_med =  med_mu_alpha*dt + med_dalpha
+    dec_lin_med =  med_mu_delta*dt + med_ddelta
 
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
@@ -984,7 +985,7 @@ def all_plots(results, data, scale=None,unit_conv=1, savepath=None):
             phase_fold = phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
             multi_rv = rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
             multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            m2min_dist = distribution(results, 'minM2', scale=scale, unit='M$_\odot$', savepath=savepath)
+            m2min_dist = distribution(results, 'minM2', scale=scale, unit=r'M$_\odot$', savepath=savepath)
             return auto_corr, corner, ess_dist, posterior_prior, rv_fit, phase_fold, multi_rv, multi_phase, m2min_dist
 
         else:
@@ -1009,7 +1010,7 @@ def all_plots(results, data, scale=None,unit_conv=1, savepath=None):
             phase_fold = phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
             multi_rv = rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
             multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            m2min_dist = distribution(results, 'minM2', scale=scale, unit='M$_\odot$', savepath=savepath)
+            m2min_dist = distribution(results, 'minM2', scale=scale, unit=r'M$_\odot$', savepath=savepath)
 
             return posterior_prior, corner, rv_fit, phase_fold, multi_rv, multi_phase, m2min_dist
 

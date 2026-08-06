@@ -39,7 +39,7 @@ def test_covered_parameters_do_not_claim_unreachable_parameters():
     assert {"P", "n"} <= covered
     assert "e" not in covered
     assert "parallax" not in covered
-    assert "dx" not in covered
+    assert "dalpha" not in covered
 
 
 def test_covered_parameters_accept_any_iterable_without_mutating_it():
@@ -65,7 +65,7 @@ def test_uncovered_parameters_are_disjoint_from_covered_parameters():
 
     assert covered.isdisjoint(uncovered)
     assert {"P", "n", "parallax", "distance"} <= covered
-    assert {"e", "i", "dx", "systemic_velocity"} <= uncovered
+    assert {"e", "i", "dalpha", "gamma"} <= uncovered
 
 
 def test_shortest_path_is_empty_when_target_is_already_known():

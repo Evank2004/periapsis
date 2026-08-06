@@ -6,6 +6,7 @@ from scipy.signal import find_peaks
 from periapsis.params.transforms import build_transform_functions
 from periapsis.prior import FixedPrior, Bounds
 from periapsis.utils.solvers import solve_kepler
+import periapsis.params as params
 
 from .initial import InitialGuess
 
@@ -19,7 +20,7 @@ class AstrometryInitialGuess(InitialGuess):
     def lomb_scargle(self):
         """Returns an initial guess on the period and semi major axis 
         based on a Lomb-Scargle periodogram"""
-        prior_p = self.priors.get('P')
+        prior_p = self.priors.get(params.P)
         if prior_p is None:
             raise ValueError("Computing a periodogram requires a direct prior on the period 'P'. Please transform your priors to include a direct prior on 'P' or use a different method for initial guess.")
         p_min = prior_p.min
@@ -98,9 +99,9 @@ class AstrometryInitialGuess(InitialGuess):
             if isinstance(prior, Bounds):
                 continue
             param_in.append(i)
-            if i == "a":
+            if i == params.a or i == params.a1 or i == params.a2:
                 initial_points.append(a1_guess)
-            elif i == "P":
+            elif i == params.P:
                 initial_points.append(p_guess)
             else:
                 initial_points.append(prior.sample(self.rng, size=1)[0])
@@ -155,7 +156,7 @@ class AstrometryInitialGuess(InitialGuess):
 class AstrometryLinearInitialGuess(AstrometryInitialGuess):
     def __init__(self, data, rng, **priors):
         super().__init__(data, rng, **priors)
-        self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
+        self.PeTp_transform = build_transform_functions(self.priors.keys(), (params.P, params.e, params.Tp))
 
     def neg_lnlike(self,params,data,priors,param_in):
         params_dict = dict(zip(param_in,params))
@@ -180,9 +181,9 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
             if isinstance(prior, Bounds):
                 continue
             param_in.append(i)
-            if i == "a":
+            if i == params.a or i == params.a1 or i == params.a2:
                 initial_points.append(a1_guess)
-            elif i == "P":
+            elif i == params.P:
                 initial_points.append(p_guess)
             else:
                 initial_points.append(prior.sample(self.rng, size=1)[0])
@@ -233,7 +234,7 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
 
 
 def matrix_method(params_dict,data):
-    P,e,Tp = params_dict["P"], params_dict["e"], params_dict["Tp"]
+    P,e,Tp = params_dict[params.P], params_dict[params.e], params_dict[params.Tp]
     Ma = 2*np.pi * (data.t - Tp) / P
     E = solve_kepler(Ma,e)
 
@@ -246,17 +247,17 @@ def matrix_method(params_dict,data):
     sigma = np.concatenate((data.x_err,data.y_err))
 
 
-    X = np.cos(E) - params_dict['e']
-    Y = np.sqrt(1-params_dict['e']**2)*np.sin(E)
+    X = np.cos(E) - params_dict[params.e]
+    Y = np.sqrt(1-params_dict[params.e]**2)*np.sin(E)
 
-    M[:nobs,0] = 1 #dx
-    M[:nobs,1] = dt #pmra
+    M[:nobs,0] = 1 #dalpha
+    M[:nobs,1] = dt #mu_alpha
     M[:nobs,2] = X # A
     M[:nobs,3] = Y # F
 
     # now bottom half y obs
-    M[nobs:,4] = 1 #dy
-    M[nobs:,5] = dt #pmdec
+    M[nobs:,4] = 1 #ddelta
+    M[nobs:,5] = dt #mu_delta
     M[nobs:,6] = X # B
     M[nobs:,7] = Y # G
 
@@ -271,7 +272,7 @@ def matrix_method(params_dict,data):
     MTM = M_w.T @ M_w
     MT_eta = M_w.T @ eta_w # matching equation
     # now we can solve for mu using np.linalg.solve
-    mu = np.linalg.solve(MTM, MT_eta) # dx,pmra,B,G,dy,pmdec,A,F
+    mu = np.linalg.solve(MTM, MT_eta) # dalpha,mu_alpha,B,G,ddelta,mu_delta,A,F
 
     model_werr = M_w @ mu # this is the model prediction with the error already over
     # this is (obs - model)/err

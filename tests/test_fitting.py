@@ -62,12 +62,12 @@ test_priors = {
     "omega": UniformPrior(0.0, 2 * np.pi),
     "cosi": UniformPrior(-1.0, 1.0),
     "Omega": UniformPrior(0.0, 2 * np.pi),
-    "dx": FixedPrior(0.0),
-    "dy": FixedPrior(0.0),
-    "dpmra": FixedPrior(0.0),
-    "dpmdec": FixedPrior(0.0),
+    "dalpha": FixedPrior(0.0),
+    "ddelta": FixedPrior(0.0),
+    "mu_alpha": FixedPrior(0.0),
+    "mu_delta": FixedPrior(0.0),
     "Tepoch": FixedPrior(0.0),
-    "systemic_velocity": FixedPrior(0.0),
+    "gamma": FixedPrior(0.0),
 }
 
 test_astrometry_priors = {
@@ -78,10 +78,10 @@ test_astrometry_priors = {
     "omega": UniformPrior(0.0, 2 * np.pi),
     "cosi": UniformPrior(-1.0, 1.0),
     "Omega": UniformPrior(0.0, 2 * np.pi),
-    "dx": FixedPrior(0.0),
-    "dy": FixedPrior(0.0),
-    "dpmra": FixedPrior(0.0),
-    "dpmdec": FixedPrior(0.0),
+    "dalpha": FixedPrior(0.0),
+    "ddelta": FixedPrior(0.0),
+    "mu_alpha": FixedPrior(0.0),
+    "mu_delta": FixedPrior(0.0),
     "Tepoch": FixedPrior(0.0),
 }
 
@@ -107,14 +107,14 @@ test_rv_priors = {
     "e": UniformPrior(0.0, 0.99),
     "M0": UniformPrior(0.0, 2 * np.pi),
     "omega": UniformPrior(0.0, 2 * np.pi),
-    "systemic_velocity": FixedPrior(0.0),
+    "gamma": FixedPrior(0.0),
     "Tepoch": FixedPrior(0.0),
 }
 
 
 def test_mcmc_fitter_runs_with_astrometry_data():
     fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "a1", "e", "M0", "omega", "cosi", "Omega"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, system=1)
     data=AstrometryData(t, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -124,7 +124,7 @@ def test_mcmc_fitter_runs_with_astrometry_data():
 
 def test_mcmc_fitter_runs_with_rv_data():
     fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "e", "M0", "omega", "K1"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
     v = model.rv(t, system=1)
     data=RadialVelocityData(t, v, 0.01, system=1)
@@ -145,7 +145,7 @@ def test_mcmc_fitter_does_not_run_with_gaia_data():
 
 def test_mcmc_fitter_runs_with_joint_data():
     fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "a1", "e", "M0", "omega", "i", "Omega"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
     x, y = model.astrometry(t_astrometry, system=1)
     data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -158,7 +158,7 @@ def test_mcmc_fitter_runs_with_joint_data():
 
 def test_mcmc_linear_fitter_runs_with_astrometry_data():
     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_astrometry_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, system=1)
     data = AstrometryData(t, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -167,7 +167,7 @@ def test_mcmc_linear_fitter_runs_with_astrometry_data():
 
 # def test_mcmc_linear_fitter_does_not_run_with_rv_data():
 #     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_priors)
-#     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+#     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
 #     t = np.linspace(0, 10, 100)
 #     v = model.rv(t, system=1)
 #     data = RadialVelocityData(t, v, 0.01, system=1)
@@ -176,7 +176,7 @@ def test_mcmc_linear_fitter_runs_with_astrometry_data():
 
 def test_mcmc_linear_fitter_does_not_run_with_joint_data():
     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
     x, y = model.astrometry(t_astrometry, system=1)
     data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -199,7 +199,7 @@ def test_mcmc_linear_fitter_does_not_run_with_gaia_data():
 
 def test_ultranest_fitter_runs_with_astrometry_data():
     fitter = UltranestFitter(max_ncalls=1000, output_params=["P", "a1", "e", "M0", "omega", "cosi", "Omega"], **test_astrometry_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, system=1)
     data = AstrometryData(t, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -208,7 +208,7 @@ def test_ultranest_fitter_runs_with_astrometry_data():
 
 def test_ultranest_fitter_runs_with_rv_data():
     fitter = UltranestFitter(max_ncalls=1000, output_params=["P", "e", "M0", "omega", "K1"], **test_rv_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
     v = model.rv(t, system=1)
     data = RadialVelocityData(t, v, 0.01, system=1)
@@ -227,7 +227,7 @@ def test_ultranest_fitter_runs_with_gaia_data():
 
 def test_ultranest_fitter_runs_with_joint_data():
     fitter = UltranestFitter(max_ncalls=1000, output_params=["P", "a1", "e", "M0", "omega", "i", "Omega"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
     x, y = model.astrometry(t_astrometry, system=1)
     data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -240,7 +240,7 @@ def test_ultranest_fitter_runs_with_joint_data():
 
 def test_ultranest_linear_fitter_runs_with_astrometry_data():
     fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "e", "Tp"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, system=1)
     data = AstrometryData(t, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -249,7 +249,7 @@ def test_ultranest_linear_fitter_runs_with_astrometry_data():
 
 def test_ultranest_linear_fitter_does_not_run_with_rv_data():
     fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "e", "Tp"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
     v = model.rv(t, system=1)
     data = RadialVelocityData(t, v, 0.01, system=1)
@@ -268,7 +268,7 @@ def test_ultranest_linear_fitter_does_not_run_with_gaia_data():
 
 def test_ultranest_linear_fitter_does_not_run_with_joint_data():
     fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "e", "Tp"], **test_priors)
-    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dx=0.0, dy=0.0, dpmra=0.0, dpmdec=0.0, systemic_velocity=0.0)
+    model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
     x, y = model.astrometry(t_astrometry, system=1)
     data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01, ref_epoch=0.0, system=1)
@@ -482,7 +482,7 @@ def make_exact_rv_problem():
         "Tp": 0.7,
         "K1": 3.0,
         "omega1": 0.4,
-        "systemic_velocity": 1.25,
+        "gamma": 1.25,
         "Tepoch": 0.0,
     }
     orbit = Orbit(**truth)
@@ -499,7 +499,7 @@ def make_exact_rv_problem():
         "Tp": UniformPrior(0.2, 1.2),
         "K1": UniformPrior(2.0, 4.0),
         "omega1": UniformPrior(-0.1, 0.9),
-        "systemic_velocity": FixedPrior(truth["systemic_velocity"]),
+        "gamma": FixedPrior(truth["gamma"]),
         "Tepoch": FixedPrior(truth["Tepoch"]),
     }
     sampled = ("P", "e", "Tp", "K1", "omega1")
@@ -516,10 +516,10 @@ def make_exact_astrometry_problem(ref_epoch=0.0, periastron_time=1.3):
         "B1": -0.7,
         "F1": 0.3,
         "G1": 0.8,
-        "dx": 2.0,
-        "dy": -1.0,
-        "dpmra": 0.05,
-        "dpmdec": -0.03,
+        "dalpha": 2.0,
+        "ddelta": -1.0,
+        "mu_alpha": 0.05,
+        "mu_delta": -0.03,
     }
     times = ref_epoch + np.linspace(0.0, 13.0, 37)
     orbit = Orbit(**truth)
@@ -621,10 +621,10 @@ def test_astrometric_offset_seeds_match_proper_motion_fit():
     fit = fitter._proper_motion_fit(data)["params"]
 
     assert seeds == {
-        "dx": fit["x0"],
-        "dy": fit["y0"],
-        "dpmra": fit["mu_x"],
-        "dpmdec": fit["mu_y"],
+        "dalpha": fit["x0"],
+        "ddelta": fit["y0"],
+        "mu_alpha": fit["mu_x"],
+        "mu_delta": fit["mu_y"],
     }
 
 
@@ -774,7 +774,7 @@ def test_gaia_mcmc_does_not_duplicate_explicit_jitter_sample():
     """Ensure an explicitly sampled jitter parameter is not appended twice.
 
     Bug location: ``src/periapsis/fitting/gaia_mcmclinear.py:35-36`` appends
-    ``jitter`` whenever it is nonfixed, even when it is already requested.
+    ``jitter`` whenever it is nonfixed, even when it is alreaddelta requested.
     """
     fitter = MCMCGaiaFitter(
         nwalkers=8,
@@ -927,7 +927,7 @@ def test_mcmc_log_posterior_evaluates_prior_on_derived_parameter():
         Tp=FixedPrior(truth["Tp"]),
         K1=FixedPrior(truth["K1"]),
         omega1=FixedPrior(truth["omega1"]),
-        systemic_velocity=FixedPrior(truth["systemic_velocity"]),
+        gamma=FixedPrior(truth["gamma"]),
         Tepoch=FixedPrior(truth["Tepoch"]),
     )
     context = fitter._posterior_context(data)
@@ -1039,17 +1039,17 @@ def test_mcmc_astrometry_fit_carries_proper_motion_baseline(
 ):
     """Ensure astrometric MCMC results retain the proper-motion comparison fit."""
     data, truth, orbital_priors = make_exact_astrometry_problem()
-    sampled = ("P", "e", "Tp", "A1", "B1", "F1", "G1", "dx", "dy", "dpmra", "dpmdec")
+    sampled = ("P", "e", "Tp", "A1", "B1", "F1", "G1", "dalpha", "ddelta", "mu_alpha", "mu_delta")
     priors = {
         **orbital_priors,
         "A1": UniformPrior(0.0, 2.0),
         "B1": UniformPrior(-1.5, 0.0),
         "F1": UniformPrior(0.0, 1.0),
         "G1": UniformPrior(0.0, 1.5),
-        "dx": UniformPrior(1.0, 3.0),
-        "dy": UniformPrior(-2.0, 0.0),
-        "dpmra": UniformPrior(0.0, 0.1),
-        "dpmdec": UniformPrior(-0.08, 0.02),
+        "dalpha": UniformPrior(1.0, 3.0),
+        "ddelta": UniformPrior(-2.0, 0.0),
+        "mu_alpha": UniformPrior(0.0, 0.1),
+        "mu_delta": UniformPrior(-0.08, 0.02),
         "Tepoch": FixedPrior(truth["Tepoch"]),
     }
     initial_class, _calls = deterministic_initial(truth)
@@ -1089,7 +1089,7 @@ def test_mcmc_linear_likelihood_uses_absolute_periastron_time(
 
     Bug locations: ``src/periapsis/fitting/mcmclinear.py:99`` and
     ``src/periapsis/fitting/mcmclinear.py:187`` use ``Tp * P`` although
-    ``Tp`` is already an absolute time.
+    ``Tp`` is alreaddelta an absolute time.
     """
     data, truth, priors = make_exact_astrometry_problem(
         ref_epoch=0.0,
@@ -1306,7 +1306,7 @@ def test_ultranest_results_persist_requested_derived_outputs(
         "Tp": FixedPrior(truth["Tp"]),
         "K1": FixedPrior(truth["K1"]),
         "omega1": FixedPrior(truth["omega1"]),
-        "systemic_velocity": FixedPrior(truth["systemic_velocity"]),
+        "gamma": FixedPrior(truth["gamma"]),
         "Tepoch": FixedPrior(truth["Tepoch"]),
     }
     monkeypatch.setattr(

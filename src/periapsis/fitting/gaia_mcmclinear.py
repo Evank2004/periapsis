@@ -102,7 +102,7 @@ class MCMCGaiaFitter(Fitter):
             ATA = A_w.T @ A_w
             ATx = A_w.T @ x_w
 
-            mu = np.linalg.solve(ATA, ATx) # [delta alpha,delta delta, parallax,mu_alpha,mu_delta,dx,dpmra,dy,dpmdec,B,G,A,F]
+            mu = np.linalg.solve(ATA, ATx) # [delta alpha,delta delta, parallax,mu_alpha,mu_delta,dalpha,mu_alpha,ddelta,mu_delta,B,G,A,F]
 
             model_werr = A_w @ mu
 

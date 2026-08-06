@@ -8,18 +8,19 @@ from periapsis.utils.solvers import solve_kepler
 from periapsis.initial import InitialGuess, AstrometryLinearInitialGuess, RVInitialGuess, GaiaInitialGuess, JointInitialGuess
 from periapsis.prior import FixedPrior
 from periapsis.params.transforms import covered_parameters, build_transform_functions
+import periapsis.params as par
 import numpy as np
 import emcee
 from typing import Type
 
 class MCMCLinearFitter(Fitter):
-    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'), **priors):
+    def __init__(self, nwalkers, niter, sampled_params=(par.P, par.e, par.Tp), **priors):
         super().__init__(**priors)
         self.nwalkers = nwalkers
         self.niter = niter
         self.fixed_prior_params = {p for p in self.priors.keys() if isinstance(self.priors[p], FixedPrior)}
         self.covered_params = covered_parameters({*sampled_params, *self.fixed_prior_params})
-        if any(param not in self.covered_params for param in ('P', 'e', 'Tp')):
+        if any(param not in self.covered_params for param in (par.P, par.e, par.Tp)):
             raise ValueError("MCMCLinearFitter requires sampled_params to define 'P', 'e', and 'Tp'.")
         # TODO - Raise a warning if user is sampling more params than necessary
         self.sampled_params = frozenset(sampled_params)
@@ -39,7 +40,7 @@ class MCMCLinearFitter(Fitter):
             raise ValueError("MCMCLinearFitter does not support GaiaData. Use MCMCGaiaFitter instead.")   
 
         param_order = self.param_order
-        param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, ('P', 'e', 'Tp',))
+        param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, (par.P, par.e, par.Tp,))
         ndim = len(param_order)
 
         # TODO normalize ref_epoch
@@ -50,10 +51,10 @@ class MCMCLinearFitter(Fitter):
             mm_nobs = len(data.t)
             mm_dt = data.t - ref_epoch
             mm_M = np.zeros((2*mm_nobs, 8))
-            mm_M[:mm_nobs,0] = 1 # dx
-            mm_M[:mm_nobs,1] = mm_dt # pmra
-            mm_M[mm_nobs:,4] = 1 # dy
-            mm_M[mm_nobs:,5] = mm_dt # pmdec
+            mm_M[:mm_nobs,0] = 1 # dalpha
+            mm_M[:mm_nobs,1] = mm_dt # mu_alpha
+            mm_M[mm_nobs:,4] = 1 # ddelta
+            mm_M[mm_nobs:,5] = mm_dt # mu_delta
 
             mm_eta = np.concatenate((data.x, data.y))
             mm_sigma = np.concatenate((data.x_err, data.y_err))
@@ -86,10 +87,10 @@ class MCMCLinearFitter(Fitter):
             ncols = 11
 
             mm_M = np.zeros((n_rows, ncols))
-            mm_M[:astro_nobs,0] = 1 # dx
-            mm_M[:astro_nobs,1] = dt_astro # pmra
-            mm_M[astro_nobs:2*astro_nobs,4] = 1 # dy
-            mm_M[astro_nobs:2*astro_nobs,5] = dt_astro # pmdec
+            mm_M[:astro_nobs,0] = 1 # dalpha
+            mm_M[:astro_nobs,1] = dt_astro # mu_alpha
+            mm_M[astro_nobs:2*astro_nobs,4] = 1 # ddelta
+            mm_M[astro_nobs:2*astro_nobs,5] = dt_astro # mu_delta
             mm_M[2*astro_nobs:,8] = 1 # gamma
 
             mm_eta = np.concatenate((astro_data.x, astro_data.y, rv_data.rv))
@@ -102,33 +103,33 @@ class MCMCLinearFitter(Fitter):
 
         def _orbit_coord_func(params_dict,data):
             dt = data.t 
-            ti = dt - params_dict['Tp']
-            M = 2 * np.pi * ti / params_dict['P']
-            E = solve_kepler(M, params_dict['e'])
-            X = np.cos(E) - params_dict['e']
-            Y = np.sqrt(1-params_dict['e']**2)*np.sin(E)
-            nu = 2 * np.arctan2(np.sqrt(1+params_dict['e'])*np.sin(E/2), np.sqrt(1-params_dict['e'])*np.cos(E/2))
+            ti = dt - params_dict[par.Tp]
+            M = 2 * np.pi * ti / params_dict[par.P]
+            E = solve_kepler(M, params_dict[par.e])
+            X = np.cos(E) - params_dict[par.e]
+            Y = np.sqrt(1-params_dict[par.e]**2)*np.sin(E)
+            nu = 2 * np.arctan2(np.sqrt(1+params_dict[par.e])*np.sin(E/2), np.sqrt(1-params_dict[par.e])*np.cos(E/2))
             return X,Y,nu
 
         def matrix_method(params_dict):
             
             if data_type == 'astrometry':
                 X,Y,_ = _orbit_coord_func(params_dict,data)
-                # M[:nobs,0] = 1 #dx
-                # M[:nobs,1] = dt #pmra
+                # M[:nobs,0] = 1 #dalpha
+                # M[:nobs,1] = dt #mu_alpha
                 mm_M[:mm_nobs,2] = X # A
                 mm_M[:mm_nobs,3] = Y # F
 
                 # now bottom half y obs
-                # M[nobs:,4] = 1 #dy
-                # M[nobs:,5] = dt #pmdec
+                # M[nobs:,4] = 1 #ddelta
+                # M[nobs:,5] = dt #mu_delta
                 mm_M[mm_nobs:,6] = X # B
                 mm_M[mm_nobs:,7] = Y # G
 
             elif data_type == 'rv':
                 _,_,nu = _orbit_coord_func(params_dict,data)
                 # nu is an array of length mm_nobs; assign per-row
-                mm_M[:,1] = np.cos(nu) + params_dict['e'] # h
+                mm_M[:,1] = np.cos(nu) + params_dict[par.e] # h
                 mm_M[:,2] = np.sin(nu) # c
 
             elif data_type == 'joint':
@@ -140,7 +141,7 @@ class MCMCLinearFitter(Fitter):
                 mm_M[astro_nobs:2*astro_nobs,6] = X_a # B
                 mm_M[astro_nobs:2*astro_nobs,7] = Y_a # G
                 # rv part
-                mm_M[2*astro_nobs:,9] = np.cos(nu_rv) + params_dict['e'] # h
+                mm_M[2*astro_nobs:,9] = np.cos(nu_rv) + params_dict[par.e] # h
                 mm_M[2*astro_nobs:,10] = np.sin(nu_rv) # c
 
 
@@ -156,7 +157,7 @@ class MCMCLinearFitter(Fitter):
             MTM = M_w.T @ M_w
             MT_eta = M_w.T @ mm_eta_w # matching equation
             # now we can solve for mu using np.linalg.solve
-            mu = np.linalg.solve(MTM, MT_eta) # dx,pmra,B,G,dy,pmdec,A,F
+            mu = np.linalg.solve(MTM, MT_eta) # dalpha,mu_alpha,B,G,ddelta,mu_delta,A,F
 
             model_werr = M_w @ mu # this is the model prediction with the error already over
             # this is (obs - model)/err
@@ -169,7 +170,7 @@ class MCMCLinearFitter(Fitter):
     
 
         early_prior_transforms = build_transform_functions([*self.sampled_params, *self.fixed_prior_params], self.early_prior_params)
-        late_prior_transforms = build_transform_functions([*self.sampled_params, "dx", "dpmra", f"A{data.system}", f"F{data.system}", "dy", "dpmdec", f"B{data.system}", f"G{data.system}", *self.fixed_prior_params], self.late_prior_params)
+        late_prior_transforms = build_transform_functions([*self.sampled_params, par.dalpha, par.mu_alpha, f"{par.A}{data.system}", f"{par.F}{data.system}", par.ddelta, par.mu_delta, f"{par.B}{data.system}", f"{par.G}{data.system}", *self.fixed_prior_params], self.late_prior_params)
         def lnprob(params, data):
             # Evaulate priors for parameters that don't need full orbit solution, short circuiting if any are invalid
             ln_prior = 0.0
@@ -193,19 +194,27 @@ class MCMCLinearFitter(Fitter):
                 late_transformed = late_prior_transforms(
                     **dict(zip(param_order, params)),
                     **{**{name: self.priors[name].value for name in self.fixed_prior_params},
-                       "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7]}
+                       par.dalpha: mu[0],
+                       par.mu_alpha: mu[1],
+                       f"{par.A}{data.system}": mu[2],
+                       f"{par.F}{data.system}": mu[3],
+                       par.ddelta: mu[4],
+                       par.mu_delta: mu[5],
+                       f"{par.B}{data.system}": mu[6],
+                       f"{par.G}{data.system}": mu[7],
+                    }
                 )
             elif data_type == 'rv':
                 late_transformed = late_prior_transforms(
                     **dict(zip(param_order, params)),
                     **{**{name: self.priors[name].value for name in self.fixed_prior_params},
-                       "gamma": mu[0], f"h{data.system}": mu[1], f"c{data.system}": mu[2]}
+                       par.gamma: mu[0], f"{par.h}{data.system}": mu[1], f"{par.c}{data.system}": mu[2]}
                 )
             elif data_type == 'joint':
                 late_transformed = late_prior_transforms(
                     **dict(zip(param_order, params)),
                     **{**{name: self.priors[name].value for name in self.fixed_prior_params},
-                       "dx": mu[0], "dpmra": mu[1], f"A{data.system}": mu[2], f"F{data.system}": mu[3], "dy": mu[4], "dpmdec": mu[5], f"B{data.system}": mu[6], f"G{data.system}": mu[7], "gamma": mu[8], f"h{data.system}": mu[9], f"c{data.system}": mu[10]}
+                       par.dalpha: mu[0], par.mu_alpha: mu[1], f"{par.A}{data.system}": mu[2], f"{par.F}{data.system}": mu[3], par.ddelta: mu[4], par.mu_delta: mu[5], f"{par.B}{data.system}": mu[6], f"{par.G}{data.system}": mu[7], par.gamma: mu[8], f"{par.h}{data.system}": mu[9], f"{par.c}{data.system}": mu[10]}
                 )
             
             for name in self.late_prior_params:
@@ -278,17 +287,17 @@ class MCMCLinearFitter(Fitter):
                 transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
                 
                 mu, _ = matrix_method(transformed_param)
-                dx = mu[0]
-                dpmra = mu[1]
+                dalpha = mu[0]
+                mu_alpha = mu[1]
                 A = mu[2]
                 F = mu[3]
-                dy = mu[4]
-                dpmdec = mu[5]
+                ddelta = mu[4]
+                mu_delta = mu[5]
                 B = mu[6]
                 G = mu[7]
-                full_posterior.append((*param,A,B,F,G,dx,dy,dpmra,dpmdec))
+                full_posterior.append((*param,A,B,F,G,dalpha,ddelta,mu_alpha,mu_delta))
 
-            post_labels = [*param_order,f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec']
+            post_labels = [*param_order,f'{par.A}{data.system}',f'{par.B}{data.system}',f'{par.F}{data.system}',f'{par.G}{data.system}',par.dalpha,par.ddelta,par.mu_alpha,par.mu_delta]
 
         elif data_type == 'rv':
             for param in samples:
@@ -299,27 +308,27 @@ class MCMCLinearFitter(Fitter):
                 c = mu[2]
                 full_posterior.append((*param,h,c,gamma))
 
-            post_labels = [*param_order,f'h{data.system}',f'c{data.system}','gamma']
+            post_labels = [*param_order,f'{par.h}{data.system}',f'{par.c}{data.system}', par.gamma]
 
         elif data_type == 'joint':
             for param in samples:
                 transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
                 
                 mu, _ = matrix_method(transformed_param)
-                dx = mu[0]
-                dpmra = mu[1]
+                dalpha = mu[0]
+                mu_alpha = mu[1]
                 A = mu[2]
                 F = mu[3]
-                dy = mu[4]
-                dpmdec = mu[5]
+                ddelta = mu[4]
+                mu_delta = mu[5]
                 B = mu[6]
                 G = mu[7]
                 gamma = mu[8]
                 h = mu[9]
                 c = mu[10]
-                full_posterior.append((*param,A,B,F,G,dx,dy,dpmra,dpmdec,h,c,gamma))
+                full_posterior.append((*param,A,B,F,G,dalpha,ddelta,mu_alpha,mu_delta,h,c,gamma))
 
-            post_labels = [*param_order,f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec',f'h{data.system}',f'c{data.system}','gamma']
+            post_labels = [*param_order,f'{par.A}{data.system}',f'{par.B}{data.system}',f'{par.F}{data.system}',f'{par.G}{data.system}',par.dalpha,par.ddelta,par.mu_alpha,par.mu_delta,f'{par.h}{data.system}',f'{par.c}{data.system}',par.gamma]
 
         best_i = np.argmax(lnprobs)
         best_params = dict(zip(post_labels, full_posterior[best_i]))

@@ -1,59 +1,11 @@
 import numpy as np
 from periapsis.utils.solvers import solve_mass, solve_kepler, solve_M2_from_mass_function
-
+from .params import all_parameters, ang_parameters, wrapped_parameters
 from collections import defaultdict, deque
 from functools import lru_cache
 from typing import Callable
 
-# a = semi-major axis
-# b = semi-minor axis
-# p = semi-parameter / semi-latus rectum
-# r_a = apoapsis distance
-# r_p = periapsis distance (sometimes called q)
-# e = eccentricity
-# i = inclination
-# omega = argument of periastron
-# Omega = longitude of ascending node
-# piomega = longitude of periastron (omega + Omega)
-# P = orbital period
-# A,
-# B, 
-# F, 
-# G = Thiele-Innes constants
-# cosi = cos(i)
-# sini = sin(i)
-# Mtot = total mass of the system
-# a1 = semi-major axis of the primary
-# a2 = semi-major axis of the secondary
-# M1 = mass of the primary
-# M2 = mass of the secondary
-# Msini = Mtot * sini
-# n = mean motion - angle per unit time
-# mu = Mtot*G
-# Tepoch = reference epoch
-# Tp = time of periastron passage
-# t0 = Scaled time of periastron passage (t0 = (Tp - Tepoch)/P)
-# M0 = mean anomaly at reference epoch
-# L0 = mean longitude at reference epoch (longitude measured wrt vernal point)
-# E0 = eccentric anomaly at reference epoch
-# nu0 = true anomaly at reference epoch (sometimes called theta0)
-# l0 = true longitude at reference epoch
-# uM0 = mean argument of latitude at reference epoch (latitude measured wrt ascending node)
-# u0 = true argument of latitude at reference epoch
-# K = radial velocity semi-amplitude
-# K1 = radial velocity semi-amplitude of the primary
-# K2 = radial velocity semi-amplitude of the secondary
-# q = mass ratio = M2/M1
-# dx = astrometric offset in x
-# dy = astrometric offset in y
-# dpmra = proper motion offset in RA
-# dpmdec = proper motion offset in Dec
-# systemic_velocity = systemic velocity offset in radial velocity
-# f1/f2 = mass function of the body1/body2
-
 # TODO time retardation
-# TODO add log versions of some params
-# TODO add T-I C and H
 # TODO add equinoctal params
 # TODO add vector params
 # TODO add eclipsing binary/planet params
@@ -61,23 +13,6 @@ from typing import Callable
 # TODO add quaternion params
 # TODO add flux of source 1/2 (and scale stuff in orbit by that - add photocenter option in addition to 1,2,relative). Flux ratio
 # Photocenter scaling factor from Eq. 3 of Lam+2026
-
-_all_parameters = {
-    'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'piomega', 'P', 'A', 'B', 'F', 'G', 'cosi', 'sini', 'Mtot', 'mu',
-    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'omega1', 'piomega1', 'A1', 'B1', 'F1', 'G1', 'M1',
-    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'omega2', 'piomega2', 'A2', 'B2', 'F2', 'G2', 'M2',
-    'Msini', 'M1sini', 'M2sini', 'n', 'K', 'q', 'f1', 'f2', 'minM1', 'minM2',
-    'a1sini', 'a2sini',
-    'Tepoch', 'Tp', 't0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
-    'u01', 'u02', 'uM01', 'uM02', 'l01', 'l02', 'K1', 'K2',
-    'dx', 'dy', 'dpmra', 'dpmdec', 'systemic_velocity', 'dalpha', 'ddelta', 'mu_alpha', 'mu_delta',
-    'parallax', 'distance',
-}
-
-wrapped_parameters = {
-    "omega", "Omega", "piomega", "omega1", "piomega1", "omega2", "piomega2",
-    "t0", "M0", "L0", "E0", "nu0", "l0", "uM0", "u0", "u01", "u02", "uM01", "uM02", "l01", "l02"
-}
 
 constG = 4*np.pi**2 # TODO: units
 
@@ -108,6 +43,11 @@ def a_cosi_omega_Omega_to_ABFG(a, cosi, omega, Omega):
     G = a * (-sO * sw + cO * cw * cosi)
 
     return A, B, F, G
+
+def a_sini_omega_to_C_H(a, sini, omega):
+    C = a*sini*np.sin(omega) # https://academic.oup.com/mnras/article/394/2/1075/1073320
+    H = a*sini*np.cos(omega)
+    return C, H
 
 def P_a_to_Mtot(P, a):
     # TODO units
@@ -428,6 +368,26 @@ def sini_cosi_to_i(sini, cosi):
     i = np.arctan2(sini, cosi)
     return i
 
+def K_omega_to_c_h(K, omega):
+    c = -K * np.cos(omega)
+    h = K * np.sin(omega)
+    return c, h
+
+def c_omega_to_K_h(c, omega):
+    K = -c/np.cos(omega)
+    h = K * np.sin(omega)
+    return K, h
+
+def h_omega_to_K_c(h, omega):
+    K = h/np.sin(omega)
+    c = -K * np.cos(omega)
+    return K, c
+
+def c_h_to_K_omega(c, h):
+    omega = np.arctan2(h, -c)
+    K = np.sqrt(c**2 + h**2)
+    return K, omega
+
 def add_ab(a, b):
     return a + b
 
@@ -459,6 +419,9 @@ _transform_graph = [
     (('a', 'cosi', 'omega', 'Omega',), ('A', 'B', 'F', 'G',), a_cosi_omega_Omega_to_ABFG),
     (('a1', 'cosi', 'omega1', 'Omega',), ('A1', 'B1', 'F1', 'G1',), a_cosi_omega_Omega_to_ABFG),
     (('a2', 'cosi', 'omega2', 'Omega',), ('A2', 'B2', 'F2', 'G2',), a_cosi_omega_Omega_to_ABFG),
+    (('a', 'sini', 'omega',), ('C', 'H',), a_sini_omega_to_C_H),
+    (('a1', 'sini', 'omega1',), ('C1', 'H1',), a_sini_omega_to_C_H),
+    (('a2', 'sini', 'omega2',), ('C2', 'H2',), a_sini_omega_to_C_H),
     (('P', 'a',), ('Mtot',), P_a_to_Mtot),
     (('Mtot', 'a',), ('P',), Mtot_a_to_P),
     (('Mtot', 'P',), ('a',), Mtot_P_to_a),
@@ -490,8 +453,11 @@ _transform_graph = [
     (('omega1', 'Omega',), ('piomega1',), add_ab_mod2pi),
     (('omega2', 'Omega',), ('piomega2',), add_ab_mod2pi),
     (('omega',), ('omega2', 'omega1',), omega_to_omega2_omega1),
+    (('Omega',), ('Omega2', 'Omega1',), omega_to_omega2_omega1),
     (('omega1',), ('omega', 'omega2',), omega1_to_omega_omega2),
+    (('Omega1',), ('Omega', 'Omega2',), omega1_to_omega_omega2),
     (('omega2',), ('omega', 'omega1',), omega2_to_omega_omega1),
+    (('Omega2',), ('Omega', 'Omega1',), omega2_to_omega_omega1),
     (('piomega', 'Omega',), ('omega',), sub_ab_mod2pi),
     (('piomega1', 'Omega',), ('omega1',), sub_ab_mod2pi),
     (('piomega2', 'Omega',), ('omega2',), sub_ab_mod2pi),
@@ -636,7 +602,46 @@ _transform_graph = [
     (('parallax',), ('distance',), parallax_to_distance),
     (('distance',), ('parallax',), distance_to_parallax),
     (('sini', 'cosi',), ('i',), sini_cosi_to_i),
+    (('K', 'omega',), ('c', 'h'), K_omega_to_c_h),
+    (('K1', 'omega1',), ('c1', 'h1'), K_omega_to_c_h),
+    (('K2', 'omega2',), ('c2', 'h2'), K_omega_to_c_h),
+    (('c', 'omega',), ('K', 'h'), c_omega_to_K_h),
+    (('c1', 'omega1',), ('K1', 'h1'), c_omega_to_K_h),
+    (('c2', 'omega2',), ('K2', 'h2'), c_omega_to_K_h),
+    (('h', 'omega',), ('K', 'c'), h_omega_to_K_c),
+    (('h1', 'omega1',), ('K1', 'c1'), h_omega_to_K_c),
+    (('h2', 'omega2',), ('K2', 'c2'), h_omega_to_K_c),
+    (('c', 'h',), ('K', 'omega'), c_h_to_K_omega),
+    (('c1', 'h1',), ('K1', 'omega1'), c_h_to_K_omega),
+    (('c2', 'h2',), ('K2', 'omega2'), c_h_to_K_omega),
 ]
+
+# Expand to include ang versions of all parameters
+def ang_distance_to_lin(ang, distance):
+    lin = ang * distance
+    return lin
+
+def lin_distance_to_ang(lin, distance):
+    ang = lin / distance
+    return ang
+
+for param in list(ang_parameters):
+    _transform_graph.append(((f"{param}_ang", 'distance'), (param,), ang_distance_to_lin))
+    _transform_graph.append(((param, 'distance'), (f"{param}_ang",), lin_distance_to_ang))
+
+# Expand to include log10 versions of all parameters
+def log(param):
+    return np.log10(param)
+
+def inv_log(param):
+    return 10**param
+
+for param in list(all_parameters):
+    if 'log' in param:
+        continue
+    _transform_graph.append(((param,), (f"log{param}",), log))
+    _transform_graph.append(((f"log{param}",), (param,), inv_log))
+
 
 _TransformStep = tuple[tuple[str, ...], Callable, tuple[str, ...]]
 _Plan = tuple[_TransformStep, ...]
@@ -730,7 +735,7 @@ def uncovered_parameters(known_params: set):
     From a list of known parameters, return a list of all parameters that cannot be known without additional information.
     """
     covered = covered_parameters(known_params)
-    return _all_parameters.difference(covered)
+    return all_parameters.difference(covered)
 
 def shortest_path(known_params, end):
     """

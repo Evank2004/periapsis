@@ -43,6 +43,12 @@ class GaiaData(SystemData):
         chi2 = np.sum(((self.x - model_x) / model_err) ** 2)
         return chi2
 
+    def has_astrometry(self) -> bool:
+        return True
+
+    def has_radial_velocity(self) -> bool:
+        return False
+
     def t_series(self):
         """Return the observation timestamps."""
         return self.t

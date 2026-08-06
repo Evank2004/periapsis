@@ -31,6 +31,20 @@ class Data(ABC):
         """
         pass
 
+    @abstractmethod
+    def has_astrometry(self) -> bool:
+        """
+        Returns True if the data contains astrometry information, False otherwise.
+        """
+        pass
+
+    @abstractmethod
+    def has_radial_velocity(self) -> bool:
+        """
+        Returns True if the data contains radial velocity information, False otherwise.
+        """
+        pass
+
 
     @abstractmethod
     def _astrometry(self,orbit:Orbit):

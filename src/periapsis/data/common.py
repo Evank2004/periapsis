@@ -55,6 +55,12 @@ class AstrometryData(SystemData):
         chi2_y = np.sum(((self.y - y) / self.y_err) ** 2)
         return chi2_x + chi2_y
 
+    def has_astrometry(self) -> bool:
+        return True
+
+    def has_radial_velocity(self) -> bool:
+        return False
+
     def _astrometry(self, orbit: Orbit):
         return self.x, self.y
     
@@ -82,6 +88,12 @@ class RadialVelocityData(SystemData):
         vz = orbit.rv(self.t, system=self.system)
         chi2_rv = np.sum(((self.rv - vz) / self.rv_err) ** 2)
         return chi2_rv
+
+    def has_astrometry(self) -> bool:
+        return False
+
+    def has_radial_velocity(self) -> bool:
+        return True
 
     def _radial_velocity(self, orbit: Orbit):
         return self.rv

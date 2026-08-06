@@ -2,11 +2,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import emcee
 import corner
+from periapsis.data import Data, GaiaData, JointData
 from periapsis.fitting.results import FitResults, SampledPriors
 from periapsis.model.orbit import Orbit
 import matplotlib.gridspec as gridspec
 from periapsis.prior import FixedPrior
-from periapsis import GaiaData,RadialVelocityData
 from scipy.stats import gaussian_kde
 import periapsis.params as par
 
@@ -85,7 +85,7 @@ def ess_distribution_plot(results,savepath=None):
     ax.set_xticklabels(labels, rotation=45, ha='right')
     ax.set_ylabel('Effective Sample Size (ESS)')
     # ax.axhline(1000, color='r', linestyle='--', label='ESS=1000')
-    ax.legend()
+    # ax.legend()
     if savepath is not None:
         fig.savefig(f'{savepath}/ess_dist.png',bbox_inches= 'tight',dpi=300)
         print(f"Saved ESS distribution plot to {savepath}")
@@ -283,7 +283,10 @@ def _apply_center_offset(x, y, params, dt, center=True):
     return np.asarray(x) - dalpha - mu_alpha * dt, np.asarray(y) - ddelta - mu_delta * dt
 
 
-def orbit_plot(results, data, system=1, savepath=None):
+def orbit_plot(results, data, savepath=None):
+    if isinstance(data, JointData):
+        data = data.as_astrometry_data()
+    system = data.system
 
     if isinstance(data, GaiaData):
         Map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
@@ -405,6 +408,9 @@ def sky_motion_plot(results, data, savepath=None):
 
         return fig
 
+    if isinstance(data, JointData):
+        data = data.as_astrometry_data()
+
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
     ref_epoch = getattr(data, 'ref_epoch', 0)
     dt = tfold - ref_epoch
@@ -444,8 +450,9 @@ def sky_motion_plot(results, data, savepath=None):
 
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
-    ra_map, dec_map = map_model.astrometry(tfold, system=1)
-    ra_med, dec_med = med_model.astrometry(tfold, system=1)
+    system = data.system
+    ra_map, dec_map = map_model.astrometry(tfold, system=system)
+    ra_med, dec_med = med_model.astrometry(tfold, system=system)
 
     ra_map_full =  ra_map
     dec_map_full = dec_map
@@ -471,7 +478,7 @@ def sky_motion_plot(results, data, savepath=None):
     
 
 
-def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
+def multi_orbit_plot(results, data, Nplot=100, savepath=None):
     '''
     Plots multiple orbits from the posterior samples
     '''
@@ -518,6 +525,8 @@ def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
         return fig
 
     #--------------------------------
+    if isinstance(data, JointData):
+        data = data.as_astrometry_data()
 
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
 
@@ -543,6 +552,8 @@ def multi_orbit_plot(results, data, Nplot=100, system=1, savepath=None):
     # med_model = _build_model(results, med_params)
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
+
+    system = data.system
 
     x_map, y_map = map_model.astrometry(tfold, system=system)
     x_med, y_med = med_model.astrometry(tfold, system=system)
@@ -684,95 +695,25 @@ def mass_distribution(results,scale='linear',savepath=None):
     '''
     Plots distribution of secondary mass (M2) from posterior samples
     '''
-    try:
-        M2_samples = results['M2']
-    except KeyError:
-        print('No M2 samples found in results.')
+    if 'M2' in results and isinstance(results['M2'], np.ndarray) and len(results['M2']) > 1:
+        return distribution(results, 'M2', scale=scale, unit=r'M$_\odot$', savepath=savepath)
+    elif 'M1' in results and isinstance(results['M1'], np.ndarray) and len(results['M1']) > 1:
+        return distribution(results, 'M1', scale=scale, unit=r'M$_\odot$', savepath=savepath)
+    elif 'minM2' in results and isinstance(results['minM2'], np.ndarray) and len(results['minM2']) > 1:
+        return distribution(results, 'minM2', scale=scale, unit=r'M$_\odot$', savepath=savepath)
+    elif 'minM1' in results and isinstance(results['minM1'], np.ndarray) and len(results['minM1']) > 1:
+        return distribution(results, 'minM1', scale=scale, unit=r'M$_\odot$', savepath=savepath)
+    else:
+        print('No mass samples found in results.')
         return None
 
-    med_m2 = np.median(M2_samples)
-    m2_16 = np.percentile(M2_samples, 16)
-    m2_84 = np.percentile(M2_samples, 84)
-    m2_m2sig = np.percentile(M2_samples, 2.5)
-    m2_p2sig = np.percentile(M2_samples, 97.5)
-    
-    if scale == 'linear':
-        kde = gaussian_kde(M2_samples)
-        x = np.linspace(M2_samples.min(), M2_samples.max(), 1000)
-        pdf = kde(x)
-        #normalize the pdf
-        pdf /= np.trapezoid(pdf, x)
-
-        bins = np.linspace(M2_samples.min(), M2_samples.max(), 40)
-
-        fig,ax=plt.subplots()
-        ax.hist(M2_samples,bins=bins,
-                 density = True, alpha = 0.5, histtype='step',
-                 color='gray',label='Samples')
-        
-        ax.plot(x,pdf,'r-', lw=2.0,label='KDE')
-
-        ax.axvspan(m2_16,m2_84,color='tab:blue',alpha=0.35,
-                    label=fr'$1\,\sigma$  [{m2_16:.2f},{m2_84:.2f}] M$_\odot$')
-        
-        ax.axvspan(m2_m2sig,m2_p2sig,color='tab:blue',
-            alpha=0.25,
-            label=fr'$2\,\sigma$  [{m2_m2sig:.2f},{m2_p2sig:.2f}] M$_\odot$')
-
-        ax.axvline(med_m2,color='k',linestyle='--'
-            ,label=fr'Median = {med_m2:.2f} M$_\odot$')
-
-        ax.set_xlabel("$M_{comp.}$ (M$_\\odot$)")
-        ax.set_ylabel("Probability Density")
-        ax.legend(loc='upper right')
-        if savepath is not None:
-            fig.savefig(f'{savepath}/mass_dist.png',dpi=300)
-            print(f"Saved mass distribution plot to {savepath}")
-        return fig
-
-    if scale == 'log':
-        kde = gaussian_kde(np.log10(M2_samples))
-        x = np.linspace(np.log10(M2_samples).min(), np.log10(M2_samples).max(), 1000)
-        pdf = kde(x)
-        #normalize the pdf
-        pdf /= np.trapezoid(pdf, x)
-
-        bins = np.logspace(np.log10(M2_samples).min(), np.log10(M2_samples).max(), 40)
-
-        fig,ax=plt.subplots()
-
-        ax.hist(M2_samples,bins=bins,
-                 density = True, alpha = 0.5, histtype='step',
-                 color='gray',label='Samples')
-        
-        ax.plot(10**x,pdf,'r-', lw=2.0,label='KDE')
-
-        ax.axvspan(m2_16,m2_84,color='tab:blue',alpha=0.35,
-                    label=fr'$1\,\sigma$  [{m2_16:.2f},{m2_84:.2f}] M$_\odot$')
-        
-        ax.axvspan(m2_m2sig,m2_p2sig,color='tab:blue',
-            alpha=0.25,
-            label=fr'$2\,\sigma$  [{m2_m2sig:.2f},{m2_p2sig:.2f}] M$_\odot$')
-        
-        ax.axvline(med_m2,color='k',linestyle='--'
-            ,label=fr'Median = {med_m2:.2f} M$_\odot$')
-        
-
-        ax.set_xlim(m2_m2sig*0.8, m2_p2sig*1.2)
-        ax.set_xscale('log')
-        ax.set_xlabel("$M_{comp.}$ (M$_\\odot$)")
-        ax.set_ylabel("Probability Density")
-        ax.legend(loc='upper right')
-
-        if savepath is not None:
-            fig.savefig(f'{savepath}/log_mass_dist.png',dpi=300)
-            print(f"Saved mass distribution plot to {savepath}")
-        return fig
 
 def rv_fit_plot(results, data,unit_conv=1, savepath=None):
     '''
     Plots radial velocity fit over time
     '''
+    if isinstance(data, JointData):
+        data = data.as_radial_velocity_data()
     system = data.system 
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
 
@@ -796,6 +737,8 @@ def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove 
     '''
     Plots phase-folded radial velocity fit
     '''
+    if isinstance(data, JointData):
+        data = data.as_radial_velocity_data()
     system = data.system
     P = results.MAP_params['P']
     P_med = results.median_params['P']
@@ -836,6 +779,8 @@ def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     '''
     Plots multiple radial velocity fits from posterior samples
     '''
+    if isinstance(data, JointData):
+        data = data.as_radial_velocity_data()
     tfold = np.linspace(data.t.min(), data.t.max(), 1000)
     system = data.system
 
@@ -893,6 +838,8 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     '''
     Plots multiple phase-folded RV fits
     '''
+    if isinstance(data, JointData):
+        data = data.as_radial_velocity_data()
     system = data.system
     
     param_names = results.param_names
@@ -967,7 +914,7 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     return fig
 
         
-def all_plots(results, data, scale=None,unit_conv=1, savepath=None):
+def all_plots(results, data: Data, scale=None,unit_conv=1, savepath=None):
     '''
     Generates all diagnostic and orbit plots
     '''
@@ -976,51 +923,17 @@ def all_plots(results, data, scale=None,unit_conv=1, savepath=None):
         scale = 'linear'
 
     if results.backend=='emcee':
-        if isinstance(data,RadialVelocityData):
-            auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
-            corner = corner_plot(results,savepath=savepath)
-            ess_dist = ess_distribution_plot(results,savepath=savepath)
-            posterior_prior = posterior_over_prior(results, savepath=savepath)
-            rv_fit = rv_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            phase_fold = phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            multi_rv = rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            m2min_dist = distribution(results, 'minM2', scale=scale, unit=r'M$_\odot$', savepath=savepath)
-            return auto_corr, corner, ess_dist, posterior_prior, rv_fit, phase_fold, multi_rv, multi_phase, m2min_dist
-
-        else:
-
-            auto_corr = mcmc_autocorrelation_plot(results,savepath=savepath)
-            corner = corner_plot(results,savepath=savepath)
-            ess_dist = ess_distribution_plot(results,savepath=savepath)
-            posterior_prior = posterior_over_prior(results, savepath=savepath)
-            orbit_vis=orbit_plot(results,data,savepath=savepath)
-            sky_vis=sky_motion_plot(results,data,savepath=savepath)
-            multi_orb = multi_orbit_plot(results,data,savepath=savepath)
-            mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
-
-
-            return auto_corr, corner, ess_dist, orbit_vis, multi_orb, mass_dist
-
-    if results.backend=='ultranest':
-        if isinstance(data,RadialVelocityData):
-            posterior_prior = posterior_over_prior(results, savepath=savepath)
-            corner = corner_plot(results,savepath=savepath)
-            rv_fit = rv_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            phase_fold = phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            multi_rv = rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            multi_phase = multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-            m2min_dist = distribution(results, 'minM2', scale=scale, unit=r'M$_\odot$', savepath=savepath)
-
-            return posterior_prior, corner, rv_fit, phase_fold, multi_rv, multi_phase, m2min_dist
-
-        else:
-
-            posterior_prior = posterior_over_prior(results, savepath=savepath)
-            corner = corner_plot(results,savepath=savepath)
-            orbit_vis=orbit_plot(results,data,savepath=savepath)
-            sky_vis=sky_motion_plot(results,data,savepath=savepath)
-            multi_orb = multi_orbit_plot(results,data,savepath=savepath)
-            mass_dist = mass_distribution(results,scale=scale,savepath=savepath)
-
-            return posterior_prior, corner, orbit_vis, sky_vis, multi_orb, mass_dist
+        mcmc_autocorrelation_plot(results,savepath=savepath)
+        ess_distribution_plot(results,savepath=savepath)
+    corner_plot(results,savepath=savepath)
+    posterior_over_prior(results, savepath=savepath)
+    if data.has_radial_velocity():
+        rv_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+        phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+        rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+        multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+    elif data.has_astrometry():
+        orbit_plot(results,data,savepath=savepath)
+        sky_motion_plot(results,data,savepath=savepath)
+        multi_orbit_plot(results,data,savepath=savepath)
+    mass_distribution(results,scale=scale,savepath=savepath)

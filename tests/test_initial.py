@@ -221,7 +221,7 @@ def test_rv_negative_log_posterior_combines_chi2_and_priors(monkeypatch):
     guess = RVInitialGuess(
         data,
         np.random.RandomState(0),
-        systemic_velocity=varying,
+        gamma=varying,
         P=fixed,
     )
     captured = {}
@@ -234,7 +234,7 @@ def test_rv_negative_log_posterior_combines_chi2_and_priors(monkeypatch):
 
     result = guess.neg_lnlike([3.0, 2.0], data)
 
-    assert captured == {"systemic_velocity": 3.0, "P": 2.0}
+    assert captured == {"gamma": 3.0, "P": 2.0}
     assert varying.logpdf_calls == [3.0]
     assert result == pytest.approx(5.5)
 

@@ -6,12 +6,13 @@ from periapsis.data.data import Data
 from periapsis.fitting.results import FitResults
 from periapsis.utils.solvers import solve_kepler
 from periapsis.prior import FixedPrior, Bounds
+import periapsis.params as par
 import numpy as np
 import ultranest
 
 
 class UltranestLinearFitter(Fitter):
-    def __init__(self, output_params=('P', 'e', 'Tp',), min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
+    def __init__(self, output_params=(par.P, par.e, par.Tp,), min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
         super().__init__(**priors)
         self.min_num_live_points = min_num_live_points
         self.min_ess = min_ess
@@ -51,8 +52,8 @@ class UltranestLinearFitter(Fitter):
 
         param_order = self.sample_order
         full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
-        matrix_output_params = ["dx", "dpmra", f"A{data.system}", f"F{data.system}", "dy", "dpmdec", f"B{data.system}", f"G{data.system}"]
-        standard_param_transform = build_transform_functions([*full_param_order, *self.fixed_prior_params], ('P', 'e', 'Tp',))
+        matrix_output_params = [par.dalpha, par.mu_alpha, f"{par.A}{data.system}", f"{par.F}{data.system}", par.ddelta, par.mu_delta, f"{par.B}{data.system}", f"{par.G}{data.system}"]
+        standard_param_transform = build_transform_functions([*full_param_order, *self.fixed_prior_params], (par.P, par.e, par.Tp,))
         likelihood_transform = build_transform_functions([*full_param_order, *self.fixed_prior_params, *matrix_output_params], self.bound_params)
 
         def prior_transform(cube):
@@ -78,17 +79,17 @@ class UltranestLinearFitter(Fitter):
             eta = np.concatenate((data.x, data.y))
             sigma = np.concatenate((data.x_err, data.y_err))
 
-            X = np.cos(E) - params_dict['e']
-            Y = np.sqrt(1 - params_dict['e'] ** 2) * np.sin(E)
+            X = np.cos(E) - params_dict[par.e]
+            Y = np.sqrt(1 - params_dict[par.e] ** 2) * np.sin(E)
 
-            M[:nobs, 0] = 1  # dx
-            M[:nobs, 1] = dt  # dpmra
+            M[:nobs, 0] = 1  # dalpha
+            M[:nobs, 1] = dt  # mu_alpha
             M[:nobs, 2] = X  # A
             M[:nobs, 3] = Y  # F
 
             # now bottom half y obs
-            M[nobs:, 4] = 1  # dy
-            M[nobs:, 5] = dt  # dpmdec
+            M[nobs:, 4] = 1  # ddelta
+            M[nobs:, 5] = dt  # mu_delta
             M[nobs:, 6] = X  # B
             M[nobs:, 7] = Y  # G
 
@@ -99,7 +100,7 @@ class UltranestLinearFitter(Fitter):
             MTM = M_w.T @ M_w
             MT_eta = M_w.T @ eta_w # matching equation
             # now we can solve for mu using np.linalg.solve
-            mu = np.linalg.solve(MTM, MT_eta) # dx,pmra,A,F,dy,pmdec,B,G
+            mu = np.linalg.solve(MTM, MT_eta) # dalpha,mu_alpha,A,F,ddelta,mu_delta,B,G
 
             model_werr = M_w @ mu # this is the model prediction with the error already over
             # this is (obs - model)/err
@@ -110,10 +111,10 @@ class UltranestLinearFitter(Fitter):
         
         def objective(data, params_dict):
             dt = data.t - ref_epoch
-            ti = dt - (params_dict['Tp'] - ref_epoch)
+            ti = dt - (params_dict[par.Tp] - ref_epoch)
 
-            M = 2 * np.pi * ti / params_dict['P']
-            E = solve_kepler(M, params_dict['e'])
+            M = 2 * np.pi * ti / params_dict[par.P]
+            E = solve_kepler(M, params_dict[par.e])
 
             mu, chi2 = matrix_method(params_dict, data, E)
 
@@ -130,8 +131,8 @@ class UltranestLinearFitter(Fitter):
             param_dict = dict(zip(full_param_order, params))
             param_dict.update({name: self.priors[name].value for name in self.fixed_prior_params})
             param_dict.update({name: mu[i] for i, name in enumerate(matrix_output_params)})
-            if "Tepoch" not in param_dict:
-                param_dict["Tepoch"] = ref_epoch
+            if par.Tepoch not in param_dict:
+                param_dict[par.Tepoch] = ref_epoch
             bound_param_dict = likelihood_transform(**param_dict)
             for name in self.bound_params:
                 if not (self.priors[name].lower <= bound_param_dict[name] <= self.priors[name].upper):
@@ -174,27 +175,27 @@ class UltranestLinearFitter(Fitter):
         full_posterior = []
         valid_logl = []
         for i, param in enumerate(ultranest_samples):
-            P,e,Tp = standard_params_dict['P'][i], standard_params_dict['e'][i], standard_params_dict['Tp'][i]
+            P,e,Tp = standard_params_dict[par.P][i], standard_params_dict[par.e][i], standard_params_dict[par.Tp][i]
             ll = log_likelihood(param)
             if (not np.isfinite(ll)) or (ll <= reject_logl / 2):
                 continue
 
             M = 2*np.pi * (data.t - Tp) / P
             E = solve_kepler(M,e)
-            params_dict = {'P': P, 'e': e, 'Tp': Tp}
+            params_dict = {par.P: P, par.e: e, par.Tp: Tp}
             try:
                 mu, _ = matrix_method(params_dict,data,E)
             except np.linalg.LinAlgError:
                 continue
-            dx = mu[0]
-            dpmra = mu[1]
+            dalpha = mu[0]
+            mu_alpha = mu[1]
             A = mu[2]
             F = mu[3]
-            dy = mu[4]
-            dpmdec = mu[5]
+            ddelta = mu[4]
+            mu_delta = mu[5]
             B = mu[6]
             G = mu[7]
-            full_posterior.append((P,e,Tp,A,B,F,G,dx,dy,dpmra,dpmdec))
+            full_posterior.append((P,e,Tp,A,B,F,G,dalpha,ddelta,mu_alpha,mu_delta))
             valid_logl.append(ll)
 
         if len(full_posterior) == 0:
@@ -206,7 +207,7 @@ class UltranestLinearFitter(Fitter):
         logl = np.array(valid_logl)
         full_posterior_arr = np.array(full_posterior)
 
-        post_labels = ['P','e','Tp',f'A{data.system}',f'B{data.system}',f'F{data.system}',f'G{data.system}','dx','dy','dpmra','dpmdec']
+        post_labels = [par.P,par.e,par.Tp,f'{par.A}{data.system}',f'{par.B}{data.system}',f'{par.F}{data.system}',f'{par.G}{data.system}',par.dalpha,par.ddelta,par.mu_alpha,par.mu_delta]
 
         best_i = int(np.argmax(logl))
         best_params = dict(zip(post_labels, full_posterior[best_i]))
@@ -241,7 +242,7 @@ class UltranestLinearFitter(Fitter):
         results_dict['priors'] = self.priors
 
         if results_dict['ref_epoch'] is not None:
-            results_dict['priors']['Tepoch'] = FixedPrior(results_dict['ref_epoch'])
+            results_dict['priors'][par.Tepoch] = FixedPrior(results_dict['ref_epoch'])
 
         fit_results = FitResults(**results_dict)
         return fit_results

@@ -94,10 +94,10 @@ class Fitter(ABC):
         """Return sensible starting values for optional astrometric offsets."""
         pm_fit = self._proper_motion_fit(data)
         return {
-            'dx': pm_fit['params']['x0'],
-            'dy': pm_fit['params']['y0'],
-            'dpmra': pm_fit['params']['mu_x'],
-            'dpmdec': pm_fit['params']['mu_y'],
+            'dalpha': pm_fit['params']['x0'],
+            'ddelta': pm_fit['params']['y0'],
+            'mu_alpha': pm_fit['params']['mu_x'],
+            'mu_delta': pm_fit['params']['mu_y'],
         }
 
     def _systemic_velocity(self,data:Data):

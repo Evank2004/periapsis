@@ -29,6 +29,7 @@ class RVInitialGuess(InitialGuess):
 
         return PDC
 
+<<<<<<< HEAD
     def Zucker_pdc(self,num_freq=10000):
         """Compute the Zucker PDC to obtain an initial guess on Period"""
         prior_p = self.priors.get('P')
@@ -39,6 +40,18 @@ class RVInitialGuess(InitialGuess):
         frequencies = np.logspace(np.log10(freq_min),np.log10(freq_max),num_freq)
         periods = 1/frequencies
         pdc_vals = np.zeros(num_freq)
+=======
+        def Zucker_pdc(self,num_freq=10000):
+            """Compute the Zucker PDC to obtain an initial guess on Period"""
+            prior_p = self.priors.get('P')
+            p_min = prior_p.min if prior_p is not None else 0.001
+            p_max = prior_p.max if prior_p is not None else 100
+            freq_min = 1/p_max
+            freq_max = 1/p_min
+            frequencies = np.logspace(np.log10(freq_min),np.log10(freq_max),num_freq)
+            periods = 1/frequencies
+            pdc_vals = np.zeros(num_freq)
+>>>>>>> 88fa497 (ooops)
 
         x = self.data.rv
         t = self.data.t

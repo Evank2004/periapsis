@@ -174,7 +174,7 @@ def test_mcmc_linear_fitter_runs_with_astrometry_data():
 #     with pytest.raises(ValueError):
 #         fitter.fit(data, rng=np.random.default_rng(0))
 
-def test_mcmc_linear_fitter_does_not_run_with_joint_data():
+def test_mcmc_linear_fitter_runs_with_joint_data():
     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
@@ -184,8 +184,8 @@ def test_mcmc_linear_fitter_does_not_run_with_joint_data():
     rv = model.rv(t_rv, system=1)
     data_rv = RadialVelocityData(t_rv, rv, 0.01, system=1)
     data = JointData([data_astrometry, data_rv])
-    with pytest.raises(ValueError):
-        fitter.fit(data, rng=np.random.default_rng(0))
+    results = fitter.fit(data, rng=np.random.default_rng(0))
+    assert isinstance(results, FitResults)
 
 def test_mcmc_linear_fitter_does_not_run_with_gaia_data():
     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_priors)

@@ -133,8 +133,8 @@ class MCMCLinearFitter(Fitter):
                 mm_M[:,2] = np.sin(nu) # c
 
             elif data_type == 'joint':
-                X_a,Y_a,_ = _orbit_coord_func(params_dict,data._astrometry)
-                _,_,nu_rv = _orbit_coord_func(params_dict,data._radial_velocity)
+                X_a,Y_a,_ = _orbit_coord_func(params_dict,data.as_astrometry_data())
+                _,_,nu_rv = _orbit_coord_func(params_dict,data.as_radial_velocity_data())
                 # astrometry part
                 mm_M[:astro_nobs,2] = X_a # A
                 mm_M[:astro_nobs,3] = Y_a # F
@@ -170,7 +170,13 @@ class MCMCLinearFitter(Fitter):
     
 
         early_prior_transforms = build_transform_functions([*self.sampled_params, *self.fixed_prior_params], self.early_prior_params)
-        late_prior_transforms = build_transform_functions([*self.sampled_params, par.dalpha, par.mu_alpha, f"{par.A}{data.system}", f"{par.F}{data.system}", par.ddelta, par.mu_delta, f"{par.B}{data.system}", f"{par.G}{data.system}", *self.fixed_prior_params], self.late_prior_params)
+
+        if data_type == 'astrometry':
+            late_prior_transforms = build_transform_functions([*self.sampled_params, par.dalpha, par.mu_alpha, f"{par.A}{data.system}", f"{par.F}{data.system}", par.ddelta, par.mu_delta, f"{par.B}{data.system}", f"{par.G}{data.system}", *self.fixed_prior_params], self.late_prior_params)
+        elif data_type == 'rv':
+            late_prior_transforms = build_transform_functions([*self.sampled_params, par.gamma, f"{par.h}{data.system}", f"{par.c}{data.system}", *self.fixed_prior_params], self.late_prior_params)
+        elif data_type == 'joint':
+            late_prior_transforms = build_transform_functions([*self.sampled_params, par.dalpha, par.mu_alpha, f"{par.A}{astro_data.system}", f"{par.F}{astro_data.system}", par.ddelta, par.mu_delta, f"{par.B}{astro_data.system}", f"{par.G}{astro_data.system}", par.gamma, f"{par.h}{rv_data.system}", f"{par.c}{rv_data.system}", *self.fixed_prior_params], self.late_prior_params)
         def lnprob(params, data):
             # Evaulate priors for parameters that don't need full orbit solution, short circuiting if any are invalid
             ln_prior = 0.0
@@ -214,7 +220,7 @@ class MCMCLinearFitter(Fitter):
                 late_transformed = late_prior_transforms(
                     **dict(zip(param_order, params)),
                     **{**{name: self.priors[name].value for name in self.fixed_prior_params},
-                       par.dalpha: mu[0], par.mu_alpha: mu[1], f"{par.A}{data.system}": mu[2], f"{par.F}{data.system}": mu[3], par.ddelta: mu[4], par.mu_delta: mu[5], f"{par.B}{data.system}": mu[6], f"{par.G}{data.system}": mu[7], par.gamma: mu[8], f"{par.h}{data.system}": mu[9], f"{par.c}{data.system}": mu[10]}
+                       par.dalpha: mu[0], par.mu_alpha: mu[1], f"{par.A}{astro_data.system}": mu[2], f"{par.F}{astro_data.system}": mu[3], par.ddelta: mu[4], par.mu_delta: mu[5], f"{par.B}{astro_data.system}": mu[6], f"{par.G}{astro_data.system}": mu[7], par.gamma: mu[8], f"{par.h}{rv_data.system}": mu[9], f"{par.c}{rv_data.system}": mu[10]}
                 )
             
             for name in self.late_prior_params:
@@ -328,7 +334,7 @@ class MCMCLinearFitter(Fitter):
                 c = mu[10]
                 full_posterior.append((*param,A,B,F,G,dalpha,ddelta,mu_alpha,mu_delta,h,c,gamma))
 
-            post_labels = [*param_order,f'{par.A}{data.system}',f'{par.B}{data.system}',f'{par.F}{data.system}',f'{par.G}{data.system}',par.dalpha,par.ddelta,par.mu_alpha,par.mu_delta,f'{par.h}{data.system}',f'{par.c}{data.system}',par.gamma]
+            post_labels = [*param_order,f'{par.A}{astro_data.system}',f'{par.B}{astro_data.system}',f'{par.F}{astro_data.system}',f'{par.G}{astro_data.system}',par.dalpha,par.ddelta,par.mu_alpha,par.mu_delta,f'{par.h}{rv_data.system}',f'{par.c}{rv_data.system}',par.gamma]
 
         best_i = np.argmax(lnprobs)
         best_params = dict(zip(post_labels, full_posterior[best_i]))

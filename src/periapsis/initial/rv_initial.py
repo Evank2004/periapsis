@@ -14,25 +14,17 @@ class RVInitialGuess(InitialGuess):
     def __init__(self, data: RadialVelocityData, rng: np.random.RandomState, **priors):
         super().__init__(data, rng, **priors)
 
-    def _pdc(self, p,t,a):
-        #phase difference matrix
-        phi = np.mod(np.abs(t[:,np.newaxis] - t), p)
-
-        #phase distance matrix
-        b = phi * (p - phi)
-
-        #double centering of matrix a and b
-        A = a - np.mean(a,axis=0,keepdims=True) - np.mean(a,axis=1,keepdims=True) + np.mean(a)
-        B = b - np.mean(b,axis=0,keepdims=True) - np.mean(b,axis=1,keepdims=True) + np.mean(b)
-
-        PDC = np.sum(A*B) / np.sqrt(np.sum(A**2) * np.sum(B**2))
-
-        return PDC
+    def _double_center(self,matrix):
+        """Double center a matrix."""
+        row_mean = np.mean(matrix, axis=1, keepdims=True)
+        col_mean = np.mean(matrix, axis=0, keepdims=True)
+        total_mean = np.mean(matrix)
+        return matrix - row_mean - col_mean + total_mean
 
     def Zucker_pdc(self,num_freq=10000):
         """Compute the Zucker PDC to obtain an initial guess on Period"""
         prior_p = self.priors.get('P')
-        p_min = prior_p.min if prior_p is not None else 0.1
+        p_min = prior_p.min if prior_p is not None else 0.001
         p_max = prior_p.max if prior_p is not None else 100
         freq_min = 1/p_max
         freq_max = 1/p_min
@@ -44,9 +36,20 @@ class RVInitialGuess(InitialGuess):
         t = self.data.t
         #sample distance matrix
         a = np.abs(x[:,np.newaxis] - x)
+        A = self._double_center(a)
+        sum_A = np.sum(A**2)
+        delta_t = np.abs(t[:,np.newaxis] - t)
 
         for i,p in enumerate(periods):
-            pdc_vals[i] = self._pdc(p,t,a)
+            #phase difference matrix
+            phi = np.mod(delta_t, p)
+            #phase distance matrix
+            b = phi * (p - phi)
+            B = self._double_center(b)
+            sum_B = np.sum(B**2)
+            PDC = np.sum(A*B) / np.sqrt(sum_A * sum_B)
+
+            pdc_vals[i] = PDC
 
         P_guess = periods[np.argmax(pdc_vals)]
 

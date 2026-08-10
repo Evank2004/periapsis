@@ -158,59 +158,48 @@ def test_rv_bounds_reject_a_parameter_without_a_prior():
         guess.Bounds(["P", "e"])
 
 
-def test_rv_pdc_is_finite_bounded_and_translation_invariant():
-    guess = RVInitialGuess(make_rv_data(), np.random.RandomState(0))
-    times = np.array([0.0, 0.7, 1.9, 3.2])
-    values = np.array([2.0, -1.0, 0.5, 4.0])
-    distances = np.abs(values[:, np.newaxis] - values)
-
-    original = guess._pdc(2.3, times, distances)
-    shifted = guess._pdc(2.3, times + 100.0, distances)
-
-    assert np.isfinite(original)
-    assert -1.0 <= original <= 1.0
-    assert shifted == pytest.approx(original)
-
-
-def test_zucker_period_search_uses_prior_bounds_and_best_pdc(monkeypatch):
+def test_zucker_period_search_uses_prior_bounds_and_best_period(monkeypatch):
     guess = RVInitialGuess(
         make_rv_data(),
         np.random.RandomState(0),
         P=StubPrior(1.0, 8.0),
     )
-    evaluated_periods = []
+    logspace_calls = []
 
-    def fake_pdc(period, times, distances):
-        evaluated_periods.append(period)
-        assert times is guess.data.t
-        assert distances.shape == (4, 4)
-        return -(period - 4.0) ** 2
+    def fake_logspace(low, high, num):
+        logspace_calls.append((low, high, num))
+        return np.array([1.0 / 8.0, 1.0 / 4.0, 1.0 / 2.0])
 
-    monkeypatch.setattr(guess, "_pdc", fake_pdc)
+    monkeypatch.setattr(rv_module.np, "logspace", fake_logspace)
+    monkeypatch.setattr(rv_module.np, "argmax", lambda values: 1)
 
-    result = guess.Zucker_pdc(num_freq=7)
+    result = guess.Zucker_pdc(num_freq=3)
 
     assert result == pytest.approx(4.0)
-    assert len(evaluated_periods) == 7
-    assert min(evaluated_periods) == pytest.approx(1.0)
-    assert max(evaluated_periods) == pytest.approx(8.0)
+    assert logspace_calls == [
+        (pytest.approx(np.log10(1.0 / 8.0)), pytest.approx(np.log10(1.0)), 3)
+    ]
 
 
-def test_zucker_period_search_has_documented_default_range(monkeypatch):
+def test_zucker_period_search_uses_default_range_when_no_period_prior(
+    monkeypatch,
+):
     guess = RVInitialGuess(make_rv_data(), np.random.RandomState(0))
-    evaluated_periods = []
+    logspace_calls = []
 
-    def fake_pdc(period, _times, _distances):
-        evaluated_periods.append(period)
-        return period
+    def fake_logspace(low, high, num):
+        logspace_calls.append((low, high, num))
+        return np.array([1.0 / 100.0, 1.0 / 50.0, 1.0 / 25.0, 1.0 / 10.0, 1.0])
 
-    monkeypatch.setattr(guess, "_pdc", fake_pdc)
+    monkeypatch.setattr(rv_module.np, "logspace", fake_logspace)
+    monkeypatch.setattr(rv_module.np, "argmax", lambda values: 0)
 
     result = guess.Zucker_pdc(num_freq=5)
 
     assert result == pytest.approx(100.0)
-    assert min(evaluated_periods) == pytest.approx(0.1)
-    assert max(evaluated_periods) == pytest.approx(100.0)
+    assert logspace_calls == [
+        (pytest.approx(np.log10(0.01)), pytest.approx(np.log10(1000.0)), 5)
+    ]
 
 
 def test_rv_negative_log_posterior_combines_chi2_and_priors(monkeypatch):

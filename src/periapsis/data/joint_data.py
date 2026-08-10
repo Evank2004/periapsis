@@ -23,7 +23,13 @@ class JointData(Data):
             total_chi2 += data.chi2(orbit)
         return total_chi2
 
-    def as_astrometry_data(self):
+    def has_astrometry(self) -> bool:
+        return any(data.has_astrometry() for data in self.datas)
+
+    def has_radial_velocity(self) -> bool:
+        return any(data.has_radial_velocity() for data in self.datas)
+
+    def as_astrometry_data(self) -> AstrometryData:
         ''' Returns AstrometryData object containing all astrometry data in the joint data. 
         '''
         astrometry_datas = [data for data in self.datas if isinstance(data, AstrometryData)]
@@ -34,9 +40,9 @@ class JointData(Data):
         y = np.concatenate([data.y for data in astrometry_datas])
         x_err = np.concatenate([data.x_err for data in astrometry_datas])
         y_err = np.concatenate([data.y_err for data in astrometry_datas])
-        return AstrometryData(t, x, y, x_err, y_err)
+        return AstrometryData(t, x, y, x_err, y_err, system=self.datas[0].system) #FIXME handle multi-system case
 
-    def as_radial_velocity_data(self):
+    def as_radial_velocity_data(self) -> RadialVelocityData:
         ''' Returns RadialVelocityData object containing all radial velocity data in the joint data. 
         '''
         rv_datas = [data for data in self.datas if isinstance(data, RadialVelocityData)]
@@ -45,7 +51,7 @@ class JointData(Data):
         t = np.concatenate([data.t for data in rv_datas])
         rv = np.concatenate([data.rv for data in rv_datas])
         rv_err = np.concatenate([data.rv_err for data in rv_datas])
-        return RadialVelocityData(t, rv, rv_err)
+        return RadialVelocityData(t, rv, rv_err, system = self.datas[0].system) #FIXME handle multi-system case
 
 
     def _astrometry(self, orbit: Orbit):

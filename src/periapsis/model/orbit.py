@@ -4,24 +4,24 @@ import numpy as np
 from types import MappingProxyType
 
 _astrometry_param_names = {
-    "": {'P', 'e', 'Tp', 'Tepoch', 'A', 'B', 'F', 'G', 'dx', 'dy', 'dpmra', 'dpmdec'}, # Relative astrometry
-    "1": {'P', 'e', 'Tp', 'Tepoch', 'A1', 'B1', 'F1', 'G1', 'dx', 'dy', 'dpmra', 'dpmdec'}, # Primary astrometry
-    "2": {'P', 'e', 'Tp', 'Tepoch', 'A2', 'B2', 'F2', 'G2', 'dx', 'dy', 'dpmra', 'dpmdec'}, # Secondary astrometry
+    "": {'P', 'e', 'Tp', 'Tepoch', 'A', 'B', 'F', 'G', 'dalpha', 'ddelta', 'mu_alpha', 'mu_delta'}, # Relative astrometry
+    "1": {'P', 'e', 'Tp', 'Tepoch', 'A1', 'B1', 'F1', 'G1', 'dalpha', 'ddelta', 'mu_alpha', 'mu_delta'}, # Primary astrometry
+    "2": {'P', 'e', 'Tp', 'Tepoch', 'A2', 'B2', 'F2', 'G2', 'dalpha', 'ddelta', 'mu_alpha', 'mu_delta'}, # Secondary astrometry
 }
 _rv_param_names = {
-    "": {'K', 'e', 'Tp', 'Tepoch', 'P', 'omega', 'systemic_velocity'}, # Relative RVs
-    "1": {'K1', 'e', 'Tp', 'Tepoch', 'P', 'omega1', 'systemic_velocity'}, # Primary RVs
-    "2": {'K2', 'e', 'Tp', 'Tepoch', 'P', 'omega2', 'systemic_velocity'} # Secondary RVs
+    "": {'K', 'e', 'Tp', 'Tepoch', 'P', 'omega', 'gamma'}, # Relative RVs
+    "1": {'K1', 'e', 'Tp', 'Tepoch', 'P', 'omega1', 'gamma'}, # Primary RVs
+    "2": {'K2', 'e', 'Tp', 'Tepoch', 'P', 'omega2', 'gamma'} # Secondary RVs
 }
 _xyz_param_names = {
-    "": {"P", "e", "a", "Tp", "Tepoch", "omega", "Omega", "i", 'dx', 'dy', 'distance', 'dpmra', 'dpmdec', 'systemic_velocity'}, # Relative 3D position
-    "1": {"P", "e", "a1", "Tp", "Tepoch", "omega1", "Omega", "i", 'dx', 'dy', 'distance', 'dpmra', 'dpmdec', 'systemic_velocity'}, # Primary 3D position
-    "2": {"P", "e", "a2", "Tp", "Tepoch", "omega2", "Omega", "i", 'dx', 'dy', 'distance', 'dpmra', 'dpmdec', 'systemic_velocity'} # Secondary 3D position
+    "": {"P", "e", "a", "Tp", "Tepoch", "omega", "Omega", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Relative 3D position
+    "1": {"P", "e", "a1", "Tp", "Tepoch", "omega1", "Omega1", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Primary 3D position
+    "2": {"P", "e", "a2", "Tp", "Tepoch", "omega2", "Omega2", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'} # Secondary 3D position
 }
 _vxyz_param_names = {
-    "": {"P", "e", "a", "Tp", "Tepoch", "omega", "Omega", "i", 'dx', 'dy', 'distance', 'dpmra', 'dpmdec', 'systemic_velocity'}, # Relative 3D velocity
-    "1": {"P", "e", "a1", "Tp", "Tepoch", "omega1", "Omega", "i", 'dx', 'dy', 'distance', 'dpmra', 'dpmdec', 'systemic_velocity'}, # Primary 3D velocity
-    "2": {"P", "e", "a2", "Tp", "Tepoch", "omega2", "Omega", "i", 'dx', 'dy', 'distance', 'dpmra', 'dpmdec', 'systemic_velocity'} # Secondary 3D velocity
+    "": {"P", "e", "a", "Tp", "Tepoch", "omega", "Omega", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Relative 3D velocity
+    "1": {"P", "e", "a1", "Tp", "Tepoch", "omega1", "Omega1", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Primary 3D velocity
+    "2": {"P", "e", "a2", "Tp", "Tepoch", "omega2", "Omega2", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'} # Secondary 3D velocity
 }
 
 _gaia_param_names = {
@@ -129,8 +129,8 @@ class Orbit():
         delta = self.derived_params[f'B{system}'] * X + self.derived_params[f'G{system}'] * Y
 
         dt = t - self.derived_params['Tepoch']
-        alpha = alpha + self.derived_params['dx'] + self.derived_params['dpmra'] * dt
-        delta = delta + self.derived_params['dy'] + self.derived_params['dpmdec'] * dt
+        alpha = alpha + self.derived_params['dalpha'] + self.derived_params['mu_alpha'] * dt
+        delta = delta + self.derived_params['ddelta'] + self.derived_params['mu_delta'] * dt
         return alpha, delta
 
     def gaia_astrometry(self, t,spsi,cpsi,par_factor, system=None):
@@ -182,7 +182,7 @@ class Orbit():
         # if self.velocity_ratio is None:
             # print("Warning: velocity_ratio is not set. Radial velocity will be returned in units of (time/distance).")
         if system != "":
-            rv += self.derived_params['systemic_velocity']
+            rv += self.derived_params['gamma']
         return rv
     
     def xyz(self, t, system=None):

@@ -2,9 +2,9 @@ import warnings
 
 from .fitter import Fitter
 from .results import FitResults
-from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData
+from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData,GaiaData
 from periapsis.prior import Prior, FixedPrior, Bounds
-from periapsis.initial import InitialGuess, AstrometryInitialGuess, RVInitialGuess, JointInitialGuess
+from periapsis.initial import InitialGuess, AstrometryInitialGuess, RVInitialGuess, JointInitialGuess, GaiaInitialGuess
 from periapsis.model import Orbit
 from periapsis.params import covered_parameters, build_transform_functions, overconstrained_parameters
 import numpy as np
@@ -25,8 +25,8 @@ class _PosteriorContext:
 
 
 class MCMCFitter(Fitter):
-    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable, pool=None, **priors):
-        super().__init__(**priors)
+    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable,ref_epoch=0, pool=None, **priors):
+        super().__init__(ref_epoch,**priors)
         if nwalkers <= 0 or niter <= 0:
             raise ValueError("nwalkers and niter must be positive integers.")
         self.nwalkers = nwalkers
@@ -212,15 +212,7 @@ class MCMCFitter(Fitter):
         if not isinstance(data, AstrometryData) and not isinstance(data, RadialVelocityData) and not isinstance(data, JointData):
             raise ValueError("Data must be an instance of AstrometryData or RadialVelocityData (or a combination using JointData) for MCMC.")
 
-        if isinstance(data, AstrometryData):
-            pm_fit = self._proper_motion_fit(data)
-        else:
-            pm_fit = None
-
-        if isinstance(data,RadialVelocityData):
-            gamma_fit = self._systemic_velocity(data)
-        else:
-            gamma_fit = None
+        null_hypothesis = self._null_hypothesis_fit(data)
 
         param_order = self.param_order
         context = self._posterior_context(data)
@@ -235,9 +227,11 @@ class MCMCFitter(Fitter):
                 initial = RVInitialGuess
             elif isinstance(data, JointData):
                 initial = JointInitialGuess
+            elif isinstance(data, GaiaData):
+                initial = GaiaInitialGuess
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for MCMC initial guess generation.")
-        initial_instance = initial(data, rng, **self.priors)
+        initial_instance = initial(data,self.ref_epoch, rng, **self.priors)
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
 
         
@@ -293,9 +287,8 @@ class MCMCFitter(Fitter):
         results_dict['param_names'] = param_order
         results_dict['MAP_params'] = best_params
         results_dict['median_params'] = median_params
-        results_dict['PM_fit'] = pm_fit
-        results_dict['gamma_fit'] = gamma_fit
-        results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
+        results_dict['null_hypothesis'] = null_hypothesis
+        results_dict['ref_epoch'] = self.ref_epoch
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'emcee'
         results_dict['priors'] = self.priors

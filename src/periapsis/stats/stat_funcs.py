@@ -2,8 +2,8 @@ import json
 
 import numpy as np
 from periapsis.data.data import Data
-from periapsis.data.common import AstrometryData, RadialVelocityData
-from periapsis.data.gaia import GaiaData
+from periapsis.data import AstrometryData, RadialVelocityData,GaiaData,JointData
+from periapsis.utils.helpers import _flatten_and_join 
 from periapsis.model.orbit import Orbit
 from periapsis.prior import FixedPrior
 from scipy.stats import chi2
@@ -49,6 +49,7 @@ def red_chi2(results,data,savepath=None):
     '''
     Returns reduced Chi2 value for the MAP and median fit
     '''
+    datas = _flatten_and_join(data)
 
     map_params = getattr(results, 'MAP_params', None)
     if map_params is None:
@@ -63,56 +64,50 @@ def red_chi2(results,data,savepath=None):
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for reduced Chi2 calculation.")
 
-    num_free_params = len(map_params) - len([p for p in map_params if isinstance(results.priors.get(p), FixedPrior)])
-
-    if not isinstance(data,(GaiaData)):
-        map_model = Orbit(**map_params)
-        med_model = Orbit(**med_params)
-
-        chi2_map = data.chi2(map_model)
-        chi2_med = data.chi2(med_model)
-        orbit_dof = data.dof - num_free_params
-    else:
-        if "jitter" not in map_params: 
-            jit = getattr(results, 'jitter', None)
-            if jit is None:
-                jit = results.samples.get('jitter', None)
-            if jit is not None:
-                map_params['jitter'] = jit
-                med_params['jitter'] = jit
-
-        map_model = Orbit(**map_params)
-        med_model = Orbit(**med_params)
-        chi2_map = GaiaData.chi2(data,map_model)
-        chi2_med = GaiaData.chi2(data,med_model)
-        orbit_dof = data.dof - num_free_params # for Gaia data, only one dimension is used for chi2 calculation
-
     
-    map_model = Orbit(**map_params)
-    med_model = Orbit(**med_params)
+    num_free_params = len(map_params) - len([p for p in map_params if isinstance(results.priors.get(p), FixedPrior)])
+    med_chi2 = []
+    map_chi2 = []
+    dof = 0
+  
+    for d in datas:
+        
+        if not isinstance(d,(GaiaData)):
+            map_model = Orbit(**map_params)
+            med_model = Orbit(**med_params)
+            map_chi2.append(d.chi2(map_model))
+            med_chi2.append(d.chi2(med_model))
+            dof += d.dof     
+        else:
+            if "jitter" not in map_params: 
+                jit = getattr(results, 'jitter', None)
+                if jit is None:
+                    jit = results.samples.get('jitter', None)
+                if jit is not None:
+                    map_params['jitter'] = jit
+                    med_params['jitter'] = jit
 
-    chi2_map = data.chi2(map_model)
-    chi2_med = data.chi2(med_model)
+            map_model = Orbit(**map_params)
+            med_model = Orbit(**med_params)
+            map_chi2.append(GaiaData.chi2(d,map_model))
+            med_chi2.append(GaiaData.chi2(d,med_model))
+            orb_dof += d.dof  # for Gaia data, only one dimension is used for chi2 calculation
+            
+    map_chi2 = np.sum(map_chi2)
+    med_chi2 = np.sum(med_chi2)
+    orb_dof = dof - num_free_params
 
-    orbit_dof = data.dof - num_free_params
+    red_chi2_map = map_chi2 / orb_dof
+    red_chi2_med = med_chi2 / orb_dof
+    uwe_map = np.sqrt(map_chi2 /orb_dof)
+    uwe_med = np.sqrt(med_chi2 /orb_dof)
 
-
-
-      # degrees of freedom for the fit
-    red_chi2_map = chi2_map / orbit_dof
-    red_chi2_med = chi2_med / orbit_dof
-
-    uwe_map = np.sqrt(chi2_map /orbit_dof)
-    uwe_med = np.sqrt(chi2_med /orbit_dof)
-
-    return red_chi2_map, red_chi2_med,uwe_map,uwe_med,orbit_dof
+    return red_chi2_map, red_chi2_med,uwe_map,uwe_med,orb_dof
 
 def delta_chi2(results,data,savepath=None):
     '''
     Returns delta Chi2 value for orbit fit
     - proper motion fit'''
-
-    
 
     map_params = getattr(results, 'MAP_params', None)
     if map_params is None:
@@ -126,71 +121,47 @@ def delta_chi2(results,data,savepath=None):
 
     num_free_params = len(map_params) - len([p for p in map_params if isinstance(results.priors.get(p), FixedPrior)])
 
-    
-    map_model = Orbit(**map_params)
-    med_model = Orbit(**med_params)
+    datas = _flatten_and_join(data)
 
-    if not isinstance(data,(GaiaData,RadialVelocityData)):
-        
+    map_chi2 = []
+    med_chi2 = []
+    dof = 0
+    for d in datas:
+        if not isinstance(d,(GaiaData)):
+            map_model = Orbit(**map_params)
+            med_model = Orbit(**med_params)
+            map_chi2.append(d.chi2(map_model))
+            med_chi2.append(d.chi2(med_model))
+            dof += d.dof
+        elif isinstance(d,(GaiaData)):
+            if "jitter" not in map_params: 
+                jit = getattr(results, 'jitter', None)
+                if jit is None:
+                    jit = results.samples.get('jitter', None)
+                if jit is not None:
+                    map_params['jitter'] = jit
+                    med_params['jitter'] = jit
 
-        pm_chi2 = results.PM_fit['chi2']
-        pm_dof = results.PM_fit['dof']
-        chi2_map = data.chi2(map_model)
-        chi2_med = data.chi2(med_model)
-        orbit_dof = 2*len(data.t) - num_free_params
+            map_model = Orbit(**map_params)
+            med_model = Orbit(**med_params)
+            map_chi2.append(GaiaData.chi2(d,map_model))
+            med_chi2.append(GaiaData.chi2(d,med_model))
+            dof += d.dof  # for Gaia data, only one dimension is used for chi2 calculation
 
-        delta_chi2_map = pm_chi2 - chi2_map #if delta_chi2 > 0, orbit fit is better
-        delta_chi2_med = pm_chi2 - chi2_med
+    map_chi2 = np.sum(map_chi2)
+    med_chi2 = np.sum(med_chi2)
+    orb_dof = dof - num_free_params
+    null_chi2 = results.null_hypothesis['chi2']
+    null_dof = results.null_hypothesis['dof']
+  
+    delta_chi2_map = null_chi2 - map_chi2
+    delta_chi2_med = null_chi2 - med_chi2
 
-        delta_dof_map = np.abs(pm_dof - orbit_dof)
-        delta_dof_med = np.abs(pm_dof - orbit_dof)
-        
-        p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
-        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med) #0.0027 is 3 sigma significance
+    p_value_map = chi2.sf(delta_chi2_map, np.abs(null_dof - orb_dof))
+    p_value_med = chi2.sf(delta_chi2_med, np.abs(null_dof - orb_dof))
 
-        sig_significance = (pm_chi2 - pm_dof) / np.sqrt(2*pm_dof) #sigma significance of orbit fit over proper motion fit
+    sig_significance = (null_chi2 - null_dof) / np.sqrt(2*null_dof) #sigma significance of orbit fit over null hypothesis fit
 
-    elif isinstance(data,GaiaData):
-        if "jitter" not in map_params: 
-            jit = getattr(results, 'jitter', None)
-            if jit is None:
-                jit = results.samples.get('jitter', None)
-            if jit is not None:
-                map_params['jitter'] = jit
-                med_params['jitter'] = jit    
-        chi2_map = GaiaData.chi2(data,map_model)
-        chi2_med = GaiaData.chi2(data,med_model)
-        orbit_dof = len(data.t) - num_free_params
-
-        single_chi2 = results.Single_motion_params['chi2']
-        single_dof = results.Single_motion_params['dof']
-
-        delta_chi2_map = single_chi2 - chi2_map 
-        delta_chi2_med = single_chi2 - chi2_med
-        delta_dof_map = np.abs(single_dof - orbit_dof)
-        delta_dof_med = np.abs(single_dof - orbit_dof)
-
-        p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
-        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med)
-
-        sig_significance = (single_chi2 - single_dof) / np.sqrt(2*single_dof) #sigma significance of orbit fit over single motion fit
-
-    elif isinstance(data,RadialVelocityData):
-        gamma_chi2 = results.gamma_fit['chi2']
-        gamma_dof = results.gamma_fit['dof']
-        chi2_map = data.chi2(map_model)
-        chi2_med = data.chi2(med_model)
-        orbit_dof = len(data.t) - num_free_params
-
-        delta_chi2_map = gamma_chi2 - chi2_map
-        delta_chi2_med = gamma_chi2 - chi2_med
-        delta_dof_map = np.abs(gamma_dof - orbit_dof)
-        delta_dof_med = np.abs(gamma_dof - orbit_dof)
-
-        p_value_map = chi2.sf(delta_chi2_map, delta_dof_map)
-        p_value_med = chi2.sf(delta_chi2_med, delta_dof_med)
-
-        sig_significance = (gamma_chi2 - gamma_dof) / np.sqrt(2*gamma_dof) 
 
     return delta_chi2_map, delta_chi2_med, p_value_map, p_value_med,sig_significance
     

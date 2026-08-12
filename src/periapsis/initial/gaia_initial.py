@@ -1,5 +1,5 @@
 import numpy as np
-from periapsis.utils.helpers import _helper_for_periodogram
+from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler, _null_matrix_builder, _fill_periodogram_periodic
 from periapsis.data.gaia import GaiaData
 from periapsis.params.transforms import build_transform_functions
 
@@ -8,50 +8,37 @@ from .initial import InitialGuess
 
 class GaiaInitialGuess(InitialGuess):
     """Class for obtaining initial guess for Gaia data"""
-    def __init__(self, data, rng: np.random.RandomState, **priors):
-        super().__init__(data, rng, **priors)
+    def __init__(self, data, ref_epoch, rng: np.random.RandomState, **priors):
+        super().__init__(data,ref_epoch, rng, **priors)
+        self.ref_epoch = ref_epoch
+        self.M_base, self.cols = _matrix_builder(data, ref_epoch)
+        
 
     def Delisle_periodogram(self,num_freq=10000):
         """Compute the Delisle periodogram to obtain an initial guess on Period"""
 
         prior_p = self.priors.get('P')
-        p_min = prior_p.min if prior_p is not None else 0.1
+        p_min = prior_p.min if prior_p is not None else 0.001
         p_max = prior_p.max if prior_p is not None else 100 
 
-        A_base = np.column_stack([self.data.spsi,self.data.cpsi,
-                                  self.data.plx_fac,
-                                  self.data.spsi*self.data.t,
-                                  self.data.cpsi*self.data.t])
+        M_null,_ = _null_matrix_builder(self.data,self.ref_epoch)
 
 
-        _,chi2H = _helper_for_periodogram(A_base,self.data.x,self.data.err)
+        _,chi2H = _lsq_helper(M_null,self.data.x,self.data.err)
 
         min_freq = 1/p_max
         max_freq = 1/p_min
         frequencies = np.logspace(np.log10(min_freq),np.log10(max_freq),num_freq)
         periods = 1/frequencies
         power = np.zeros(num_freq)
-
-        base_col = [self.data.spsi,self.data.cpsi,
-                    self.data.plx_fac,
-                    self.data.spsi*self.data.t,
-                    self.data.cpsi*self.data.t]
-        
+  
 
         for i, nu in enumerate(frequencies):
-            phase = 2 * np.pi * nu * self.data.t
-            cosp = np.cos(phase)
-            sinp = np.sin(phase)
+            phase = 2 * np.pi * nu 
+            M = self.M_base.copy()
+            _fill_periodogram_periodic(M, self.cols,self.ref_epoch,self.data,phase)
 
-            cols = base_col + [
-            cosp * self.data.spsi,  # B
-            sinp * self.data.spsi,  # G
-            cosp * self.data.cpsi,  # A
-            sinp * self.data.cpsi   # F
-        ]
-
-            A = np.column_stack(cols)
-            _,chi2K = _helper_for_periodogram(A,self.data.x,self.data.err)
+            _,chi2K = _lsq_helper(M,self.data.x,self.data.err)
 
             z_GLS = (chi2H - chi2K) / chi2H
 

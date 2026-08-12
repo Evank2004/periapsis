@@ -12,9 +12,9 @@ from .initial import InitialGuess
 
 class AstrometryInitialGuess(InitialGuess):
     """Class for obtaining an intial guess on fitted parameters"""
-    def __init__(self, data, rng, **priors):
-        super().__init__(data, rng, **priors)
-        
+    def __init__(self, data,ref_epoch, rng, **priors):
+        super().__init__(data,ref_epoch, rng, **priors)
+        self.ref_epoch = ref_epoch
 
     
     def lomb_scargle(self):
@@ -25,8 +25,10 @@ class AstrometryInitialGuess(InitialGuess):
             raise ValueError("Computing a periodogram requires a direct prior on the period 'P'. Please transform your priors to include a direct prior on 'P' or use a different method for initial guess.")
         p_min = prior_p.min
         p_max = prior_p.max
+        f_min = 1/p_max
+        f_max = 1/p_min
         
-        frequency = np.linspace(1/p_max,1/p_min,100000)
+        frequency = np.logspace(np.log10(f_min),np.log10(f_max),100000)
         p1 = LombScargle(self.data.t,self.data.x,self.data.x_err)
         p2 = LombScargle(self.data.t,self.data.y,self.data.y_err)
         
@@ -154,10 +156,11 @@ class AstrometryInitialGuess(InitialGuess):
 
 
 class AstrometryLinearInitialGuess(AstrometryInitialGuess):
-    def __init__(self, data, rng, **priors):
-        super().__init__(data, rng, **priors)
-        self.PeTp_transform = build_transform_functions(self.priors.keys(), (params.P, params.e, params.Tp))
-
+    def __init__(self, data, ref_epoch,rng, **priors):
+        super().__init__(data, ref_epoch, rng, **priors)
+        self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
+        self.ref_epoch = ref_epoch
+        
     def neg_lnlike(self,params,data,priors,param_in):
         params_dict = dict(zip(param_in,params))
         lp = self.ln_prior(params_dict, priors)

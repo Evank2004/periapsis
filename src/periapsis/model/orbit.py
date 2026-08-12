@@ -125,8 +125,8 @@ class Orbit():
         E = solve_kepler(M, self.derived_params['e'])
         X = (np.cos(E) - self.derived_params['e'])
         Y = (np.sqrt(1 - self.derived_params['e']**2) * np.sin(E))
-        alpha = self.derived_params[f'A{system}'] * X + self.derived_params[f'F{system}'] * Y
-        delta = self.derived_params[f'B{system}'] * X + self.derived_params[f'G{system}'] * Y
+        alpha = self.derived_params[f'B{system}'] * X + self.derived_params[f'G{system}'] * Y
+        delta = self.derived_params[f'A{system}'] * X + self.derived_params[f'F{system}'] * Y
 
         dt = t - self.derived_params['Tepoch']
         alpha = alpha + self.derived_params['dalpha'] + self.derived_params['mu_alpha'] * dt

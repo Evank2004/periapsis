@@ -535,7 +535,7 @@ def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
 
     monkeypatch.setattr(
         gaia_module,
-        "_helper_for_periodogram",
+        "_lsq_helper",
         fake_periodogram_helper,
     )
 
@@ -572,7 +572,7 @@ def test_delisle_periodogram_uses_default_period_range(monkeypatch):
 
     monkeypatch.setattr(
         gaia_module,
-        "_helper_for_periodogram",
+        "_lsq_helper",
         fake_periodogram_helper,
     )
 

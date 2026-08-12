@@ -18,13 +18,15 @@ class SystemData(Data):
         raise NotImplementedError("This method should be implemented in subclasses.")
 
 class AstrometryData(SystemData):
-    def __init__(self, t, x, y, x_err, y_err,ref_epoch=None,mu_x=None, mu_y=None, system=None):
+    def __init__(self, t, x, y, x_err, y_err,plxf_x,plxf_y,ref_epoch=None,mu_alpha=None, mu_delta=None, system=None):
         super().__init__(system)
         self.t = np.atleast_1d(t)
         self.x = np.atleast_1d(x)
         self.y = np.atleast_1d(y)
         self.x_err = np.atleast_1d(x_err)
         self.y_err = np.atleast_1d(y_err)
+        self.plxf_x = np.atleast_1d(plxf_x)
+        self.plxf_y = np.atleast_1d(plxf_y)
         if self.x.shape != self.t.shape or self.y.shape != self.t.shape:
             raise ValueError("x and y must have the same shape as t")
         if self.x_err.shape != self.x.shape:
@@ -37,12 +39,12 @@ class AstrometryData(SystemData):
         else:
             self.ref_epoch = ref_epoch
 
-        if mu_x is not None and mu_y is not None:
-            self.mu_x = mu_x
-            self.mu_y = mu_y
+        if mu_alpha is not None and mu_delta is not None:
+            self.mu_alpha = mu_alpha
+            self.mu_delta = mu_delta
         else:
-            self.mu_x = None
-            self.mu_y = None
+            self.mu_alpha = None
+            self.mu_delta = None
 
     @property
     def dof(self):

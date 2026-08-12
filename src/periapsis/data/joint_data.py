@@ -3,7 +3,7 @@ import numpy as np
 
 from .data import Data
 from periapsis.model.orbit import Orbit
-from periapsis.data.common import AstrometryData,RadialVelocityData
+from periapsis.data import AstrometryData,RadialVelocityData,GaiaData
 
 class JointData(Data):
     def __init__(self, datas: List[Data]):
@@ -23,35 +23,72 @@ class JointData(Data):
             total_chi2 += data.chi2(orbit)
         return total_chi2
 
-    def has_astrometry(self) -> bool:
-        return any(data.has_astrometry() for data in self.datas)
+    
+    def _flatten_joint(self):
+        """
+        Flattens a JointData object into a list of its constituent data objects.
+        """
+        if isinstance(self, JointData):
+            return self.datas
+        else:
+            return [self]
 
-    def has_radial_velocity(self) -> bool:
-        return any(data.has_radial_velocity() for data in self.datas)
-
-    def as_astrometry_data(self) -> AstrometryData:
-        ''' Returns AstrometryData object containing all astrometry data in the joint data. 
+    def as_astrometry_data(self):
+        ''' Returns AstrometryData object containing all astrometry data of simialar system in Joint Data. 
         '''
         astrometry_datas = [data for data in self.datas if isinstance(data, AstrometryData)]
         if not astrometry_datas:
             raise ValueError("No astrometry data found in the joint data.")
-        t = np.concatenate([data.t for data in astrometry_datas])
-        x = np.concatenate([data.x for data in astrometry_datas])
-        y = np.concatenate([data.y for data in astrometry_datas])
-        x_err = np.concatenate([data.x_err for data in astrometry_datas])
-        y_err = np.concatenate([data.y_err for data in astrometry_datas])
-        return AstrometryData(t, x, y, x_err, y_err, system=self.datas[0].system) #FIXME handle multi-system case
+        for system in set(data.system for data in astrometry_datas):
+            system_datas = [data for data in astrometry_datas if data.system == system]
+            t = np.concatenate([data.t for data in system_datas])
+            x = np.concatenate([data.x for data in system_datas])
+            y = np.concatenate([data.y for data in system_datas])
+            x_err = np.concatenate([data.x_err for data in system_datas])
+            y_err = np.concatenate([data.y_err for data in system_datas])
+            plxf_x = np.concatenate([data.plxf_x for data in system_datas])
+            plxf_y = np.concatenate([data.plxf_y for data in system_datas])
+            return AstrometryData(t, x, y, x_err, y_err,plxf_x,plxf_y, system=system)
+        
+        
 
-    def as_radial_velocity_data(self) -> RadialVelocityData:
-        ''' Returns RadialVelocityData object containing all radial velocity data in the joint data. 
+    def as_radial_velocity_data(self):
+        ''' Returns RadialVelocityData object containing all radial velocity data of similair system. 
         '''
         rv_datas = [data for data in self.datas if isinstance(data, RadialVelocityData)]
         if not rv_datas:
             raise ValueError("No radial velocity data found in the joint data.")
-        t = np.concatenate([data.t for data in rv_datas])
-        rv = np.concatenate([data.rv for data in rv_datas])
-        rv_err = np.concatenate([data.rv_err for data in rv_datas])
-        return RadialVelocityData(t, rv, rv_err, system = self.datas[0].system) #FIXME handle multi-system case
+        for system in set(data.system for data in rv_datas):
+            system_datas = [data for data in rv_datas if data.system == system]
+            t = np.concatenate([data.t for data in system_datas])
+            rv = np.concatenate([data.rv for data in system_datas])
+            rv_err = np.concatenate([data.rv_err for data in system_datas])
+            return RadialVelocityData(t, rv, rv_err, system=system)
+
+
+    def _concat_obs(self):
+        """Returns the combined observations for all data."""
+        observations = []
+        for data in self.datas:
+            if isinstance(data, AstrometryData):
+                observations += ([data.x, data.y])
+            elif isinstance(data, RadialVelocityData):
+                observations.append(data.rv)
+            elif isinstance(data, GaiaData):
+                observations.append(data.x)
+        return np.concatenate(observations)
+
+    def _err(self):
+        """Returns the combined error array for all data."""
+        errors = []
+        for data in self.datas:
+            if isinstance(data, AstrometryData):
+                errors+=([data.x_err, data.y_err])
+            elif isinstance(data, RadialVelocityData):
+                errors.append(data.rv_err)
+            elif isinstance(data, GaiaData):
+                errors.append(data.err)
+        return np.concatenate(errors)
 
 
     def _astrometry(self, orbit: Orbit):
@@ -86,4 +123,5 @@ class JointData(Data):
             t = data.t_series()
             ts.append(t)
         return np.concatenate(ts)
-        
+
+

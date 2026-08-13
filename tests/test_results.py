@@ -45,8 +45,7 @@ def test_fit_results_separates_metadata_from_parameter_samples():
         fit_method="mcmc",
         MAP_params=map_parameters,
         median_params=median_parameters,
-        PM_fit={"chi2": 2.0},
-        Single_motion_params={"chi2": 3.0},
+        null_hypothesis={"chi2": 2.0},
         Ess=100,
         tau=5.0,
         mean_acceptance_fraction=0.4,
@@ -59,6 +58,7 @@ def test_fit_results_separates_metadata_from_parameter_samples():
     assert results.fit_method == "mcmc"
     assert results.MAP_params is map_parameters
     assert results.median_params is median_parameters
+    assert results.null_hypothesis == {"chi2": 2.0}
     assert results.Ess == 100
     assert results.tau == 5.0
     assert results.mean_acceptance_fraction == 0.4

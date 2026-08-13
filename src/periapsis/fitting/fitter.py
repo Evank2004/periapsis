@@ -1,16 +1,20 @@
 from abc import ABC, abstractmethod
 import numpy as np
 from scipy.linalg import lstsq as ls
-from periapsis.data.data import Data
+from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData,GaiaData
+from periapsis.utils.helpers import _lsq_helper, _null_matrix_builder
 from periapsis.fitting.results import FitResults
+from periapsis.prior.fixed_prior import FixedPrior
 
 class Fitter(ABC):
     """
     A Fitter defines the configuration for fitting an orbit to data, including the priors on the orbital parameters.
     """
 
-    def __init__(self, **priors):
+    def __init__(self, ref_epoch=0, **priors):
         self.priors = priors
+        self.ref_epoch = ref_epoch
+        self.priors['Tepoch'] = FixedPrior(ref_epoch)
 
     @abstractmethod
     def fit(self, data: Data) -> FitResults:
@@ -29,89 +33,88 @@ class Fitter(ABC):
         """
         pass
 
-    def _proper_motion_fit(self, data: Data):
+    def _null_hypothesis_fit(self, data: Data):
         """
-        Fits a proper motion model to the given data.
-
-        Parameters
-        ----------
-        data : Data
-            Data to fit the proper motion model to.
-
-        Returns
-        -------
-        results : dict
-            The results of the proper motion fit
+        Fits a null hypothesis model to the given data.
         """
-        ref_epoch = getattr(data, 'ref_epoch', np.mean(data.t)) #FIXME Tepoch in fixed priors?
-        dt = data.t - ref_epoch
+        if isinstance(data,AstrometryData):
+            mu_x = getattr(data, 'mu_x', None)
+            mu_y = getattr(data, 'mu_y', None)
+            if mu_x is not None and mu_y is not None:
+                dt = data.t - self.ref_epoch
+                n_obs = len(data.t)
 
-        if getattr(data, 'mu_x', None) is not None and getattr(data, 'mu_y', None) is not None:
+                x_prime = data.x - mu_x * dt
+                y_prime = data.y - mu_y * dt
+
+                d = np.concatenate([x_prime, y_prime])
+                sigma = np.concatenate([data.x_err, data.y_err])
+                w = 1.0 / sigma
+
+                M = np.zeros((2 * n_obs, 3))
+                M[:n_obs, 0] = 1.0            # alpha0
+                M[:n_obs, 2] = data.plxf_x    # parallax (RA component)
+                M[n_obs:, 1] = 1.0            # delta0
+                M[n_obs:, 2] = data.plxf_y    # parallax (Dec component)
+
+                
+                M_w = M * w[:, np.newaxis]
+                d_w = d * w
+
+                mu, _, _, _ = np.linalg.lstsq(M_w, d_w, rcond=None)
+                alpha0, delta0, parallax = mu
+
+                res_w = d_w - M_w @ mu
+                chi2 = np.sum(res_w**2)
+                dof = 2 * n_obs - 3
+                return {
+                    'params': {
+                        'dalpha': alpha0,
+                        'ddelta': delta0,
+                        'mu_alpha': mu_x,
+                        'mu_delta': mu_y,
+                        'parallax': parallax,
+                    },
+                    'chi2': chi2,
+                    'dof': dof,
+                }
+            else:
+                A,cols = _null_matrix_builder(data,self.ref_epoch)
+                x = np.concatenate([data.x,data.y])
+                err = np.concatenate([data.x_err,data.y_err])
+                mu,chi2 = _lsq_helper(A,x,err)
+                dof = 2*len(data.t)-len(mu)
+                return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
             
-            
-            x0 = np.sum((data.x - data.mu_x * dt) / data.x_err**2) / np.sum(1 / data.x_err**2)
-            y0 = np.sum((data.y - data.mu_y * dt) / data.y_err**2) / np.sum(1 / data.y_err**2)
+        elif isinstance(data,RadialVelocityData):
+            A,cols = _null_matrix_builder(data,self.ref_epoch)
+            x = data.rv
+            err = data.rv_err
+            mu,chi2 = _lsq_helper(A,x,err)
+            dof = len(data.t)-len(mu)
+            return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
+        elif isinstance(data,JointData):
+            A,cols = _null_matrix_builder(data,self.ref_epoch)
+            x = data._concat_obs()
+            err = data._err()
+            mu,chi2 = _lsq_helper(A,x,err)
+            dof = len(x)-len(mu)
+            return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
+        elif isinstance(data,GaiaData):
+            A,cols = _null_matrix_builder(data,self.ref_epoch)
+            x = data.x
+            err = data.err
+            mu,chi2 = _lsq_helper(A,x,err)
+            dof = len(x)-len(mu)
+            return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
 
-            mu_x = data.mu_x
-            mu_y = data.mu_y
-    
-            dof = 2 * len(data.t) - 2
-        else:
-            if not (
-                np.all(np.isfinite(data.x))
-                and np.all(np.isfinite(data.x_err))
-                and np.all(np.isfinite(dt))
-            ):
-                raise ValueError(
-                    "Data contains NaN or Inf values in x, x_err, or time arrays."
-            )
-            if not (
-                np.all(np.isfinite(data.y))
-                and np.all(np.isfinite(data.y_err))
-            ):
-                raise ValueError(
-                "Data contains NaN or Inf values in y or y_err arrays."
-            )
-            
-            A_x = np.vstack([np.ones_like(dt)/data.x_err,dt/data.x_err]).T
-            b_x = data.x/data.x_err
-            x0,mu_x = ls(A_x, b_x,lapack_driver="gelsy")[0]
-        
-            A_y = np.vstack([np.ones_like(dt)/data.y_err,dt/data.y_err]).T
-            b_y = data.y/data.y_err
-            y0,mu_y = ls(A_y, b_y,lapack_driver="gelsy")[0]
-            dof = 2*len(data.t)-4
-
-        chi2_x = np.sum((data.x-(x0+mu_x*dt))**2/data.x_err**2)
-        chi2_y = np.sum((data.y-(y0+mu_y*dt))**2/data.y_err**2)
-        chi2 = chi2_x + chi2_y
-        
-
-        return {'params':{'x0':x0,'mu_x':mu_x,'y0':y0,'mu_y':mu_y},
-                'chi2':chi2,'dof':dof}
 
     def _astrometric_offset_seeds(self, data: Data):
         """Return sensible starting values for optional astrometric offsets."""
-        pm_fit = self._proper_motion_fit(data)
+        pm_fit = self._null_hypothesis_fit(data)
         return {
-            'dalpha': pm_fit['params']['x0'],
-            'ddelta': pm_fit['params']['y0'],
-            'mu_alpha': pm_fit['params']['mu_x'],
-            'mu_delta': pm_fit['params']['mu_y'],
+            'dalpha': pm_fit['params']['dalpha'],
+            'ddelta': pm_fit['params']['ddelta'],
+            'mu_alpha': pm_fit['params']['mu_alpha'],
+            'mu_delta': pm_fit['params']['mu_delta'],
         }
-
-    def _systemic_velocity(self,data:Data):
-        '''
-        Returns the systemic velocity of the system from the data
-        '''
-
-        rv = data.rv 
-        rv_err = data.rv_err
-        N = len(rv)
-        w = 1/rv_err**2
-        gamma = np.sum(rv*w)/np.sum(w)
-
-        chi2 = np.sum(((rv-gamma)/rv_err)**2)
-        dof = N-1
-
-        return {'gamma':gamma,'chi2':chi2,'dof':dof}

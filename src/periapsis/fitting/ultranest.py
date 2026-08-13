@@ -13,8 +13,8 @@ import ultranest
 reject_logl = -1e300
 
 class UltranestFitter(Fitter):
-    def __init__(self, output_params, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
-        super().__init__(**priors)
+    def __init__(self, output_params, ref_epoch=0, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
+        super().__init__(ref_epoch,**priors)
         self.output_params = frozenset(output_params)
         self.output_param_order = tuple(output_params)
         if len(self.output_params) != len(self.output_param_order):
@@ -96,10 +96,7 @@ class UltranestFitter(Fitter):
         #         return -np.inf
         #     return -0.5 * chi2
 
-        if isinstance(data, AstrometryData):
-            pm_fit = self._proper_motion_fit(data)
-        else:
-            pm_fit = dict()
+        null_hypothesis = self._null_hypothesis_fit(data)
 
         sampler = ultranest.ReactiveNestedSampler(
             param_names=tuple(param_order),
@@ -149,17 +146,14 @@ class UltranestFitter(Fitter):
         results_dict['raw_sampler'] = sampler
         results_dict['MAP_params'] = best_params
         results_dict['median_params'] = median_params
-        results_dict['PM_fit'] = pm_fit
+        results_dict['null_hypothesis'] = null_hypothesis
         results_dict['logl'] = logl
         results_dict['samples'] = samples
-        results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
+        results_dict['ref_epoch'] = self.ref_epoch
         results_dict['backend'] = 'ultranest'
         results_dict['fit_method'] = 'Campbell'
         results_dict['priors'] = self.priors
 
-        # TODO: normalize ref_epoch
-        if results_dict['ref_epoch'] is not None:
-            results_dict['priors']['Tepoch'] = FixedPrior(results_dict['ref_epoch'])
         
         fit_results = FitResults(**results_dict)
         return fit_results

@@ -18,13 +18,15 @@ class SystemData(Data):
         raise NotImplementedError("This method should be implemented in subclasses.")
 
 class AstrometryData(SystemData):
-    def __init__(self, t, x, y, x_err, y_err,ref_epoch=None,mu_x=None, mu_y=None, system=None):
+    def __init__(self, t, x, y, x_err, y_err,plxf_x,plxf_y,ref_epoch=None,mu_x=None, mu_y=None, system=None):
         super().__init__(system)
         self.t = np.atleast_1d(t)
         self.x = np.atleast_1d(x)
         self.y = np.atleast_1d(y)
         self.x_err = np.atleast_1d(x_err)
         self.y_err = np.atleast_1d(y_err)
+        self.plxf_x = np.atleast_1d(plxf_x)
+        self.plxf_y = np.atleast_1d(plxf_y)
         if self.x.shape != self.t.shape or self.y.shape != self.t.shape:
             raise ValueError("x and y must have the same shape as t")
         if self.x_err.shape != self.x.shape:
@@ -50,7 +52,7 @@ class AstrometryData(SystemData):
         return 2*len(self.t)
 
     def chi2(self, orbit: Orbit):
-        x, y = orbit.astrometry(self.t, system=self.system)
+        x, y = orbit.astrometry(self.t,self.plxf_x,self.plxf_y, system=self.system)
         chi2_x = np.sum(((self.x - x) / self.x_err) ** 2)
         chi2_y = np.sum(((self.y - y) / self.y_err) ** 2)
         return chi2_x + chi2_y

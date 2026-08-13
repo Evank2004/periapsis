@@ -325,25 +325,25 @@ def test_basic_coordinate_frame():
     orb = Orbit(P=1.0, e=0.0, a1=1.0, Tp=0.0, omega1=0.0, Omega=0.0, i=0.0, dalpha=0.0, ddelta=0.0, distance=1.0, mu_alpha=0.0, mu_delta=0.0)
     time = 0.0
     x, y = orb.astrometry(time, system='1')
-    assert x == pytest.approx(1.0)
-    assert y == pytest.approx(0.0)
-
-    time = 0.25
-    x, y = orb.astrometry(time, system='1')
     assert x == pytest.approx(0.0)
     assert y == pytest.approx(1.0)
 
-    time = 0.5
+    time = 0.25
     x, y = orb.astrometry(time, system='1')
-    assert x == pytest.approx(-1.0)
+    assert x == pytest.approx(1.0)
     assert y == pytest.approx(0.0)
 
-    time = 0.75
+    time = 0.5
     x, y = orb.astrometry(time, system='1')
     assert x == pytest.approx(0.0)
     assert y == pytest.approx(-1.0)
 
+    time = 0.75
+    x, y = orb.astrometry(time, system='1')
+    assert x == pytest.approx(-1.0)
+    assert y == pytest.approx(0.0)
+
     time = 1.0
     x, y = orb.astrometry(time, system='1')
-    assert x == pytest.approx(1.0)
-    assert y == pytest.approx(0.0)
+    assert x == pytest.approx(0.0)
+    assert y == pytest.approx(1.0)

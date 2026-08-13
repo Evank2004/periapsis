@@ -11,7 +11,7 @@ class Fitter(ABC):
     A Fitter defines the configuration for fitting an orbit to data, including the priors on the orbital parameters.
     """
 
-    def __init__(self,ref_epoch, **priors):
+    def __init__(self, ref_epoch=0, **priors):
         self.priors = priors
         self.ref_epoch = ref_epoch
         self.priors['Tepoch'] = FixedPrior(ref_epoch)
@@ -38,12 +38,14 @@ class Fitter(ABC):
         Fits a null hypothesis model to the given data.
         """
         if isinstance(data,AstrometryData):
-            if getattr(data, 'mu_alpha', None) is not None and getattr(data, 'mu_delta', None) is not None:
+            mu_x = getattr(data, 'mu_x', None)
+            mu_y = getattr(data, 'mu_y', None)
+            if mu_x is not None and mu_y is not None:
                 dt = data.t - self.ref_epoch
                 n_obs = len(data.t)
 
-                x_prime = data.x - data.mu_alpha * dt
-                y_prime = data.y - data.mu_delta * dt
+                x_prime = data.x - mu_x * dt
+                y_prime = data.y - mu_y * dt
 
                 d = np.concatenate([x_prime, y_prime])
                 sigma = np.concatenate([data.x_err, data.y_err])
@@ -65,7 +67,17 @@ class Fitter(ABC):
                 res_w = d_w - M_w @ mu
                 chi2 = np.sum(res_w**2)
                 dof = 2 * n_obs - 3
-                return {'params': {'dalpha': alpha0, 'ddelta': delta0, 'parallax': parallax}, 'chi2': chi2, 'dof': dof}
+                return {
+                    'params': {
+                        'dalpha': alpha0,
+                        'ddelta': delta0,
+                        'mu_alpha': mu_x,
+                        'mu_delta': mu_y,
+                        'parallax': parallax,
+                    },
+                    'chi2': chi2,
+                    'dof': dof,
+                }
             else:
                 A,cols = _null_matrix_builder(data,self.ref_epoch)
                 x = np.concatenate([data.x,data.y])

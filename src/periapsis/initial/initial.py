@@ -5,7 +5,7 @@ from periapsis.prior import Prior, FixedPrior
 
 class InitialGuess(ABC):
     """Class for obtaining an intial guess on sampled parameters"""
-    def __init__(self, data: Data, rng: np.random.RandomState,ref_epoch, **priors: Prior):
+    def __init__(self, data: Data, rng: np.random.RandomState, ref_epoch=0.0, **priors: Prior):
         self.data = data
         self.rng = rng
         self.priors = priors

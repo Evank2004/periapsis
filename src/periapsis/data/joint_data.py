@@ -125,3 +125,20 @@ class JointData(Data):
         return np.concatenate(ts)
 
 
+    def has_astrometry(self) -> bool:
+            """
+            Returns True if the data contains astrometry information, False otherwise.
+            """
+            for data in self.datas:
+                if data.has_astrometry():
+                    return True
+            return False
+
+    def has_radial_velocity(self) -> bool:
+            """
+            Returns True if the data contains radial velocity information, False otherwise.
+            """
+            for data in self.datas:
+                if data.has_radial_velocity():
+                    return True
+            return False

@@ -47,8 +47,8 @@ class UltranestLinearFitter(Fitter):
         
 
     def fit(self, data: Data, quiet = False) -> FitResults:
-        if not isinstance(data, AstrometryData):
-            raise ValueError("UltranestLinearFitter currently supports AstrometryData.")
+        if not isinstance(data, (AstrometryData, RadialVelocityData, JointData, GaiaData)):
+            raise ValueError("UltranestLinearFitter supports AstrometryData, RadialVelocityData, JointData, and GaiaData.")
 
         self.M, self.cols = _matrix_builder(data, self.ref_epoch)
         param_order = self.sample_order
@@ -101,7 +101,11 @@ class UltranestLinearFitter(Fitter):
             MTM = M_w.T @ M_w
             MT_eta = M_w.T @ mm_eta_w # matching equation
             # now we can solve for mu using np.linalg.solve
-            mu = np.linalg.solve(MTM, MT_eta) 
+            try:
+                mu = np.linalg.solve(MTM, MT_eta) 
+            except np.linalg.LinAlgError:
+                mu,_,_,_ = np.linalg.lstsq(MTM, MT_eta,rcond=None)
+            
 
             model_werr = M_w @ mu # this is the model prediction with the error already over
             # this is (obs - model)/err

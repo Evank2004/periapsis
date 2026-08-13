@@ -37,8 +37,8 @@ class MCMCLinearFitter(Fitter):
         
 
     def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
-        if isinstance(data,GaiaData):
-            raise ValueError("MCMCLinearFitter does not support GaiaData. Use MCMCGaiaFitter instead.")   
+        if not isinstance(data, (AstrometryData, RadialVelocityData, JointData, GaiaData)):
+            raise ValueError("MCMCLinearFitter supports AstrometryData, RadialVelocityData, JointData, and GaiaData.")
 
         param_order = self.param_order
         param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, (par.P, par.e, par.Tp,))
@@ -68,7 +68,12 @@ class MCMCLinearFitter(Fitter):
             mm_sigma = data._err()
             mm_w = 1/mm_sigma
             mm_eta_w = mm_eta * mm_w
-            
+
+        elif isinstance(data,GaiaData):
+            mm_eta = data.x
+            mm_sigma = data.err
+            mm_w = 1/mm_sigma
+            mm_eta_w = mm_eta * mm_w
 
         def matrix_method(params_dict):
             
@@ -79,7 +84,10 @@ class MCMCLinearFitter(Fitter):
             MTM = M_w.T @ M_w
             MT_eta = M_w.T @ mm_eta_w # matching equation
             # now we can solve for mu using np.linalg.solve
-            mu = np.linalg.solve(MTM, MT_eta) 
+            try:
+                mu = np.linalg.solve(MTM, MT_eta)
+            except np.linalg.LinAlgError:
+                mu,_,_,_ = np.linalg.lstsq(MTM, MT_eta,rcond=None) 
 
             model_werr = M_w @ mu # this is the model prediction with the error already over
             # this is (obs - model)/err
@@ -142,7 +150,7 @@ class MCMCLinearFitter(Fitter):
                 initial = JointInitialGuess
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for linearized MCMC initial guess generation.")
-        initial_instance = initial(data, self.ref_epoch,rng, **self.priors)
+        initial_instance = initial(data, rng, self.ref_epoch, **self.priors)
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
         sampler = emcee.EnsembleSampler(self.nwalkers, ndim, lnprob, args=(data,))
         sampler.run_mcmc(pos, self.niter,progress=True)

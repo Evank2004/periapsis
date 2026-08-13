@@ -22,8 +22,8 @@ class DummyOrbit:
         self.derived_params = {} if derived_params is None else derived_params
         self.calls = []
 
-    def astrometry(self, t, system=None):
-        self.calls.append(("astrometry", t, system))
+    def astrometry(self, t, plxf_x=0.0, plxf_y=0.0, system=None, **kwargs):
+        self.calls.append(("astrometry", t, plxf_x, plxf_y, system))
         return self.x, self.y
 
     def rv(self, t, system=None):
@@ -44,6 +44,8 @@ def make_astrometry(**overrides):
         "y": np.array([-1.0, 1.0, 3.0]),
         "x_err": np.array([1.0, 2.0, 1.0]),
         "y_err": np.array([2.0, 1.0, 2.0]),
+        "plxf_x": np.abs(np.array([1.0, 1.0, 1.0])),
+        "plxf_y": np.abs(np.array([1.0, 1.0, 1.0])),
         "system": "1",
     }
     arguments.update(overrides)
@@ -96,7 +98,7 @@ def test_data_base_class_is_abstract():
 )
 def test_system_data_requires_a_system(data_class):
     if data_class is AstrometryData:
-        arguments = dict(t=0.0, x=0.0, y=0.0, x_err=1.0, y_err=1.0)
+        arguments = dict(t=0.0, x=0.0, y=0.0, x_err=1.0, y_err=1.0,plxf_x=0.0, plxf_y=0.0)
     elif data_class is RadialVelocityData:
         arguments = dict(t=0.0, rv=0.0, rv_err=1.0)
     else:
@@ -132,10 +134,12 @@ def test_astrometry_converts_scalar_inputs_to_one_dimensional_arrays():
         y=4.0,
         x_err=0.5,
         y_err=0.75,
+        plxf_x=0.1,
+        plxf_y=0.2,
         system=1,
     )
 
-    for value in (data.t, data.x, data.y, data.x_err, data.y_err):
+    for value in (data.t, data.x, data.y, data.x_err, data.y_err,data.plxf_x,data.plxf_y):
         assert value.shape == (1,)
 
 
@@ -199,9 +203,11 @@ def test_astrometry_chi2_uses_both_weighted_coordinates_and_system():
     expected_x = 1.0**2 + 1.0**2 + 1.0**2
     expected_y = 1.0**2 + 1.0**2 + 1.0**2
     assert result == pytest.approx(expected_x + expected_y)
-    method, times, system = orbit.calls[0]
+    method, times, plxf_x, plxf_y, system = orbit.calls[0]
     assert method == "astrometry"
     assert times is data.t
+    assert plxf_x is data.plxf_x
+    assert plxf_y is data.plxf_y
     assert system == "1"
 
 

@@ -12,8 +12,8 @@ from .initial import InitialGuess
 
 class AstrometryInitialGuess(InitialGuess):
     """Class for obtaining an intial guess on fitted parameters"""
-    def __init__(self, data,ref_epoch, rng, **priors):
-        super().__init__(data,ref_epoch, rng, **priors)
+    def __init__(self, data, rng, ref_epoch=0.0, **priors):
+        super().__init__(data, rng, ref_epoch, **priors)
         self.ref_epoch = ref_epoch
 
     
@@ -156,8 +156,8 @@ class AstrometryInitialGuess(InitialGuess):
 
 
 class AstrometryLinearInitialGuess(AstrometryInitialGuess):
-    def __init__(self, data, ref_epoch,rng, **priors):
-        super().__init__(data, ref_epoch, rng, **priors)
+    def __init__(self, data, rng, ref_epoch=0.0, **priors):
+        super().__init__(data, rng, ref_epoch, **priors)
         self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
         self.ref_epoch = ref_epoch
         

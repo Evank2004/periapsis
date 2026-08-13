@@ -8,9 +8,8 @@ from .initial import InitialGuess
 
 class GaiaInitialGuess(InitialGuess):
     """Class for obtaining initial guess for Gaia data"""
-    def __init__(self, data, ref_epoch, rng: np.random.RandomState, **priors):
-        super().__init__(data,ref_epoch, rng, **priors)
-        self.ref_epoch = ref_epoch
+    def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, **priors):
+        super().__init__(data, rng, ref_epoch, **priors)
         self.M_base, self.cols = _matrix_builder(data, ref_epoch)
         
 

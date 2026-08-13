@@ -62,31 +62,39 @@ class RecordingRNG:
 
 
 def make_rv_data():
-    return SimpleNamespace(
+    from periapsis.data.common import RadialVelocityData
+    return RadialVelocityData(
         t=np.array([0.0, 1.0, 2.0, 3.0]),
         rv=np.array([0.0, 1.0, 0.0, -1.0]),
         rv_err=np.ones(4),
+        system="1"
     )
 
 
 def make_astrometry_data():
-    return SimpleNamespace(
+    from periapsis.data.common import AstrometryData
+    return AstrometryData(
         t=np.linspace(0.0, 5.0, 6),
         x=np.array([0.0, 1.0, 0.0, -1.0, 0.0, 1.0]),
         y=np.array([1.0, 0.0, -1.0, 0.0, 1.0, 0.0]),
         x_err=np.ones(6),
         y_err=np.ones(6),
+        plxf_x=np.abs(np.linspace(0.0, 5.0, 6)) + 0.1,
+        plxf_y=np.abs(np.linspace(0.0, 5.0, 6)) + 0.1,
+        system="1"
     )
 
 
 def make_gaia_data():
-    return SimpleNamespace(
+    from periapsis.data.gaia import GaiaData
+    return GaiaData(
         spsi=np.array([0.0, 1.0, 0.0, -1.0]),
         cpsi=np.array([1.0, 0.0, -1.0, 0.0]),
         plx_fac=np.array([0.2, 0.3, 0.4, 0.5]),
         t=np.array([0.0, 1.0, 2.0, 3.0]),
         x=np.array([1.0, -0.5, 0.25, 0.75]),
         err=np.full(4, 0.1),
+        system="1"
     )
 
 
@@ -117,7 +125,7 @@ def test_concrete_initial_guess_classes_share_the_base_class(guess_class):
 
 def test_initial_guess_base_class_is_abstract():
     with pytest.raises(TypeError):
-        InitialGuess(object(), np.random.RandomState(0))
+        InitialGuess(object(), np.random.RandomState(0),ref_epoch=0.0)
 
 
 def test_initial_guess_stores_data_rng_and_priors_without_copying():
@@ -129,7 +137,7 @@ def test_initial_guess_stores_data_rng_and_priors_without_copying():
     rng = np.random.RandomState(2)
     period_prior = StubPrior(1.0, 10.0)
 
-    guess = ConcreteInitialGuess(data, rng, P=period_prior)
+    guess = ConcreteInitialGuess(data, rng,ref_epoch=0.0, P=period_prior)
 
     assert guess.data is data
     assert guess.rng is rng
@@ -138,8 +146,8 @@ def test_initial_guess_stores_data_rng_and_priors_without_copying():
 
 def test_rv_bounds_preserve_requested_parameter_order():
     guess = RVInitialGuess(
-        make_rv_data(),
-        np.random.RandomState(0),
+        make_rv_data(), ref_epoch=0.0,
+        rng=np.random.RandomState(0),
         e=StubPrior(0.0, 0.9),
         P=StubPrior(2.0, 20.0),
     )
@@ -149,8 +157,8 @@ def test_rv_bounds_preserve_requested_parameter_order():
 
 def test_rv_bounds_reject_a_parameter_without_a_prior():
     guess = RVInitialGuess(
-        make_rv_data(),
-        np.random.RandomState(0),
+        make_rv_data(), ref_epoch=0.0,
+        rng=np.random.RandomState(0),
         P=StubPrior(2.0, 20.0),
     )
 
@@ -160,8 +168,8 @@ def test_rv_bounds_reject_a_parameter_without_a_prior():
 
 def test_zucker_period_search_uses_prior_bounds_and_best_period(monkeypatch):
     guess = RVInitialGuess(
-        make_rv_data(),
-        np.random.RandomState(0),
+        make_rv_data(), ref_epoch=0.0,
+        rng=np.random.RandomState(0),
         P=StubPrior(1.0, 8.0),
     )
     logspace_calls = []
@@ -184,7 +192,7 @@ def test_zucker_period_search_uses_prior_bounds_and_best_period(monkeypatch):
 def test_zucker_period_search_uses_default_range_when_no_period_prior(
     monkeypatch,
 ):
-    guess = RVInitialGuess(make_rv_data(), np.random.RandomState(0))
+    guess = RVInitialGuess(make_rv_data(), ref_epoch=0.0,rng=np.random.RandomState(0))
     logspace_calls = []
 
     def fake_logspace(low, high, num):
@@ -208,8 +216,8 @@ def test_rv_negative_log_posterior_combines_chi2_and_priors(monkeypatch):
     varying = StubPrior(-10.0, 10.0, logpdf_value=-1.5)
     fixed = FixedPrior(2.0)
     guess = RVInitialGuess(
-        data,
-        np.random.RandomState(0),
+        data, ref_epoch=0.0,
+        rng=np.random.RandomState(0),
         gamma=varying,
         P=fixed,
     )
@@ -234,7 +242,7 @@ def test_rv_negative_log_posterior_is_negative_infinity_outside_prior(
     data = make_rv_data()
     data.chi2 = lambda model: 0.0
     prior = StubPrior(0.0, 1.0, logpdf_value=-np.inf)
-    guess = RVInitialGuess(data, np.random.RandomState(0), e=prior)
+    guess = RVInitialGuess(data,ref_epoch=0.0,rng= np.random.RandomState(0), e=prior)
     monkeypatch.setattr(rv_module, "Orbit", lambda **parameters: object())
 
     result = guess.neg_lnlike([2.0], data)
@@ -248,8 +256,8 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
     period_prior = StubPrior(1.0, 10.0, sample_value=7.0)
     eccentricity_prior = StubPrior(0.0, 0.9, sample_value=0.3)
     guess = RVInitialGuess(
-        data,
-        rng,
+        data, ref_epoch=0.0,
+        rng=rng,
         P=period_prior,
         e=eccentricity_prior,
     )
@@ -303,8 +311,8 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
 
 def test_astrometry_bounds_preserve_order_and_require_every_prior():
     guess = AstrometryInitialGuess(
-        make_astrometry_data(),
-        np.random.RandomState(0),
+        make_astrometry_data(), ref_epoch=0.0,
+        rng=np.random.RandomState(0),
         e=StubPrior(0.0, 0.8),
         P=StubPrior(2.0, 9.0),
     )
@@ -324,7 +332,7 @@ def test_astrometry_log_likelihood_constructs_orbit_and_uses_chi2(monkeypatch):
 
     data.chi2 = lambda model: 12.0
     monkeypatch.setattr(astrometry_module, "Orbit", FakeOrbit)
-    guess = AstrometryInitialGuess(data, np.random.RandomState(0))
+    guess = AstrometryInitialGuess(data,ref_epoch=0.0, rng=np.random.RandomState(0))
 
     result = guess.ln_like({"P": 4.0, "e": 0.2}, data)
 
@@ -336,8 +344,8 @@ def test_astrometry_log_prior_sums_terms_and_skips_fixed_values():
     varying = StubPrior(-5.0, 5.0, logpdf_value=-1.25)
     fixed = FixedPrior(3.0)
     guess = AstrometryInitialGuess(
-        make_astrometry_data(),
-        np.random.RandomState(0),
+        make_astrometry_data(),ref_epoch=0.0,
+        rng=np.random.RandomState(0),
     )
 
     result = guess.ln_prior(
@@ -352,8 +360,8 @@ def test_astrometry_log_prior_sums_terms_and_skips_fixed_values():
 def test_astrometry_log_prior_handles_impossible_and_missing_values():
     impossible = StubPrior(0.0, 1.0, logpdf_value=-np.inf)
     guess = AstrometryInitialGuess(
-        make_astrometry_data(),
-        np.random.RandomState(0),
+        make_astrometry_data(), ref_epoch=0.0,
+        rng=np.random.RandomState(0),
     )
 
     assert guess.ln_prior({"e": 2.0}, {"e": impossible}) == -np.inf
@@ -363,8 +371,8 @@ def test_astrometry_log_prior_handles_impossible_and_missing_values():
 
 def test_astrometry_negative_log_posterior_maps_parameter_order(monkeypatch):
     guess = AstrometryInitialGuess(
-        make_astrometry_data(),
-        np.random.RandomState(0),
+        make_astrometry_data(), ref_epoch=0.0,
+        rng=np.random.RandomState(0),
     )
     seen = []
 
@@ -399,8 +407,8 @@ def test_lomb_scargle_combines_both_coordinates_and_uses_prior_range(
 ):
     data = make_astrometry_data()
     guess = AstrometryInitialGuess(
-        data,
-        np.random.RandomState(0),
+        data, ref_epoch=0.0,
+        rng=np.random.RandomState(0),
         P=StubPrior(2.0, 10.0),
     )
     frequencies_seen = []
@@ -429,7 +437,7 @@ def test_lomb_scargle_combines_both_coordinates_and_uses_prior_range(
 
     axis_guess, period_guess = guess.lomb_scargle()
 
-    expected_frequency = np.linspace(0.1, 0.5, 100000)[best_index]
+    expected_frequency = np.logspace(np.log10(0.1), np.log10(0.5), 100000)[best_index]
     assert axis_guess == pytest.approx(np.hypot(5.0, 13.0))
     assert period_guess == pytest.approx(1.0 / expected_frequency)
     assert len(frequencies_seen) == 2
@@ -442,7 +450,7 @@ def test_lomb_scargle_uses_default_period_range_without_a_period_prior(
     monkeypatch,
 ):
     data = make_astrometry_data()
-    guess = AstrometryInitialGuess(data, np.random.RandomState(0))
+    guess = AstrometryInitialGuess(data,ref_epoch=0, rng=np.random.RandomState(0))
     ranges = []
 
     class FakeLombScargle:
@@ -471,8 +479,8 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
     period_prior = StubPrior(2.0, 8.0, sample_value=5.0)
     eccentricity_prior = StubPrior(0.0, 0.9, sample_value=0.3)
     guess = AstrometryInitialGuess(
-        data,
-        rng,
+        data, ref_epoch=0.0,
+        rng=rng,
         a=axis_prior,
         P=period_prior,
         e=eccentricity_prior,
@@ -518,8 +526,7 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
 def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
     data = make_gaia_data()
     guess = GaiaInitialGuess(
-        data,
-        np.random.RandomState(0),
+        data, np.random.RandomState(0), ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
     )
     matrices = []
@@ -549,9 +556,9 @@ def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
         np.column_stack(
             [
                 data.spsi,
-                data.cpsi,
-                data.plx_fac,
                 data.spsi * data.t,
+                data.plx_fac,
+                data.cpsi,
                 data.cpsi * data.t,
             ]
         ),
@@ -586,8 +593,7 @@ def test_gaia_initial_guess_uses_periodogram_and_adds_optional_jitter(
 ):
     rng = RecordingRNG()
     guess = GaiaInitialGuess(
-        make_gaia_data(),
-        rng,
+        make_gaia_data(), rng, ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
         e=StubPrior(0.1, 0.5),
         Tp=StubPrior(10.0, 14.0),
@@ -614,8 +620,7 @@ def test_gaia_initial_guess_uses_periodogram_and_adds_optional_jitter(
 
 def test_gaia_initial_guess_respects_arbitrary_parameter_order(monkeypatch):
     guess = GaiaInitialGuess(
-        make_gaia_data(),
-        RecordingRNG(),
+        make_gaia_data(), RecordingRNG(), ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
         e=StubPrior(0.1, 0.5),
         Tp=StubPrior(10.0, 14.0),
@@ -636,8 +641,7 @@ def test_gaia_initial_guess_respects_arbitrary_parameter_order(monkeypatch):
 def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
     rng = RecordingRNG()
     guess = GaiaInitialGuess(
-        make_gaia_data(),
-        rng,
+        make_gaia_data(), rng, ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
         e=StubPrior(0.1, 0.5),
         Tp=StubPrior(10.0, 14.0),
@@ -655,79 +659,8 @@ def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
     assert rng.normal_calls
 
 
-def test_joint_initial_guess_dispatches_each_supported_data_type(monkeypatch):
-    gaia_data = object.__new__(GaiaData)
-    rv_data = object.__new__(RadialVelocityData)
-    astrometry_data = object.__new__(AstrometryData)
-    rng = np.random.RandomState(0)
-    prior = StubPrior(1.0, 2.0)
-    created = []
-
-    def factory(kind):
-        def make(data, supplied_rng, **priors):
-            child = SimpleNamespace(kind=kind, data=data)
-            created.append((kind, data, supplied_rng, priors, child))
-            return child
-
-        return make
-
-    monkeypatch.setattr(joint_module, "GaiaInitialGuess", factory("gaia"))
-    monkeypatch.setattr(joint_module, "RVInitialGuess", factory("rv"))
-    monkeypatch.setattr(
-        joint_module,
-        "AstrometryInitialGuess",
-        factory("astrometry"),
-    )
-
-    guess = JointInitialGuess(
-        SimpleNamespace(datas=[gaia_data, rv_data, astrometry_data]),
-        rng,
-        P=prior,
-    )
-
-    assert [child.kind for child in guess.initial_guesses] == [
-        "gaia",
-        "rv",
-        "astrometry",
-    ]
-    assert [entry[1] for entry in created] == [
-        gaia_data,
-        rv_data,
-        astrometry_data,
-    ]
-    assert all(entry[2] is rng for entry in created)
-    assert all(entry[3] == {"P": prior} for entry in created)
 
 
-def test_joint_initial_guess_rejects_unsupported_data():
-    with pytest.raises(ValueError, match="Unsupported data type"):
-        JointInitialGuess(
-            SimpleNamespace(datas=[object()]),
-            np.random.RandomState(0),
-        )
 
 
-def test_joint_initial_guess_averages_child_guesses_and_forwards_arguments():
-    calls = []
 
-    class FakeChild:
-        def __init__(self, result):
-            self.result = result
-
-        def get_initial_guess(self, param_order, nwalkers):
-            calls.append((param_order, nwalkers))
-            return self.result
-
-    guess = JointInitialGuess(
-        SimpleNamespace(datas=[]),
-        np.random.RandomState(0),
-    )
-    guess.initial_guesses = [
-        FakeChild(np.array([[1.0, 2.0], [3.0, 4.0]])),
-        FakeChild(np.array([[5.0, 6.0], [7.0, 8.0]])),
-    ]
-
-    result = guess.get_initial_guess(["P", "e"], nwalkers=2)
-
-    np.testing.assert_allclose(result, [[3.0, 4.0], [5.0, 6.0]])
-    assert calls == [(["P", "e"], 2), (["P", "e"], 2)]

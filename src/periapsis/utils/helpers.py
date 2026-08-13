@@ -46,10 +46,14 @@ def _matrix_builder(data,ref_epoch):
             col_idx += 1
         return cols[key]
 
-
-    
-    if getattr(data,'system',None) is None:
-        raise ValueError("Data object must have a 'system' attribute")
+    # Check that all components have system attribute
+    if not isinstance(data, JointData):
+        if getattr(data,'system',None) is None:
+            raise ValueError("Data object must have a 'system' attribute")
+    else:
+        for d in data_components:
+            if getattr(d,'system',None) is None:
+                raise ValueError("Data components must have a 'system' attribute")
 
     nrows = 0
     for d in data_components:
@@ -194,10 +198,14 @@ def _null_matrix_builder(data,ref_epoch):
             col_idx += 1
         return cols[key]
 
-
-
-    if getattr(data,'system',None) is None:
-        raise ValueError("Data object must have a 'system' attribute")
+    # Check that all components have system attribute
+    if not isinstance(data, JointData):
+        if getattr(data,'system',None) is None:
+            raise ValueError("Data object must have a 'system' attribute")
+    else:
+        for d in data_components:
+            if getattr(d,'system',None) is None:
+                raise ValueError("Data components must have a 'system' attribute")
 
     nrows = 0
     for d in data_components:

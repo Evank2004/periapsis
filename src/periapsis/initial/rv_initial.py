@@ -11,9 +11,8 @@ from .initial import InitialGuess
 
 class RVInitialGuess(InitialGuess):
     "Class for obtaining intial guess for RV data"
-    def __init__(self, data: RadialVelocityData, ref_epoch,rng: np.random.RandomState, **priors):
-        super().__init__(data, rng, ref_epoch,**priors)
-        self.ref_epoch = ref_epoch
+    def __init__(self, data: RadialVelocityData, rng: np.random.RandomState, ref_epoch=0.0, **priors):
+        super().__init__(data, rng, ref_epoch, **priors)
 
     def _double_center(self,matrix):
         """Double center a matrix."""

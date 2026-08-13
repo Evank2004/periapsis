@@ -54,15 +54,16 @@ def red_chi2(results,data,savepath=None):
     map_params = getattr(results, 'MAP_params', None)
     if map_params is None:
         map_params = results.samples.get('MAP_params', None)
-    map_params = dict(map_params) if map_params is not None else {}
-    
+
     med_params = getattr(results, 'median_params', None)
     if med_params is None:
         med_params = results.samples.get('median_params', None)
-    med_params = dict(med_params) if med_params is not None else {}
 
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for reduced Chi2 calculation.")
+
+    map_params = dict(map_params)
+    med_params = dict(med_params)
 
     
     num_free_params = len(map_params) - len([p for p in map_params if isinstance(results.priors.get(p), FixedPrior)])
@@ -91,7 +92,7 @@ def red_chi2(results,data,savepath=None):
             med_model = Orbit(**med_params)
             map_chi2.append(GaiaData.chi2(d,map_model))
             med_chi2.append(GaiaData.chi2(d,med_model))
-            orb_dof += d.dof  # for Gaia data, only one dimension is used for chi2 calculation
+            dof += d.dof  # for Gaia data, only one dimension is used for chi2 calculation
             
     map_chi2 = np.sum(map_chi2)
     med_chi2 = np.sum(med_chi2)
@@ -112,12 +113,16 @@ def delta_chi2(results,data,savepath=None):
     map_params = getattr(results, 'MAP_params', None)
     if map_params is None:
         map_params = results.samples.get('MAP_params', None)
-    map_params = dict(map_params) if map_params is not None else {}
-    
+
     med_params = getattr(results, 'median_params', None)
     if med_params is None:
         med_params = results.samples.get('median_params', None)
-    med_params = dict(med_params) if med_params is not None else {}
+
+    if map_params is None or med_params is None:
+        raise ValueError("Both MAP and median parameter sets are required for delta Chi2 calculation.")
+
+    map_params = dict(map_params)
+    med_params = dict(med_params)
 
     num_free_params = len(map_params) - len([p for p in map_params if isinstance(results.priors.get(p), FixedPrior)])
 

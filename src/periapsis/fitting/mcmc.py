@@ -209,8 +209,8 @@ class MCMCFitter(Fitter):
 
 
     def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
-        if not isinstance(data, AstrometryData) and not isinstance(data, RadialVelocityData) and not isinstance(data, JointData):
-            raise ValueError("Data must be an instance of AstrometryData or RadialVelocityData (or a combination using JointData) for MCMC.")
+        if not isinstance(data, AstrometryData) and not isinstance(data, RadialVelocityData) and not isinstance(data, JointData) and not isinstance(data, GaiaData):
+                raise ValueError("Data must be an instance of AstrometryData, RadialVelocityData, JointData, or GaiaData for MCMC.")
 
         null_hypothesis = self._null_hypothesis_fit(data)
 
@@ -231,7 +231,7 @@ class MCMCFitter(Fitter):
                 initial = GaiaInitialGuess
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for MCMC initial guess generation.")
-        initial_instance = initial(data,self.ref_epoch, rng, **self.priors)
+        initial_instance = initial(data, rng, self.ref_epoch, **self.priors)
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
 
         

@@ -11,10 +11,9 @@ import numpy as np
 from scipy.optimize import differential_evolution,minimize, NonlinearConstraint
 
 class JointInitialGuess(InitialGuess):
-    def __init__(self, data: JointData, ref_epoch, rng: np.random.RandomState, **priors):
-        super().__init__(data,ref_epoch,rng, **priors)
+    def __init__(self, data: JointData, rng: np.random.RandomState, ref_epoch=0.0, **priors):
+        super().__init__(data, rng, ref_epoch, **priors)
         self.data = data
-        self.ref_epoch = ref_epoch
         self.eta = data._concat_obs()
         self.sigma = data._err()
         self.w = 1/self.sigma

@@ -27,8 +27,7 @@ def make_results(**overrides):
         "median_params": {"chi2": 10.0},
         "samples": {},
         "priors": {},
-        "PM_fit": {"chi2": 20.0, "dof": 7},
-        "Single_motion_params": {"chi2": 20.0, "dof": 7},
+        "null_hypothesis": {"chi2": 20.0, "dof": 7},
         "backend": None,
     }
     arguments.update(overrides)
@@ -140,6 +139,8 @@ def test_red_chi2_falls_back_to_parameter_sets_in_samples(monkeypatch):
         y=np.zeros(3),
         x_err=1.0,
         y_err=1.0,
+        plxf_x=1.0,
+        plxf_y=1.0,
         system=1,
     )
     data.chi2 = lambda model: model.parameters["chi2"]
@@ -166,6 +167,8 @@ def test_red_chi2_can_build_models_through_the_public_orbit_api(monkeypatch):
         y=np.zeros(2),
         x_err=1.0,
         y_err=1.0,
+        plxf_x=1.0,
+        plxf_y=1.0,
         system=1,
     )
     data.chi2 = lambda model: model.parameters["chi2"]
@@ -187,6 +190,8 @@ def test_red_chi2_merges_fixed_priors_into_models(monkeypatch):
         y=np.zeros(4),
         x_err=1.0,
         y_err=1.0,
+        plxf_x=1.0,
+        plxf_y=1.0,
         system=1,
     )
 
@@ -249,13 +254,15 @@ def test_delta_chi2_non_gaia_compares_proper_motion_fit(monkeypatch):
         y=np.zeros(4),
         x_err=1.0,
         y_err=1.0,
+        plxf_x=1.0,
+        plxf_y=1.0,
         system=1,
     )
     data.chi2 = lambda model: model.parameters["chi2"]
     results = make_results(
         MAP_params={"chi2": 8.0, "P": 2.0},
         median_params={"chi2": 10.0, "P": 3.0},
-        PM_fit={"chi2": 20.0, "dof": 8},
+        null_hypothesis={"chi2": 20.0, "dof": 8},
     )
     sf_calls = []
 

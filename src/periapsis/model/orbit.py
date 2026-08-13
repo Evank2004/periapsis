@@ -107,7 +107,7 @@ class Orbit():
             transform = build_transform_functions(self.params, sorted(missing_params))
             self._derived_params.update(transform(**self.params))
 
-    def astrometry(self, t, system=None):
+    def astrometry(self, t, plxf_x=0.0, plxf_y=0.0, system=None):
         """
         Computes the astrometric position of the orbit at time(s) t. 
         
@@ -129,8 +129,9 @@ class Orbit():
         delta = self.derived_params[f'A{system}'] * X + self.derived_params[f'F{system}'] * Y
 
         dt = t - self.derived_params['Tepoch']
-        alpha = alpha + self.derived_params['dalpha'] + self.derived_params['mu_alpha'] * dt
-        delta = delta + self.derived_params['ddelta'] + self.derived_params['mu_delta'] * dt
+        parallax = self.derived_params.get('parallax', 0.0)
+        alpha = alpha + self.derived_params['dalpha'] + self.derived_params['mu_alpha'] * dt + plxf_x * parallax
+        delta = delta + self.derived_params['ddelta'] + self.derived_params['mu_delta'] * dt + plxf_y * parallax
         return alpha, delta
 
     def gaia_astrometry(self, t,spsi,cpsi,par_factor, system=None):

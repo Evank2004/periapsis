@@ -23,15 +23,6 @@ class JointData(Data):
             total_chi2 += data.chi2(orbit)
         return total_chi2
 
-    
-    def _flatten_joint(self):
-        """
-        Flattens a JointData object into a list of its constituent data objects.
-        """
-        if isinstance(self, JointData):
-            return self.datas
-        else:
-            return [self]
 
     def as_astrometry_data(self):
         ''' Returns AstrometryData object containing all astrometry data of simialar system in Joint Data. 
@@ -50,7 +41,23 @@ class JointData(Data):
             plxf_y = np.concatenate([data.plxf_y for data in system_datas])
             return AstrometryData(t, x, y, x_err, y_err,plxf_x,plxf_y, system=system)
         
-        
+    def as_gaia_data(self):
+        '''
+        Returns GaiaData object containing all Gaia data of simialar system in Joint Data. 
+        '''
+        gaia_datas = [data for data in self.datas if isinstance(data, GaiaData)]
+        if not gaia_datas:
+            raise ValueError("No Gaia data found in the joint data.")
+        for system in set(data.system for data in gaia_datas):
+            system_datas = [data for data in gaia_datas if data.system == system]
+            spsi = np.concatenate([data.spsi for data in system_datas])
+            cpsi = np.concatenate([data.cpsi for data in system_datas])
+            t = np.concatenate([data.t for data in system_datas])
+            plx_fac = np.concatenate([data.plx_fac for data in system_datas])
+            x = np.concatenate([data.x for data in system_datas])
+            err = np.concatenate([data.err for data in system_datas])
+           
+            return GaiaData(spsi,cpsi,t,plx_fac,x,err, system=system)
 
     def as_radial_velocity_data(self):
         ''' Returns RadialVelocityData object containing all radial velocity data of similair system. 

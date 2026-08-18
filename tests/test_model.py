@@ -45,7 +45,7 @@ def test_lookup_requires_sufficient_parameters():
 def test_orbit_astrometry_requires_sufficient_parameters():
     orb = Orbit(P=10.0)
     with pytest.raises(KeyError):
-        orb.astrometry(0.0, system='1')
+        orb.astrometry(0.0, 0.0, 0.0, system='1')
 
 
 def test_orbit_rv_requires_sufficient_parameters():
@@ -141,7 +141,7 @@ def test_orbit_defaults_tepoch_to_zero():
 def test_no_system_provided():
     orb = Orbit(P=10.0)
     with pytest.raises(ValueError):
-        orb.astrometry(0.0)
+        orb.astrometry(0.0, 0.0, 0.0)
     with pytest.raises(ValueError):
         orb.rv(0.0)
     with pytest.raises(ValueError):
@@ -155,7 +155,7 @@ def test_no_system_provided():
 def test_nondefined_system():
     orb = Orbit(P=10.0)
     with pytest.raises(ValueError):
-        orb.astrometry(0.0, system='3')
+        orb.astrometry(0.0, 0.0, 0.0, system='3')
     with pytest.raises(ValueError):
         orb.rv(0.0, system='3')
     with pytest.raises(ValueError):
@@ -169,13 +169,13 @@ def test_nondefined_system():
 def test_orbit_astrometry_computes_for_fully_defined_orbit():
     orb = Orbit(P=10.0, e=0.5, Tp=0.0, M1=1.0, M2=2.0, i=0.1, Omega=0.2, omega=0.3, dalpha=0.0, ddelta=0.0, distance=1000.0, mu_alpha=0.0, mu_delta=0.0)
     t = 0.0
-    result = orb.astrometry(t, system='relative')
+    result = orb.astrometry(t, 0.0, 0.0, system='relative')
     assert isinstance(result, tuple)
     assert len(result) == 2
-    result1 = orb.astrometry(t, system='1')
+    result1 = orb.astrometry(t, 0.0, 0.0, system='1')
     assert isinstance(result1, tuple)
     assert len(result1) == 2
-    result2 = orb.astrometry(t, system='2')
+    result2 = orb.astrometry(t, 0.0, 0.0, system='2')
     assert isinstance(result2, tuple)
     assert len(result2) == 2
 
@@ -208,7 +208,7 @@ def test_orbit_astrometry_applies_offsets_and_proper_motion():
         dalpha=2.0, ddelta=-3.0, mu_alpha=0.5, mu_delta=1.0,
     )
 
-    assert orb.astrometry(12.0, system='1') == pytest.approx((3.0, -1.0))
+    assert orb.astrometry(12.0, 0.0, 0.0, system='1') == pytest.approx((3.0, -1.0))
 
 
 def test_orbit_method_derivations_are_cached():
@@ -219,7 +219,7 @@ def test_orbit_method_derivations_are_cached():
     )
 
     assert 'A1' not in orb.derived_params
-    orb.astrometry(0.0, system='1')
+    orb.astrometry(0.0, 0.0, 0.0, system='1')
     assert {'A1', 'B1', 'F1', 'G1'}.issubset(orb.derived_params)
 
 
@@ -268,7 +268,7 @@ def test_orbit_gaia_astrometry_uses_orbital_phase_and_all_projection_terms():
 def test_orbit_astrometry_with_t_array():
     orb = Orbit(P=10.0, e=0.5, Tp=0.0, M1=1.0, M2=2.0, i=0.1, Omega=0.2, omega=0.3, dalpha=0.0, ddelta=0.0, distance=1000.0, mu_alpha=0.0, mu_delta=0.0, gamma=100.0)
     t_array = [0.0, 1.0, 2.0]
-    result = orb.astrometry(t_array, system='relative')
+    result = orb.astrometry(t_array, np.zeros_like(np.asarray(t_array, dtype=float)), np.zeros_like(np.asarray(t_array, dtype=float)), system='relative')
     assert isinstance(result, tuple)
     assert len(result) == 2
     assert isinstance(result[0], np.ndarray)
@@ -316,7 +316,7 @@ def test_basic_orbit_parameters():
     assert orb['r_p1'] == 1.0
     assert orb['r_a1'] == 1.0
     time = 0.0
-    x, y = orb.astrometry(time, system='1')
+    x, y = orb.astrometry(time, 0.0, 0.0, system='1')
     assert isinstance(x, float)
     assert isinstance(y, float)
 
@@ -324,26 +324,26 @@ def test_basic_orbit_parameters():
 def test_basic_coordinate_frame():
     orb = Orbit(P=1.0, e=0.0, a1=1.0, Tp=0.0, omega1=0.0, Omega=0.0, i=0.0, dalpha=0.0, ddelta=0.0, distance=1.0, mu_alpha=0.0, mu_delta=0.0)
     time = 0.0
-    x, y = orb.astrometry(time, system='1')
+    x, y = orb.astrometry(time, 0.0, 0.0, system='1')
     assert x == pytest.approx(0.0)
     assert y == pytest.approx(1.0)
 
     time = 0.25
-    x, y = orb.astrometry(time, system='1')
+    x, y = orb.astrometry(time, 0.0, 0.0, system='1')
     assert x == pytest.approx(1.0)
     assert y == pytest.approx(0.0)
 
     time = 0.5
-    x, y = orb.astrometry(time, system='1')
+    x, y = orb.astrometry(time, 0.0, 0.0, system='1')
     assert x == pytest.approx(0.0)
     assert y == pytest.approx(-1.0)
 
     time = 0.75
-    x, y = orb.astrometry(time, system='1')
+    x, y = orb.astrometry(time, 0.0, 0.0, system='1')
     assert x == pytest.approx(-1.0)
     assert y == pytest.approx(0.0)
 
     time = 1.0
-    x, y = orb.astrometry(time, system='1')
+    x, y = orb.astrometry(time, 0.0, 0.0, system='1')
     assert x == pytest.approx(0.0)
     assert y == pytest.approx(1.0)

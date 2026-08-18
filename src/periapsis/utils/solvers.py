@@ -238,3 +238,17 @@ def gaia_single_motion(spsi,cpsi,t,plx_fac,x,err):
         "chi2": chi2,
         "dof": dof
     }
+
+
+def _orbit_coords_nu(P,e,Tp,t):
+    '''
+    Returns the true anomaly and spatail coordinates of the orbit at time t given P,e,Tp
+    '''
+    ti = t - Tp
+    M = 2*np.pi * ti/P
+    E = solve_kepler(M,e)
+    X = np.cos(E) - e
+    Y = np.sqrt(1.0 - e**2) * np.sin(E)
+    nu = 2 * np.arctan2(np.sqrt(1+e)*np.sin(E/2), np.sqrt(1-e)*np.cos(E/2))
+
+    return X,Y,nu

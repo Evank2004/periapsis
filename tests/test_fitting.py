@@ -113,7 +113,7 @@ def test_mcmc_fitter_runs_with_astrometry_data():
     fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "a1", "e", "M0", "omega", "cosi", "Omega"], **test_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
-    x, y = model.astrometry(t, system=1)
+    x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
     data=AstrometryData(t, x, y, 0.01, 0.01,1,1, ref_epoch=0.0, system=1)
     results = fitter.fit(data, np.random.default_rng(0))
     assert isinstance(results, FitResults)
@@ -158,7 +158,7 @@ def test_mcmc_linear_fitter_runs_with_astrometry_data():
     fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_astrometry_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
-    x, y = model.astrometry(t, system=1)
+    x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
     data = AstrometryData(t, x, y, 0.01, 0.01, 1,1, ref_epoch=0.0, system=1)
     results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
@@ -200,7 +200,7 @@ def test_ultranest_fitter_runs_with_astrometry_data():
     fitter = UltranestFitter(max_ncalls=1000, output_params=["P", "a1", "e", "M0", "omega", "cosi", "Omega"], **test_astrometry_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
-    x, y = model.astrometry(t, system=1)
+    x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
     data = AstrometryData(t, x, y, 0.01, 0.01, 2,1,ref_epoch=0.0, system=1)
     results = fitter.fit(data)
     assert isinstance(results, FitResults)
@@ -228,7 +228,7 @@ def test_ultranest_fitter_runs_with_joint_data():
     fitter = UltranestFitter(max_ncalls=1000, output_params=["P", "a1", "e", "M0", "omega", "i", "Omega"], **test_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
-    x, y = model.astrometry(t_astrometry, system=1)
+    x, y = model.astrometry(t_astrometry, np.zeros_like(t_astrometry, dtype=float), np.zeros_like(t_astrometry, dtype=float), system=1)
     data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01,1,1, ref_epoch=0.0, system=1)
     t_rv = np.linspace(5.1, 15.1, 10)
     rv = model.rv(t_rv, system=1)
@@ -241,7 +241,7 @@ def test_ultranest_linear_fitter_runs_with_astrometry_data():
     fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "e", "Tp"], **test_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
-    x, y = model.astrometry(t, system=1)
+    x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
     data = AstrometryData(t, x, y, 0.01, 0.01,1,1, ref_epoch=0.0, system=1)
     results = fitter.fit(data)
     assert isinstance(results, FitResults)
@@ -511,7 +511,7 @@ def make_exact_astrometry_problem(ref_epoch=0.0, periastron_time=1.3):
     }
     times = ref_epoch + np.linspace(0.0, 13.0, 37)
     orbit = Orbit(**truth)
-    x, y = orbit.astrometry(times, system="1")
+    x, y = orbit.astrometry(times, np.zeros_like(times, dtype=float), np.zeros_like(times, dtype=float), system="1")
     data = AstrometryData(
         times,
         x,
@@ -594,7 +594,7 @@ def make_exact_joint_problem():
     }
     model = Orbit(**truth)
     t_astrometry = np.linspace(0, 10, 100)
-    x, y = model.astrometry(t_astrometry, system=1)
+    x, y = model.astrometry(t_astrometry, np.zeros_like(t_astrometry, dtype=float), np.zeros_like(t_astrometry, dtype=float), system=1)
     data_astrometry = AstrometryData(
         t_astrometry,
         x,

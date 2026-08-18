@@ -4,7 +4,7 @@ from .fitter import Fitter
 from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData,GaiaData
 from periapsis.fitting.results import FitResults
 from periapsis.utils.solvers import solve_kepler
-from periapsis.utils.helpers import _matrix_builder,_matrix_filler
+from periapsis.utils.helpers import _matrix_builder,_matrix_filler, _lsq_helper
 from periapsis.prior import FixedPrior, Bounds
 import periapsis.params as par
 import numpy as np
@@ -62,23 +62,15 @@ class UltranestLinearFitter(Fitter):
         if isinstance(data, AstrometryData):
             mm_eta = np.concatenate((data.x, data.y))
             mm_sigma = np.concatenate((data.x_err, data.y_err))
-            mm_w = 1/mm_sigma
-            mm_eta_w = mm_eta * mm_w
             
-        
-        
         elif isinstance(data, RadialVelocityData):
             mm_eta = data.rv
             mm_sigma = data.rv_err
-            mm_w = 1/mm_sigma
-            mm_eta_w = mm_eta * mm_w
             
-
         elif isinstance(data,JointData):
             mm_eta = data._concat_obs()
             mm_sigma = data._err()
-            mm_w = 1/mm_sigma
-            mm_eta_w = mm_eta * mm_w
+           
 
         def prior_transform(cube):
             cube = np.array(cube, copy=True)
@@ -95,22 +87,8 @@ class UltranestLinearFitter(Fitter):
         def matrix_method(params_dict):
 
             _matrix_filler(self.M,self.cols,params_dict,data)
-            
-            M_w = self.M* mm_w[:, None] # multiply each row of M by corresponding weight
 
-            MTM = M_w.T @ M_w
-            MT_eta = M_w.T @ mm_eta_w # matching equation
-            # now we can solve for mu using np.linalg.solve
-            try:
-                mu = np.linalg.solve(MTM, MT_eta) 
-            except np.linalg.LinAlgError:
-                mu,_,_,_ = np.linalg.lstsq(MTM, MT_eta,rcond=None)
-            
-
-            model_werr = M_w @ mu # this is the model prediction with the error already over
-            # this is (obs - model)/err
-            resids = mm_eta_w - model_werr
-            chi2 = np.sum(resids**2)
+            mu,chi2 = _lsq_helper(self.M,mm_eta,mm_sigma)
                 
             return mu, chi2
         

@@ -6,6 +6,7 @@ from scipy.signal import find_peaks
 from periapsis.params.transforms import build_transform_functions
 from periapsis.prior import FixedPrior, Bounds
 from periapsis.utils.solvers import solve_kepler
+from periapsis.utils.helpers import _matrix_builder,_lsq_helper,_matrix_filler
 import periapsis.params as params
 
 from .initial import InitialGuess
@@ -160,6 +161,9 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         super().__init__(data, rng, ref_epoch, **priors)
         self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
         self.ref_epoch = ref_epoch
+        self.M, self.cols = _matrix_builder(data, self.ref_epoch)
+        self.eta = np.concatenate((data.x, data.y))
+        self.err = np.concatenate((data.x_err, data.y_err))
         
     def neg_lnlike(self,params,data,priors,param_in):
         params_dict = dict(zip(param_in,params))
@@ -168,7 +172,7 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
             return -np.inf
 
         PeTp_params = self.PeTp_transform(**params_dict)
-        _, chi2 = matrix_method(PeTp_params, data)
+        _, chi2 = matrix_method(self,PeTp_params, data)
         
         return 0.5*chi2 - lp
 
@@ -236,50 +240,9 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         return pos
 
 
-def matrix_method(params_dict,data):
-    P,e,Tp = params_dict[params.P], params_dict[params.e], params_dict[params.Tp]
-    Ma = 2*np.pi * (data.t - Tp) / P
-    E = solve_kepler(Ma,e)
+def matrix_method(self,params_dict,data):
 
-    nobs = len(data.t)
-    dt = data.t - data.ref_epoch
-
-    M = np.zeros((2*nobs,8))
-
-    eta =np.concatenate((data.x,data.y))
-    sigma = np.concatenate((data.x_err,data.y_err))
-
-
-    X = np.cos(E) - params_dict[params.e]
-    Y = np.sqrt(1-params_dict[params.e]**2)*np.sin(E)
-
-    M[:nobs,0] = 1 #dalpha
-    M[:nobs,1] = dt #mu_alpha
-    M[:nobs,2] = X # A
-    M[:nobs,3] = Y # F
-
-    # now bottom half y obs
-    M[nobs:,4] = 1 #ddelta
-    M[nobs:,5] = dt #mu_delta
-    M[nobs:,6] = X # B
-    M[nobs:,7] = Y # G
-
-    #now we need to get covariance matrix
-    # which diagnol matrix, with err_x^2 on top and err_y^2 on bottom
-    # so we can just say C^-1 is equivalent to (A*w) ....
-    w = 1/sigma # just do 1/sigma to keep track of where the weights have been applied
-    # now we can calculate M^T C^-1 M and M^T C^-1 eta
-    eta_w = eta * w 
-    M_w = M * w[:, None] # multiply each row of M by corresponding weight
-
-    MTM = M_w.T @ M_w
-    MT_eta = M_w.T @ eta_w # matching equation
-    # now we can solve for mu using np.linalg.solve
-    mu = np.linalg.solve(MTM, MT_eta) # dalpha,mu_alpha,B,G,ddelta,mu_delta,A,F
-
-    model_werr = M_w @ mu # this is the model prediction with the error already over
-    # this is (obs - model)/err
-    resids = eta_w - model_werr
-    chi2 = np.sum(resids**2)
+    _matrix_filler(self.M,self.cols,params_dict,data)
+    mu,chi2 = _lsq_helper(self.M,self.eta,self.err)
     
     return mu, chi2    

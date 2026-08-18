@@ -1,22 +1,25 @@
 from astropy.time import Time
-from periapsis.data import AstrometryData,RadialVelocityData,JointData,GaiaData
-from periapsis.utils.solvers import solve_kepler
 import numpy as np
 
-def _lsq_helper(A,x,err):
+from periapsis.data.common import AstrometryData, RadialVelocityData
+from periapsis.data.gaia import GaiaData
+from periapsis.data.joint_data import JointData
+from periapsis.utils.solvers import _orbit_coords_nu
+
+def _lsq_helper(M,x,err):
     w = 1.0 / err
     x_w = x * w
-    A_w = A * w[:, None]
+    M_w = M * w[:, None]
 
-    ATA = A_w.T @ A_w
-    ATx = A_w.T @ x_w
+    MTM = M_w.T @ M_w
+    MTx = M_w.T @ x_w
 
     try:
-        mu = np.linalg.solve(ATA, ATx)
+        mu = np.linalg.solve(MTM, MTx)
     except np.linalg.LinAlgError:
-        mu, _, _, _ = np.linalg.lstsq(A_w, x_w, rcond=None) 
+        mu, _, _, _ = np.linalg.lstsq(M_w, x_w, rcond=None) 
 
-    model_werr = A_w @ mu
+    model_werr = M_w @ mu
 
     residuals = x_w - model_werr
     chi2 = np.sum(residuals**2)
@@ -166,19 +169,6 @@ def _matrix_filler(M,cols,params,data):
             row_idx += n_obs
 
     
-
-def _orbit_coords_nu(P,e,Tp,t):
-    '''
-    Returns the true anomaly and spatail coordinates of the orbit at time t given P,e,Tp
-    '''
-    ti = t - Tp
-    M = 2*np.pi * ti/P
-    E = solve_kepler(M,e)
-    X = np.cos(E) - e
-    Y = np.sqrt(1.0 - e**2) * np.sin(E)
-    nu = 2 * np.arctan2(np.sqrt(1+e)*np.sin(E/2), np.sqrt(1-e)*np.cos(E/2))
-
-    return X,Y,nu
 
                 
 def _null_matrix_builder(data,ref_epoch):
@@ -354,3 +344,4 @@ def _flatten_and_join(data):
                 )
 
     return list(combined_data.values())
+

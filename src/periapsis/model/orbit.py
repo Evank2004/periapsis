@@ -1,5 +1,5 @@
 from periapsis.params import covered_parameters, build_transform_functions
-from periapsis.utils.solvers import solve_kepler
+from periapsis.utils.solvers import solve_kepler,_orbit_coords_nu
 import numpy as np
 from types import MappingProxyType
 
@@ -107,7 +107,7 @@ class Orbit():
             transform = build_transform_functions(self.params, sorted(missing_params))
             self._derived_params.update(transform(**self.params))
 
-    def astrometry(self, t, plxf_x=0.0, plxf_y=0.0, system=None):
+    def astrometry(self, t, plxf_x, plxf_y, system=None):
         """
         Computes the astrometric position of the orbit at time(s) t. 
         
@@ -120,11 +120,11 @@ class Orbit():
         self._ensure_derived_params(_astrometry_param_names[system])
         
         t = np.asarray(t)
+        P = self.derived_params['P']
+        e = self.derived_params['e']
+        Tp = self.derived_params['Tp']
 
-        M = 2 * np.pi / self.derived_params['P'] * (t - (self.derived_params['Tp']))
-        E = solve_kepler(M, self.derived_params['e'])
-        X = (np.cos(E) - self.derived_params['e'])
-        Y = (np.sqrt(1 - self.derived_params['e']**2) * np.sin(E))
+        X,Y,_ = _orbit_coords_nu(P,e,Tp,t)
         alpha = self.derived_params[f'B{system}'] * X + self.derived_params[f'G{system}'] * Y
         delta = self.derived_params[f'A{system}'] * X + self.derived_params[f'F{system}'] * Y
 
@@ -133,6 +133,31 @@ class Orbit():
         alpha = alpha + self.derived_params['dalpha'] + self.derived_params['mu_alpha'] * dt + plxf_x * parallax
         delta = delta + self.derived_params['ddelta'] + self.derived_params['mu_delta'] * dt + plxf_y * parallax
         return alpha, delta
+
+    def pure_orbit(self,t,system=None):
+        '''
+        Computes the astrometric position of the orbit at time(s) t without any linear motion or parallax.
+        '''
+        if system is None or str(system) not in {'1', '2', 'relative'}:
+                raise ValueError(f"`system` must be provided for astrometry. It can be either '1', '2', or 'relative'.")
+        system = "" if system == "relative" else str(system)
+    
+        self._ensure_derived_params(_astrometry_param_names[system])
+
+        t = np.asarray(t)
+        P = self.derived_params['P']
+        e = self.derived_params['e']
+        Tp = self.derived_params['Tp']
+
+        X,Y,_ = _orbit_coords_nu(P,e,Tp,t)
+
+        alpha = self.derived_params[f'B{system}'] * X + self.derived_params[f'G{system}'] * Y
+        delta = self.derived_params[f'A{system}'] * X + self.derived_params[f'F{system}'] * Y
+
+        return alpha, delta
+
+
+
 
     def gaia_astrometry(self, t,spsi,cpsi,par_factor, system=None):
         """

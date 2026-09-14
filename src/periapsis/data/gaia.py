@@ -9,8 +9,6 @@ import numpy as np
 
 class GaiaData(SystemData):
     def __init__(self, spsi,cpsi,t,plx_fac,x,err,units: Optional[Mapping[str, Any]] = None, system=None,band=None):
-        if units is None:
-            raise ValueError("Units must be provided for GaiaData.")
         super().__init__(system, units)
         required_units = {"t", "x", "err"}
         missing_units = required_units - self.unit_system.units.keys()

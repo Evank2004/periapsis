@@ -10,8 +10,37 @@ from periapsis.prior import FixedPrior
 from scipy.stats import gaussian_kde
 import periapsis.params as par
 from periapsis.utils.helpers import _flatten_and_join, _flatten_joint
+from periapsis.params.units import CanonicalUnits
 
 rng_plots = np.random.default_rng(5377)
+
+
+def _canonical_to_plot(data, parameter, values):
+    unit = data.parameter_unit(parameter)
+    dimension = data.parameter_dimension(parameter)
+    return np.asarray(values) / unit.to(CanonicalUnits[dimension])
+
+
+def _plot_to_canonical(data, parameter, values):
+    unit = data.parameter_unit(parameter)
+    dimension = data.parameter_dimension(parameter)
+    return np.asarray(values) * unit.to(CanonicalUnits[dimension])
+
+
+def _plot_unit(data, parameter):
+    return str(data.parameter_unit(parameter))
+
+
+def _plot_time(data, values):
+    return _canonical_to_plot(data, 't', values)
+
+
+def _plot_position(data, values):
+    return _canonical_to_plot(data, 'x', values)
+
+
+def _plot_velocity(data, values):
+    return _canonical_to_plot(data, 'rv', values)
 
 def mcmc_autocorrelation_plot(results,savepath=None):
     '''
@@ -298,9 +327,19 @@ def orbit_plot(results, data, savepath=None):
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[1, 0])
     ax3 = fig.add_subplot(gs[:, 1])
+    datas = _flatten_joint(data)
+
+    def _astrometry_data_for_system(system):
+        return next(
+            (d for d in datas if d.system == system and isinstance(d, (AstrometryData, GaiaData))),
+            None,
+        )
     
 
     def _plot_model(results,tfold,system):
+        plot_data = _astrometry_data_for_system(system)
+        if plot_data is None:
+            return
 
         map_params = getattr(results, 'MAP_params', None)
         if map_params is None:
@@ -310,6 +349,8 @@ def orbit_plot(results, data, savepath=None):
         if med_params is None:
             med_params = results.samples.get('median_params', None)
 
+        map_params = results.canonical_MAP_params()
+        med_params = results.canonical_median_params()
         map_model = Orbit(**map_params)
         med_model = Orbit(**med_params)
 
@@ -318,14 +359,24 @@ def orbit_plot(results, data, savepath=None):
 
         alpha_peri, delta_peri = _pericenter_coords(map_params, system)
 
-        ax1.plot(tfold, alpha_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
-        ax1.plot(tfold, alpha_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
-        ax2.plot(tfold, delta_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
-        ax2.plot(tfold, delta_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
-        ax3.plot(alpha_map, delta_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
-        ax3.plot(alpha_med, delta_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
+        plot_t = _plot_time(plot_data, tfold)
+        plot_alpha_map = _plot_position(plot_data, alpha_map)
+        plot_alpha_med = _plot_position(plot_data, alpha_med)
+        plot_delta_map = _plot_position(plot_data, delta_map)
+        plot_delta_med = _plot_position(plot_data, delta_med)
+
+        ax1.plot(plot_t, plot_alpha_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
+        ax1.plot(plot_t, plot_alpha_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
+        ax2.plot(plot_t, plot_delta_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
+        ax2.plot(plot_t, plot_delta_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
+        ax3.plot(plot_alpha_map, plot_delta_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
+        ax3.plot(plot_alpha_med, plot_delta_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
         ax3.scatter(0, 0, color='k', marker='*', label='COM', zorder=10, s=100)
-        ax3.plot([0, alpha_peri], [0, delta_peri], color='gray', linestyle='--', label='Periastron', zorder=4, alpha=0.6)
+        ax3.plot(
+            [0, _plot_position(plot_data, alpha_peri)],
+            [0, _plot_position(plot_data, delta_peri)],
+            color='gray', linestyle='--', label='Periastron', zorder=4, alpha=0.6,
+        )
      
 
 
@@ -333,38 +384,40 @@ def orbit_plot(results, data, savepath=None):
 
     def _plot_astrometry_data(results,data):
 
-        alpha_obs, delta_obs = _apply_center_offset_astro(data.x, data.y, data.plxf_x,data.plxf_y, results.MAP_params, data.t)
-        dt_obs = data.t
+        alpha_obs, delta_obs = _apply_center_offset_astro(
+            data.x, data.y, data.plxf_x, data.plxf_y,
+            results.canonical_MAP_params(), data.t,
+        )
+        dt_obs = _plot_time(data, data.t)
 
-        ax1.errorbar(dt_obs, alpha_obs, yerr=data.x_err,color='k', fmt='o',markersize=4,zorder=2)
-        ax2.errorbar(dt_obs, delta_obs, yerr=data.y_err,color='k', fmt='o',markersize=4,zorder=2)
-        ax3.scatter(alpha_obs, delta_obs, color='k',s=15,zorder=2)
+        ax1.errorbar(dt_obs, _plot_position(data, alpha_obs), yerr=_plot_position(data, data.x_err),color='k', fmt='o',markersize=4,zorder=2)
+        ax2.errorbar(dt_obs, _plot_position(data, delta_obs), yerr=_plot_position(data, data.y_err),color='k', fmt='o',markersize=4,zorder=2)
+        ax3.scatter(_plot_position(data, alpha_obs), _plot_position(data, delta_obs), color='k',s=15,zorder=2)
    
 
     def _plot_gaia_data(results,data):
-        Map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
-        Med_plot_dict = data._astrometry(Orbit(**results.median_params))
+        Map_plot_dict = data._astrometry(Orbit(**results.canonical_MAP_params()))
+        Med_plot_dict = data._astrometry(Orbit(**results.canonical_median_params()))
 
-        dt_obs = data.t 
+        dt_obs = _plot_time(data, data.t)
 
         for i, (ri, di, ei, si, ci) in enumerate(zip(Map_plot_dict['ra_orb_obs'], Map_plot_dict['dec_orb_obs'], data.err, data.spsi, data.cpsi)):
-            x0 = ri - ei * si
-            x1 = ri + ei * si
-            y0 = di - ei * ci
-            y1 = di + ei * ci
+            x0 = _plot_position(data, ri - ei * si)
+            x1 = _plot_position(data, ri + ei * si)
+            y0 = _plot_position(data, di - ei * ci)
+            y1 = _plot_position(data, di + ei * ci)
 
             ax1.plot([dt_obs[i], dt_obs[i]], [x0, x1], color='tab:orange', alpha=0.5, zorder=2)
             ax2.plot([dt_obs[i], dt_obs[i]], [y0, y1], color='tab:orange', alpha=0.5, zorder=2)
             ax3.plot([x0, x1], [y0, y1], color='tab:orange', alpha=0.5, zorder=2)
 
-        ax1.scatter(dt_obs, Map_plot_dict['ra_orb_obs'], color='k', s=15, zorder=3)
-        ax2.scatter(dt_obs, Map_plot_dict['dec_orb_obs'], color='k', s=15, zorder=3)
-        ax3.scatter(Map_plot_dict['ra_orb_obs'], Map_plot_dict['dec_orb_obs'], color='k', s=15, zorder=3)
-        ax3.plot([0, Map_plot_dict['ra_peri']], [0, Map_plot_dict['dec_peri']], color='gray', linestyle='--', label='Periastron', zorder=4, alpha=0.6)
+        ax1.scatter(dt_obs, _plot_position(data, Map_plot_dict['ra_orb_obs']), color='k', s=15, zorder=3)
+        ax2.scatter(dt_obs, _plot_position(data, Map_plot_dict['dec_orb_obs']), color='k', s=15, zorder=3)
+        ax3.scatter(_plot_position(data, Map_plot_dict['ra_orb_obs']), _plot_position(data, Map_plot_dict['dec_orb_obs']), color='k', s=15, zorder=3)
+        ax3.plot([0, _plot_position(data, Map_plot_dict['ra_peri'])], [0, _plot_position(data, Map_plot_dict['dec_peri'])], color='gray', linestyle='--', label='Periastron', zorder=4, alpha=0.6)
         ax3.scatter(0, 0, color='k', marker='*', label='COM', zorder=10, s=100)
         
 
-    datas = _flatten_joint(data)
     systems = {d.system for d in datas}
     min_t = []
     max_t = []
@@ -382,11 +435,13 @@ def orbit_plot(results, data, savepath=None):
         elif isinstance(d, GaiaData):
             _plot_gaia_data(results,d)
 
-    ax2.set_xlabel('Time')
-    ax1.set_ylabel(r"$\Delta \alpha^*$ ")
-    ax2.set_ylabel(r"$\Delta \delta$ ")
-    ax3.set_xlabel(r"$\Delta \alpha^*$ ")
-    ax3.set_ylabel(r"$\Delta \delta$ ")
+    label_data = next((d for d in datas if isinstance(d, (AstrometryData, GaiaData))), datas[0])
+    position_unit = _plot_unit(label_data, 'x')
+    ax2.set_xlabel(f'Time [{_plot_unit(label_data, "t")}]')
+    ax1.set_ylabel(rf"$\Delta \alpha^*$ [{position_unit}]")
+    ax2.set_ylabel(rf"$\Delta \delta$ [{position_unit}]")
+    ax3.set_xlabel(rf"$\Delta \alpha^*$ [{position_unit}]")
+    ax3.set_ylabel(rf"$\Delta \delta$ [{position_unit}]")
     ax3.set_aspect('equal',adjustable = 'datalim')
     #Deduplicates labels if multiple systems are plotted
     handles, labels = ax3.get_legend_handles_labels()
@@ -410,11 +465,11 @@ def sky_motion_plot(results, data, savepath=None):
     def _plot_lin_model(results, data,tfold):
 
         null_fit = results.null_hypothesis
-        dalpha = null_fit['params']['dalpha']
-        ddelta = null_fit['params']['ddelta']
-        mu_alpha = null_fit['params']['mu_alpha']
-        mu_delta = null_fit['params']['mu_delta']
-        parallax = null_fit['params']['parallax']
+        dalpha = _plot_to_canonical(data, 'dalpha', null_fit['params']['dalpha'])
+        ddelta = _plot_to_canonical(data, 'ddelta', null_fit['params']['ddelta'])
+        mu_alpha = _plot_to_canonical(data, 'mu_alpha', null_fit['params']['mu_alpha'])
+        mu_delta = _plot_to_canonical(data, 'mu_delta', null_fit['params']['mu_delta'])
+        parallax = _plot_to_canonical(data, 'parallax', null_fit['params']['parallax'])
 
         if isinstance(data, GaiaData):
             tfold = np.linspace(data.t.min(), data.t.max(), 1000)
@@ -423,34 +478,34 @@ def sky_motion_plot(results, data, savepath=None):
 
             alpha_lin = mu_alpha *tfold + dalpha + plx_alpha*parallax
             delta_lin = mu_delta *tfold + ddelta + plx_delta*parallax
-            ax.plot(alpha_lin, delta_lin, label='Linear Model', color='orange', linestyle='-.', zorder=1, alpha=0.7)
+            ax.plot(_plot_position(data, alpha_lin), _plot_position(data, delta_lin), label='Linear Model', color='orange', linestyle='-.', zorder=1, alpha=0.7)
 
-            map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
-            med_plot_dict = data._astrometry(Orbit(**results.median_params))
-            ax.plot(map_plot_dict['ra_sky'], map_plot_dict['dec_sky'], label='MAP Sky Track', color='red', linestyle='-', zorder=1)
-            ax.plot(med_plot_dict['ra_sky'], med_plot_dict['dec_sky'], label='Median Sky Track', color='purple', linestyle='-', zorder=1)
+            map_plot_dict = data._astrometry(Orbit(**results.canonical_MAP_params()))
+            med_plot_dict = data._astrometry(Orbit(**results.canonical_median_params()))
+            ax.plot(_plot_position(data, map_plot_dict['ra_sky']), _plot_position(data, map_plot_dict['dec_sky']), label='MAP Sky Track', color='red', linestyle='-', zorder=1)
+            ax.plot(_plot_position(data, med_plot_dict['ra_sky']), _plot_position(data, med_plot_dict['dec_sky']), label='Median Sky Track', color='purple', linestyle='-', zorder=1)
 
         if isinstance(data,AstrometryData):
             
             alpha_lin = mu_alpha * tfold + dalpha + data.plxf_x*parallax
             delta_lin = mu_delta * tfold + ddelta + data.plxf_y*parallax
-            ax.plot(alpha_lin, delta_lin, label='Linear Model', color='orange', linestyle='-.', zorder=1, alpha=0.7)
+            ax.plot(_plot_position(data, alpha_lin), _plot_position(data, delta_lin), label='Linear Model', color='orange', linestyle='-.', zorder=1, alpha=0.7)
 
-            map_model = Orbit(**results.MAP_params)
-            med_model = Orbit(**results.median_params)
+            map_model = Orbit(**results.canonical_MAP_params())
+            med_model = Orbit(**results.canonical_median_params())
             alpha_map, delta_map = map_model.astrometry(tfold, data.plxf_x, data.plxf_y, system=data.system)
             alpha_med, delta_med = med_model.astrometry(tfold, data.plxf_x, data.plxf_y, system=data.system)
-            ax.plot(alpha_map, delta_map, label='MAP Sky Track', color='red', linestyle='-', zorder=1)
-            ax.plot(alpha_med, delta_med, label='Median Sky Track', color='purple', linestyle='-', zorder=1)
+            ax.plot(_plot_position(data, alpha_map), _plot_position(data, delta_map), label='MAP Sky Track', color='red', linestyle='-', zorder=1)
+            ax.plot(_plot_position(data, alpha_med), _plot_position(data, delta_med), label='Median Sky Track', color='purple', linestyle='-', zorder=1)
 
 
     def _plot_data(results, data):
         if isinstance(data, GaiaData):
-            map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
-            ax.scatter(map_plot_dict['ra_sky_data'], map_plot_dict['dec_sky_data'], color='k', s=15, zorder=3)
+            map_plot_dict = data._astrometry(Orbit(**results.canonical_MAP_params()))
+            ax.scatter(_plot_position(data, map_plot_dict['ra_sky_data']), _plot_position(data, map_plot_dict['dec_sky_data']), color='k', s=15, zorder=3)
             
         elif isinstance(data, AstrometryData):
-            ax.scatter(data.x, data.y, color='k', s=15, zorder=3)
+            ax.scatter(_plot_position(data, data.x), _plot_position(data, data.y), color='k', s=15, zorder=3)
             
 
 
@@ -469,8 +524,9 @@ def sky_motion_plot(results, data, savepath=None):
         _plot_data(results, d)
 
     ax.legend(loc='best')
-    ax.set_xlabel(r"$\Delta \alpha^*$ ")
-    ax.set_ylabel(r"$\Delta \delta$ ")
+    label_data = next((d for d in datas if isinstance(d, (AstrometryData, GaiaData))), datas[0])
+    ax.set_xlabel(rf"$\Delta \alpha^*$ [{_plot_unit(label_data, 'x')}]")
+    ax.set_ylabel(rf"$\Delta \delta$ [{_plot_unit(label_data, 'x')}]")
     ax.set_aspect('equal', adjustable='datalim')
     ax.invert_xaxis()
     
@@ -490,14 +546,10 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
 
     def _plot_orbit_samples(results, data, Nplot,tfold):
         param_names = results.param_names
-        samples = results.samples.get('samples', None)
-        if samples is None:
-            if not param_names:
-                raise ValueError("Posterior samples are not available for multi-orbit plotting.")
-
-        sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
-        if len(sample_arrays) != len(param_names):
+        if not param_names:
             raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+
+        samples = results.canonical_sample_array()
 
         idx = np.random.choice(samples.shape[0], size=min(Nplot, samples.shape[0]), replace=False)
         samps = samples[idx]
@@ -505,18 +557,18 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
         for samp in samps:
             model = Orbit(**dict(zip(param_names, samp)))
             alpha,delta = model.pure_orbit(tfold, system=data.system)
-            ax.plot(alpha, delta, color='tab:blue', alpha=0.3, zorder=1)
+            ax.plot(_plot_position(data, alpha), _plot_position(data, delta), color='tab:blue', alpha=0.3, zorder=1)
 
     def _plot_map_median_orbits(results, data, tfold):
 
-        map_model = Orbit(**results.MAP_params)
-        med_model = Orbit(**results.median_params)
+        map_model = Orbit(**results.canonical_MAP_params())
+        med_model = Orbit(**results.canonical_median_params())
 
         alpha_map, delta_map = map_model.pure_orbit(tfold, system=data.system)
         alpha_med, delta_med = med_model.pure_orbit(tfold, system=data.system)
 
-        ax.plot(alpha_map, delta_map, label='MAP Orbit', color='red', linestyle='-', zorder=4)
-        ax.plot(alpha_med, delta_med, label='Median Orbit', color='purple', linestyle='--', zorder=4)
+        ax.plot(_plot_position(data, alpha_map), _plot_position(data, delta_map), label='MAP Orbit', color='red', linestyle='-', zorder=4)
+        ax.plot(_plot_position(data, alpha_med), _plot_position(data, delta_med), label='Median Orbit', color='purple', linestyle='--', zorder=4)
         ax.scatter(0, 0, color='k', marker='*', label='COM', zorder=10)
 
 
@@ -535,8 +587,10 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
         _plot_map_median_orbits(results, d, tfold)
 
     
-    ax.set_xlabel(r"$\Delta \alpha^*$")
-    ax.set_ylabel(r"$\Delta \delta$")
+    label_data = next((d for d in datas if isinstance(d, (AstrometryData, GaiaData))), datas[0])
+    position_unit = _plot_unit(label_data, 'x')
+    ax.set_xlabel(rf"$\Delta \alpha^*$ [{position_unit}]")
+    ax.set_ylabel(rf"$\Delta \delta$ [{position_unit}]")
     ax.legend(fontsize='small', loc='best')
     ax.set_aspect('equal')
     ax.invert_xaxis()
@@ -656,7 +710,7 @@ def mass_distribution(results,scale='linear',savepath=None):
         return None
 
 
-def rv_fit_plot(results, data,unit_conv=1, savepath=None):
+def rv_fit_plot(results, data, savepath=None):
     '''
     Plots radial velocity fit over time
     '''
@@ -671,13 +725,13 @@ def rv_fit_plot(results, data,unit_conv=1, savepath=None):
 
     fig,ax = plt.subplots()
 
-    def _plot_rv_fit(results,data,unit_conv,system,tfold):
-        Map_fit = Orbit(**results.MAP_params)
-        med_fit = Orbit(**results.median_params)
+    def _plot_rv_fit(results,data,system,tfold):
+        Map_fit = Orbit(**results.canonical_MAP_params())
+        med_fit = Orbit(**results.canonical_median_params())
 
-        ax.plot(tfold, Map_fit.rv(tfold,system), label='MAP Fit', color='red', linestyle='-')
-        ax.plot(tfold, med_fit.rv(tfold,system), label='Median Fit',color='purple', linestyle='--',alpha=0.7)
-        ax.errorbar(data.t, data.rv*unit_conv, yerr=data.rv_err*unit_conv, fmt='o', color='k', markersize=4)
+        ax.plot(_plot_time(data, tfold), _plot_velocity(data, Map_fit.rv(tfold,system)), label='MAP Fit', color='red', linestyle='-')
+        ax.plot(_plot_time(data, tfold), _plot_velocity(data, med_fit.rv(tfold,system)), label='Median Fit',color='purple', linestyle='--',alpha=0.7)
+        ax.errorbar(_plot_time(data, data.t), _plot_velocity(data, data.rv), yerr=_plot_velocity(data, data.rv_err), fmt='o', color='k', markersize=4)
         
 
     systems = {d.system for d in datas}
@@ -690,10 +744,10 @@ def rv_fit_plot(results, data,unit_conv=1, savepath=None):
         t_max.append(np.max(d.t))
     tfold = np.linspace(np.min(t_min), np.max(t_max), 1000)
     for d in datas:
-        _plot_rv_fit(results,d,unit_conv,d.system,tfold)
+        _plot_rv_fit(results,d,d.system,tfold)
     
-    ax.set_xlabel('Time')
-    ax.set_ylabel('RV') #TODO: make this able to provide units
+    ax.set_xlabel(f'Time [{_plot_unit(datas[0], "t")}]')
+    ax.set_ylabel(f'RV [{_plot_unit(datas[0], "rv")}]')
     ax.legend(loc='upper right')
 
     if savepath is not None:
@@ -702,7 +756,7 @@ def rv_fit_plot(results, data,unit_conv=1, savepath=None):
     return fig
 
 
-def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove unit_conv once units are normalized
+def phase_fold_rv_plot(results, data, savepath=None):
     '''
     Plots phase-folded radial velocity fit
     '''
@@ -716,7 +770,7 @@ def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove 
         return None
 
     fig, ax = plt.subplots()
-    map_model = Orbit(**results.MAP_params)
+    map_model = Orbit(**results.canonical_MAP_params())
     map_period = map_model['P']
     map_tp = map_model['Tp']
 
@@ -727,7 +781,7 @@ def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove 
 
         ax.plot(
             phase_fold[sort_map],
-            map_model.rv(tfold, system)[sort_map] * unit_conv,
+            _plot_velocity(system_datas[0], map_model.rv(tfold, system))[sort_map],
             label=f'MAP Fit ({system})',
             color='red',
             lw=1.5,
@@ -736,14 +790,14 @@ def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove 
 
         for d in system_datas:
             phase = (d.t - map_tp + 0.5 * map_period) / map_period % 1
-            ax.errorbar(phase, d.rv * unit_conv, yerr=d.rv_err * unit_conv, fmt='o', color='k', markersize=4)
+            ax.errorbar(phase, _plot_velocity(d, d.rv), yerr=_plot_velocity(d, d.rv_err), fmt='o', color='k', markersize=4)
 
     for system in sorted({d.system for d in datas}):
         system_datas = [d for d in datas if d.system == system]
         plot_system(system, system_datas)
 
     ax.set_xlabel('Phase')
-    ax.set_ylabel('RV')
+    ax.set_ylabel(f'RV [{_plot_unit(datas[0], "rv")}]')
     ax.legend(loc='best')
 
     if savepath is not None:
@@ -752,7 +806,7 @@ def phase_fold_rv_plot(results, data, unit_conv=1,savepath=None): #TODO: remove 
 
     return fig
 
-def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
+def rv_multi_fit_plot(results,data,Nplot=100,savepath=None):
     '''
     Plots multiple radial velocity fits from posterior samples
     '''
@@ -774,22 +828,16 @@ def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
         sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
         if len(sample_arrays) != len(param_names):
             raise ValueError("Posterior samples are not available for multi-orbit plotting.")
-        samples = np.column_stack(sample_arrays)
+        samples = results.canonical_sample_array()
 
-    map_params = getattr(results, 'MAP_params', None)
-    if map_params is None:
-        map_params = results.samples.get('MAP_params', None)
+    map_params = results.canonical_MAP_params()
+    med_params = results.canonical_median_params()
 
-    med_params = getattr(results, 'median_params', None)
-    if med_params is None:
-        med_params = results.samples.get('median_params', None)
-
-    fixed_prior_params = {}
-    for k, p in results.priors.items():
-        if isinstance(p, FixedPrior):
-            map_params[k] = p.value
-            med_params[k] = p.value
-            fixed_prior_params[k] = p.value
+    fixed_prior_params = {
+        name: map_params[name]
+        for name, prior in results.priors.items()
+        if isinstance(prior, FixedPrior) and name in map_params
+    }
 
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
@@ -797,19 +845,20 @@ def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     fig,ax = plt.subplots()
 
     def _multi_rvs(Nplot,tfold,system):
+        plot_data = next(d for d in datas if d.system == system)
         
         idx = np.random.choice(samples.shape[0], size=min(Nplot, samples.shape[0]), replace=False)
         samps = samples[idx]
 
         for samp in samps:
             model = Orbit(**dict(zip(param_names, samp)), **fixed_prior_params)
-            ax.plot(tfold, model.rv(tfold,system), color='tab:blue', alpha=0.3)
+            ax.plot(_plot_time(plot_data, tfold), _plot_velocity(plot_data, model.rv(tfold,system)), color='tab:blue', alpha=0.3)
 
-        ax.plot(tfold, map_model.rv(tfold,system), label='MAP Fit', color='red', linestyle='-')
-        ax.plot(tfold, med_model.rv(tfold,system), label='Median Fit', color='purple', linestyle='--', alpha=0.7)
+        ax.plot(_plot_time(plot_data, tfold), _plot_velocity(plot_data, map_model.rv(tfold,system)), label='MAP Fit', color='red', linestyle='-')
+        ax.plot(_plot_time(plot_data, tfold), _plot_velocity(plot_data, med_model.rv(tfold,system)), label='Median Fit', color='purple', linestyle='--', alpha=0.7)
 
-    def _plot_data(data,unit_conv):
-        ax.errorbar(data.t, data.rv*unit_conv, yerr=data.rv_err*unit_conv, fmt='o', color='k', markersize=4)
+    def _plot_data(data):
+        ax.errorbar(_plot_time(data, data.t), _plot_velocity(data, data.rv), yerr=_plot_velocity(data, data.rv_err), fmt='o', color='k', markersize=4)
 
     systems = {d.system for d in datas}
     t_min = []
@@ -822,10 +871,10 @@ def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     tfold = np.linspace(np.min(t_min), np.max(t_max), 1000)
     for d in datas:
         _multi_rvs(Nplot,tfold,d.system)
-        _plot_data(d,unit_conv)
+        _plot_data(d)
 
-    ax.set_xlabel('Time')
-    ax.set_ylabel('RV') #TODO: make this able to provide units
+    ax.set_xlabel(f'Time [{_plot_unit(datas[0], "t")}]')
+    ax.set_ylabel(f'RV [{_plot_unit(datas[0], "rv")}]')
     ax.legend(loc='best')
 
     if savepath is not None:
@@ -834,7 +883,7 @@ def rv_multi_fit_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     return fig
 
 
-def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
+def multi_phase_plot(results,data,Nplot=100,savepath=None):
     '''
     Plots multiple phase-folded RV fits
     '''
@@ -852,23 +901,17 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
         sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
         if len(sample_arrays) != len(param_names):
             raise ValueError("Posterior samples are not available for multi-orbit plotting.")
-        samples = np.column_stack(sample_arrays)
+        samples = results.canonical_sample_array()
         
     
-    map_params = getattr(results, 'MAP_params', None)
-    if map_params is None:
-        map_params = results.samples.get('MAP_params', None)
+    map_params = results.canonical_MAP_params()
+    med_params = results.canonical_median_params()
     
-    med_params = getattr(results, 'median_params', None)
-    if med_params is None:
-        med_params = results.samples.get('median_params', None)
-    
-    fixed_prior_params = {}
-    for k, p in results.priors.items():
-        if isinstance(p, FixedPrior):
-            map_params[k] = p.value
-            med_params[k] = p.value
-            fixed_prior_params[k] = p.value
+    fixed_prior_params = {
+        name: map_params[name]
+        for name, prior in results.priors.items()
+        if isinstance(prior, FixedPrior) and name in map_params
+    }
     
     map_model = Orbit(**map_params)
     med_model = Orbit(**med_params)
@@ -880,6 +923,7 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     fig, ax = plt.subplots()
 
     def _multi_phase(Nplot, system):
+        plot_data = next(d for d in datas if d.system == system)
         idx = np.random.choice(samples.shape[0], size=min(Nplot, samples.shape[0]), replace=False)
         samps = samples[idx]
         
@@ -890,7 +934,7 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
             tfold_samp = np.linspace(Tp_samp - 0.5*P_samp, Tp_samp + 0.5*P_samp, 10000)
             phase_fold_samp = (tfold_samp - Tp_samp + 0.5*P_samp) / P_samp
             rv_samp = model.rv(tfold_samp, system)
-            ax.plot(phase_fold_samp, rv_samp/unit_conv, color='tab:blue', alpha=0.3)
+            ax.plot(phase_fold_samp, _plot_velocity(plot_data, rv_samp), color='tab:blue', alpha=0.3)
 
 
     def _map_median_phase(system):
@@ -907,14 +951,15 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
         phase_fold_med = (tfold_med - Tp_med + 0.5*P_med) / P_med
         rv_med = med_model.rv(tfold_med, system)
 
-        ax.plot(phase_fold_map, rv_map/unit_conv, label='MAP Fit', color='red', lw=1.5, linestyle='-')
-        ax.plot(phase_fold_med, rv_med/unit_conv, label='Median Fit', color='purple', lw=1.5, linestyle='--', alpha=0.7)
+        plot_data = next(d for d in datas if d.system == system)
+        ax.plot(phase_fold_map, _plot_velocity(plot_data, rv_map), label='MAP Fit', color='red', lw=1.5, linestyle='-')
+        ax.plot(phase_fold_med, _plot_velocity(plot_data, rv_med), label='Median Fit', color='purple', lw=1.5, linestyle='--', alpha=0.7)
 
-    def _plot_data(data, unit_conv):
+    def _plot_data(data):
         P = map_model['P']
         Tp = map_model['Tp']
         phase = (data.t - Tp + 0.5*P) / P % 1
-        ax.errorbar(phase, data.rv*unit_conv, yerr=data.rv_err*unit_conv, fmt='o', color='k', markersize=4)
+        ax.errorbar(phase, _plot_velocity(data, data.rv), yerr=_plot_velocity(data, data.rv_err), fmt='o', color='k', markersize=4)
 
     systems = {d.system for d in datas}
     for system in sorted(systems):
@@ -922,10 +967,10 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
         _multi_phase(Nplot, system)
         _map_median_phase(system)
         for d in system_datas:
-            _plot_data(d, unit_conv)
+            _plot_data(d)
 
     ax.set_xlabel('Phase')
-    ax.set_ylabel('RV') #TODO: make this able to provide units
+    ax.set_ylabel(f'RV [{_plot_unit(datas[0], "rv")}]')
     ax.legend(loc='best')
 
     if savepath is not None:
@@ -934,7 +979,7 @@ def multi_phase_plot(results,data,Nplot=100,unit_conv=1,savepath=None):
     return fig
 
         
-def all_plots(results, data: Data, scale=None,unit_conv=1, savepath=None):
+def all_plots(results, data: Data, scale=None, savepath=None):
     '''
     Generates all diagnostic and orbit plots
     '''
@@ -949,10 +994,10 @@ def all_plots(results, data: Data, scale=None,unit_conv=1, savepath=None):
     corner_plot(results,savepath=savepath)
     posterior_over_prior(results, savepath=savepath)
     if data.has_radial_velocity():
-        rv_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-        phase_fold_rv_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-        rv_multi_fit_plot(results,data,unit_conv=unit_conv,savepath=savepath)
-        multi_phase_plot(results,data,unit_conv=unit_conv,savepath=savepath)
+        rv_fit_plot(results,data,savepath=savepath)
+        phase_fold_rv_plot(results,data,savepath=savepath)
+        rv_multi_fit_plot(results,data,savepath=savepath)
+        multi_phase_plot(results,data,savepath=savepath)
     if data.has_astrometry():
         orbit_plot(results,data,savepath=savepath)
         sky_motion_plot(results,data,savepath=savepath)

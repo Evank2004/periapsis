@@ -3,7 +3,7 @@ from periapsis.data.common import RadialVelocityData
 from periapsis.model.orbit import Orbit
 from scipy.optimize import minimize,differential_evolution
 from periapsis.params.transforms import covered_parameters, build_transform_functions
-from periapsis.prior import Prior
+from periapsis.prior import Prior, Bounds
 from periapsis.prior.fixed_prior import FixedPrior
 
 from .initial import InitialGuess
@@ -68,9 +68,15 @@ class RVInitialGuess(InitialGuess):
         return bounds
 
     def neg_lnlike(self, params, data):
-        params_dict = dict(zip(self.priors.keys(), params))
+        param_in = [name for name, prior in self.priors.items() if not isinstance(prior, (Bounds, FixedPrior))]
+        params_dict = dict(zip(param_in, params))
+        params_dict.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
         model = Orbit(**params_dict)
-        ln_like = -0.5 * data.chi2(model)
+        offset_names = {
+            name for name in params_dict
+            if name.startswith("rv_") and name.endswith("_offset")
+        }
+        ln_like = data.log_likelihood(model, offset_names=offset_names)
 
         lp = 0
         for name, val in params_dict.items():
@@ -97,6 +103,8 @@ class RVInitialGuess(InitialGuess):
         P_guess = self.Zucker_pdc()
         initial_points = []
         for i in self.priors:
+            if isinstance(self.priors[i], (Bounds, FixedPrior)):
+                continue
             if i == 'P':
                 initial_points.append(P_guess)
             else:
@@ -130,7 +138,8 @@ class RVInitialGuess(InitialGuess):
         )
 
         prior_guess = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
-        transform = build_transform_functions(param_in, param_order)
+        prior_guess.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
+        transform = build_transform_functions([*param_in, *self.fixed_prior_params], param_order)
         guess = transform(**prior_guess)
 
         poss = []

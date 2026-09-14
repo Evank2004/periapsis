@@ -6,7 +6,7 @@ from scipy.signal import find_peaks
 from periapsis.params.transforms import build_transform_functions
 from periapsis.prior import FixedPrior, Bounds
 from periapsis.utils.solvers import solve_kepler
-from periapsis.utils.helpers import _matrix_builder,_lsq_helper,_matrix_filler
+from periapsis.utils.helpers import _matrix_builder,_lsq_helper,_matrix_filler,_sigma
 import periapsis.params as params
 
 from .initial import InitialGuess
@@ -67,7 +67,11 @@ class AstrometryInitialGuess(InitialGuess):
     def ln_like(self,params_dict,data):
         """Returns the log likelihood of the given parameters based on the data"""
         model = Orbit(**params_dict)
-        return -0.5 * data.chi2(model)
+        offset_names = {
+            name for name in params_dict
+            if name.startswith("astro_") and name.endswith("_offset")
+        }
+        return data.log_likelihood(model, offset_names=offset_names)
         
     
     def ln_prior(self,params_dict,priors):
@@ -87,6 +91,7 @@ class AstrometryInitialGuess(InitialGuess):
     
     def neg_lnlike(self,params,data,priors,param_in):
         params_dict = dict(zip(param_in,params))
+        params_dict.update({name: prior.value for name, prior in priors.items() if isinstance(prior, FixedPrior)})
         return -(self.ln_prior(params_dict, priors) + self.ln_like(params_dict, data))
     
 
@@ -99,7 +104,7 @@ class AstrometryInitialGuess(InitialGuess):
         initial_points = []
         for i in self.priors.keys():
             prior = self.priors[i]
-            if isinstance(prior, Bounds):
+            if isinstance(prior, (Bounds, FixedPrior)):
                 continue
             param_in.append(i)
             if i == params.a or i == params.a1 or i == params.a2:
@@ -127,8 +132,11 @@ class AstrometryInitialGuess(InitialGuess):
         )
 
         def bounds_transform_fn(bound):
-            transform = build_transform_functions(param_in, [bound])
-            return lambda x: transform(**dict(zip(param_in, x)))[bound]
+            transform = build_transform_functions([*param_in, *self.fixed_prior_params], [bound])
+            return lambda x: transform(
+                **dict(zip(param_in, x)),
+                **{name: prior.value for name, prior in self.fixed_prior_params.items()},
+            )[bound]
 
         constraints = []
         for name, bound in self.priors.items():
@@ -147,7 +155,8 @@ class AstrometryInitialGuess(InitialGuess):
         )
 
         best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
-        transform = build_transform_functions(param_in, param_order)
+        transform = build_transform_functions([*param_in, *self.fixed_prior_params], param_order)
+        best_prior_values.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:
@@ -167,6 +176,7 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         
     def neg_lnlike(self,params,data,priors,param_in):
         params_dict = dict(zip(param_in,params))
+        params_dict.update({name: prior.value for name, prior in priors.items() if isinstance(prior, FixedPrior)})
         lp = self.ln_prior(params_dict, priors)
         if np.isinf(lp):
             return -np.inf
@@ -185,7 +195,7 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         initial_points = []
         for i in self.priors:
             prior = self.priors[i]
-            if isinstance(prior, Bounds):
+            if isinstance(prior, (Bounds, FixedPrior)):
                 continue
             param_in.append(i)
             if i == params.a or i == params.a1 or i == params.a2:
@@ -202,8 +212,11 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         initial_points = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
 
         def bounds_transform_fn(bound):
-            transform = build_transform_functions(param_in, [bound])
-            return lambda x: transform(**dict(zip(param_in, x)))[bound]
+            transform = build_transform_functions([*param_in, *self.fixed_prior_params], [bound])
+            return lambda x: transform(
+                **dict(zip(param_in, x)),
+                **{name: prior.value for name, prior in self.fixed_prior_params.items()},
+            )[bound]
         
         constraints = []
         for name, bound in self.priors.items():
@@ -231,7 +244,8 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         )
 
         best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
-        transform = build_transform_functions(param_in, param_order)
+        transform = build_transform_functions([*param_in, *self.fixed_prior_params], param_order)
+        best_prior_values.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:
@@ -243,6 +257,7 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
 def matrix_method(self,params_dict,data):
 
     _matrix_filler(self.M,self.cols,params_dict,data)
-    mu,chi2 = _lsq_helper(self.M,self.eta,self.err)
+    sigma = _sigma(data,params_dict,self.err)
+    mu,chi2 = _lsq_helper(self.M,self.eta,sigma)
     
     return mu, chi2    

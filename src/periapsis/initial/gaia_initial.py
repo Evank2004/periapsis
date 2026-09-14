@@ -1,7 +1,9 @@
 import numpy as np
-from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler, _null_matrix_builder, _fill_periodogram_periodic
+from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler, _null_matrix_builder, _fill_periodogram_periodic, _sigma
 from periapsis.data.gaia import GaiaData
 from periapsis.params.transforms import build_transform_functions
+from periapsis.prior import Bounds, FixedPrior
+from scipy.optimize import differential_evolution, minimize, NonlinearConstraint
 
 from .initial import InitialGuess
 
@@ -47,39 +49,98 @@ class GaiaInitialGuess(InitialGuess):
         max_pwr = power[np.argmax(power)]
 
         return P_guess, max_pwr
-    
+
+    def _bounds(self,prior_param_names):
+        """Returns bounds on the fitted parameters based on the priors"""
+        bounds = []
+        for name in prior_param_names:
+            prior = self.priors.get(name)
+            if prior is not None:
+                bounds.append((prior.min, prior.max))
+            else:
+                raise ValueError(f"Missing prior bounds for parameter: {name}")   
+        return bounds
+
+    def neg_lnlike(self, params, data, priors, param_in):
+        params_dict = dict(zip(param_in, params))
+        params_dict.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
+        params_dict.update(self.PeTp_transform(**params_dict))
+
+        _matrix_filler(self.M_base, self.cols, params_dict, data)
+        sigma = _sigma(data, params_dict, data.err)
+        _, chi2 = _lsq_helper(self.M_base, data.x, sigma)
+
+        ln_prior = 0.0
+        for name in param_in:
+            ln_prior += priors[name].logpdf(params_dict[name])
+        if not np.isfinite(ln_prior) or not np.isfinite(chi2):
+            return np.inf
+        return 0.5 * chi2 - ln_prior
 
     def get_initial_guess(self, param_order, nwalkers):
-        "Returns Period guess from Delisle periodogram and random samples of other parameters"
+        """Return walkers around a globally and locally optimized Gaia solution."""
         P_guess, _ = self.Delisle_periodogram()
-        initial = []
-        for i in self.priors:
-            if i == 'P':
-                initial.append(P_guess)
+        self.PeTp_transform = build_transform_functions(
+            self.priors.keys(), ('P', 'e', 'Tp')
+        )
+        param_in = [
+            name for name, prior in self.priors.items()
+            if not isinstance(prior, (Bounds, FixedPrior))
+        ]
+        bounds = self._bounds(param_in)
+        lower = np.array([bound[0] for bound in bounds], dtype=float)
+        upper = np.array([bound[1] for bound in bounds], dtype=float)
+        initial_points = []
+        for name in param_in:
+            if name == 'P':
+                initial_points.append(P_guess)
             else:
-                prior = self.priors[i]
-                initial.append(self.rng.uniform(prior.min,prior.max))
+                initial_points.append(self.priors[name].sample(self.rng, size=1)[0])
+        initial_points = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
 
-        initial_fit_priors = dict(zip(self.priors.keys(),initial))
-        transform = build_transform_functions(initial_fit_priors.keys(), ('P', 'e', 'Tp',))
-        initial_fit = transform(**initial_fit_priors)
-    
-
-        P0 = initial_fit['P']
-        e0 = initial_fit['e']
-        Tp0 = initial_fit['Tp']
-        initial_set = []
-        for name in param_order:
-            if name == "jitter":
-                initial_set.append(0.005)
-            elif name not in initial_fit:
-                raise ValueError(f"Missing initial guess for parameter: {name}")
-            else:
-                initial_set.append(initial_fit[name])       
-        
-        # initial_params = np.clip(np.asarray(initial_set, dtype=float), lower, upper)
-        initial_params = np.asarray(initial_set, dtype=float)
+        def bounds_transform_fn(bound):
+            transform = build_transform_functions(self.priors.keys(), [bound])
+            def evaluate(values):
+                params = dict(zip(param_in, values))
+                params.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
+                return transform(**params)[bound]
+            return evaluate
                 
-        # initial = np.clip(initial_params + np.random.randn(self.nwalkers,len(param_order)) * 1e-2, lower, upper)
-        initial = initial_params + self.rng.normal(size=(nwalkers,len(param_order))) * 1e-2 * initial_params
-        return initial
+        constraints = []
+        for name, bound in self.priors.items():
+            if not isinstance(bound, Bounds):
+                continue
+            constraints.append(NonlinearConstraint(bounds_transform_fn(name),  bound.lower, bound.upper))
+                
+
+        result = differential_evolution(
+            self.neg_lnlike,
+            bounds=bounds,
+            args=(self.data, self.priors, param_in),
+            maxiter=2000,
+            polish=False,
+            x0=initial_points,
+        )
+        orbit = minimize(
+            self.neg_lnlike,
+            x0=result.x,
+            method='SLSQP',
+            args=(self.data, self.priors, param_in),
+            bounds=bounds,
+            constraints=constraints,
+            options={'maxiter': 2000},
+        )
+
+        best_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
+        best_values.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
+        best_values.update(self.PeTp_transform(**best_values))
+        poss = []
+        for name in param_order:
+            if name not in best_values:
+                raise ValueError(f"Missing initial guess for parameter: {name}")
+            poss.append(
+                best_values[name]
+                + self.rng.normal(0, 1e-4, size=nwalkers) * best_values[name]
+            )
+
+        return np.column_stack(poss)

@@ -1,4 +1,4 @@
-from periapsis.data.common import AstrometryData
+from periapsis.data import AstrometryData, RadialVelocityData, GaiaData, JointData
 from periapsis.prior import Bounds, FixedPrior
 
 from .fitter import Fitter
@@ -6,6 +6,7 @@ from periapsis.model.orbit import Orbit
 from periapsis.data.data import Data
 from periapsis.fitting.results import FitResults
 from periapsis.params.transforms import covered_parameters, build_transform_functions, overconstrained_parameters, wrapped_parameters
+from periapsis.params.units import CanonicalUnits
 
 import numpy as np
 import ultranest
@@ -13,7 +14,7 @@ import ultranest
 reject_logl = -1e300
 
 class UltranestFitter(Fitter):
-    def __init__(self, output_params, ref_epoch=0, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
+    def __init__(self, output_params, ref_epoch=None, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
         super().__init__(ref_epoch,**priors)
         self.output_params = frozenset(output_params)
         self.output_param_order = tuple(output_params)
@@ -51,6 +52,8 @@ class UltranestFitter(Fitter):
         self.prior_to_sampled_transform = build_transform_functions(self.non_bound_prior_params, output_params)
 
     def fit(self, data: Data, quiet=False) -> FitResults:
+        canonical_priors = self._canonical_priors(data)
+        canonical_ref_epoch = canonical_priors['Tepoch'].value
         param_order = self.sample_order
         full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
         likelihood_transform = build_transform_functions([*full_param_order, *self.fixed_prior_params], self.bound_params)
@@ -60,43 +63,35 @@ class UltranestFitter(Fitter):
             sampled_priors = {}
             i = 0
             for name in param_order:
-                sampled_priors[name] = self.priors[name].unp(cube[i])
+                sampled_priors[name] = canonical_priors[name].unp(cube[i])
                 i += 1
-            params = self.prior_to_sampled_transform(**sampled_priors, **{name: self.priors[name].value for name in self.fixed_prior_params})
+            params = self.prior_to_sampled_transform(
+                **sampled_priors,
+                **{name: canonical_priors[name].value for name in self.fixed_prior_params},
+            )
             return np.array([*[sampled_priors[name] for name in param_order], *[params[name] for name in self.output_param_order if name not in param_order]])
 
         def log_likelihood(params):
             full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
             param_dict = dict(zip(full_param_order, params))
-            param_dict.update({name: self.priors[name].value for name in self.fixed_prior_params})
+            param_dict.update({name: canonical_priors[name].value for name in self.fixed_prior_params})
             bound_param_dict = likelihood_transform(**param_dict)
             for name in self.bound_params:
-                if self.priors[name].lower is not None and bound_param_dict[name] < self.priors[name].lower:
+                if canonical_priors[name].lower is not None and bound_param_dict[name] < canonical_priors[name].lower:
                     return reject_logl # TODO possibly slope inwards towards the bounds instead of hard cutoff
-                if self.priors[name].upper is not None and bound_param_dict[name] > self.priors[name].upper:
+                if canonical_priors[name].upper is not None and bound_param_dict[name] > canonical_priors[name].upper:
                     return reject_logl # TODO possibly slope inwards towards the bounds
             model = Orbit(**param_dict)
-            chi2 = data.chi2(model)
-            return -0.5 * chi2
+            log_likelihood = data.log_likelihood(model)
+            if not np.isfinite(log_likelihood):
+                return reject_logl
+            return log_likelihood
 
                 
 
-
-        # def log_likelihood(params):
-        #     prior_params = self.sampled_to_prior_transform(**dict(zip(param_order, params)), **{name: self.priors[name].value for name in self.fixed_prior_params})
-        #     for name, prior in self.priors.items():
-        #         if isinstance(prior, Bounds):
-        #             if not (prior.lower <= prior_params[name] <= prior.upper):
-        #                 return -np.inf
-        #     params_dict = dict(zip(self.output_params, params))
-        #     fixed_prior_dict = {name: prior.value for name, prior in self.priors.items() if isinstance(prior, FixedPrior)}
-        #     model = Orbit(**params_dict, **fixed_prior_dict)
-        #     chi2 = data.chi2(model)
-        #     if chi2 is None:
-        #         return -np.inf
-        #     return -0.5 * chi2
-
-        null_hypothesis = self._null_hypothesis_fit(data)
+        null_hypothesis_canonical = self._null_hypothesis_fit(
+            data, ref_epoch=canonical_ref_epoch
+        )
 
         sampler = ultranest.ReactiveNestedSampler(
             param_names=tuple(param_order),
@@ -117,42 +112,74 @@ class UltranestFitter(Fitter):
             show_status=not quiet,
             viz_callback=False if quiet else 'auto',
         )
-        
         samples = np.array(results['samples'])
         logl = np.array(results['weighted_samples']['logl'])
-        # logl = np.array(results['logl'])
-        
+
         best_i = np.argmax(logl)
-        best_params = dict(zip(param_order, samples[best_i]))
-        median_params = dict(zip(param_order, np.median(samples, axis=0)))
+        best_params = dict(zip(full_param_order, samples[best_i]))
+        median_params = dict(zip(full_param_order, np.median(samples, axis=0)))
         for prior in self.fixed_prior_params:
-            best_params[prior] = self.priors[prior].value
-            median_params[prior] = self.priors[prior].value
-               
-        
+            best_params[prior] = canonical_priors[prior].value
+            median_params[prior] = canonical_priors[prior].value
+
+        if null_hypothesis_canonical is None:
+            raise RuntimeError("Null-hypothesis fitting returned no result.")
+
+        def from_canonical(name, value):
+            unit = data.parameter_unit(name)
+            dimension = data.parameter_dimension(name)
+            if unit is None or dimension is None:
+                raise ValueError(f"Could not resolve units for parameter '{name}'.")
+            return np.asarray(value) / unit.to(CanonicalUnits[dimension])
+
+        reported_samples = np.column_stack([
+            from_canonical(name, samples[:, i])
+            for i, name in enumerate(full_param_order)
+        ])
+        reported_best_params = {
+            name: from_canonical(name, value)
+            for name, value in best_params.items()
+        }
+        reported_median_params = {
+            name: from_canonical(name, value)
+            for name, value in median_params.items()
+        }
+        null_hypothesis = dict(null_hypothesis_canonical)
+        null_hypothesis['params'] = {
+            name: from_canonical(name, value)
+            for name, value in null_hypothesis_canonical['params'].items()
+        }
+        known_output_names = set(full_param_order) | set(canonical_priors)
+        parameter_factors = {
+            name: data.parameter_unit(name).to(
+                CanonicalUnits[data.parameter_dimension(name)]
+            )
+            for name in known_output_names
+        }
+
         results_dict = {}
         for i, name in enumerate(param_order):
-            results_dict[name] = samples[:, i]
+            results_dict[name] = reported_samples[:, i]
 
-        # Add derived parameters to results_dict
         for i, name in enumerate([name for name in self.output_param_order if name not in param_order]):
-            results_dict[name] = samples[:, len(param_order) + i]
-                
-                
+            results_dict[name] = reported_samples[:, len(param_order) + i]
+
         results_dict['Ess'] = results['ess']
         results_dict['logZ'] = results['logz']
         results_dict['logZerr'] = results['logzerr']
         results_dict['param_names'] = param_order
         results_dict['raw_sampler'] = sampler
-        results_dict['MAP_params'] = best_params
-        results_dict['median_params'] = median_params
+        results_dict['MAP_params'] = reported_best_params
+        results_dict['median_params'] = reported_median_params
         results_dict['null_hypothesis'] = null_hypothesis
         results_dict['logl'] = logl
-        results_dict['samples'] = samples
-        results_dict['ref_epoch'] = self.ref_epoch
+        results_dict['samples'] = reported_samples
+        results_dict['ref_epoch'] = self._reported_ref_epoch(data)
         results_dict['backend'] = 'ultranest'
         results_dict['fit_method'] = 'Campbell'
         results_dict['priors'] = self.priors
+        results_dict['canonical_priors'] = canonical_priors
+        results_dict['parameter_factors'] = parameter_factors
 
         
         fit_results = FitResults(**results_dict)

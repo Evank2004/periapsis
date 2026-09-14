@@ -5,16 +5,19 @@ from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData,G
 from periapsis.utils.helpers import _lsq_helper, _null_matrix_builder
 from periapsis.fitting.results import FitResults
 from periapsis.prior.fixed_prior import FixedPrior
+from copy import deepcopy
+from periapsis.params.units import CanonicalUnits
+
 
 class Fitter(ABC):
     """
     A Fitter defines the configuration for fitting an orbit to data, including the priors on the orbital parameters.
     """
 
-    def __init__(self, ref_epoch=0, **priors):
+    def __init__(self, ref_epoch=None, **priors):
         self.priors = priors
         self.ref_epoch = ref_epoch
-        self.priors['Tepoch'] = FixedPrior(ref_epoch)
+        self.priors['Tepoch'] = FixedPrior(0.0 if ref_epoch is None else ref_epoch)
 
     @abstractmethod
     def fit(self, data: Data) -> FitResults:
@@ -33,75 +36,39 @@ class Fitter(ABC):
         """
         pass
 
-    def _null_hypothesis_fit(self, data: Data):
+    def _null_hypothesis_fit(self, data: Data,ref_epoch=None):
         """
         Fits a null hypothesis model to the given data.
         """
+        if ref_epoch is None:
+            ref_epoch = self.ref_epoch
+            if ref_epoch is None:
+                ref_epoch = getattr(data, 'ref_epoch', 0.0)
         if isinstance(data,AstrometryData):
-            mu_x = getattr(data, 'mu_x', None)
-            mu_y = getattr(data, 'mu_y', None)
-            if mu_x is not None and mu_y is not None:
-                dt = data.t - self.ref_epoch
-                n_obs = len(data.t)
-
-                x_prime = data.x - mu_x * dt
-                y_prime = data.y - mu_y * dt
-
-                d = np.concatenate([x_prime, y_prime])
-                sigma = np.concatenate([data.x_err, data.y_err])
-                w = 1.0 / sigma
-
-                M = np.zeros((2 * n_obs, 3))
-                M[:n_obs, 0] = 1.0            # alpha0
-                M[:n_obs, 2] = data.plxf_x    # parallax (RA component)
-                M[n_obs:, 1] = 1.0            # delta0
-                M[n_obs:, 2] = data.plxf_y    # parallax (Dec component)
-
-                
-                M_w = M * w[:, np.newaxis]
-                d_w = d * w
-
-                mu, _, _, _ = np.linalg.lstsq(M_w, d_w, rcond=None)
-                alpha0, delta0, parallax = mu
-
-                res_w = d_w - M_w @ mu
-                chi2 = np.sum(res_w**2)
-                dof = 2 * n_obs - 3
-                return {
-                    'params': {
-                        'dalpha': alpha0,
-                        'ddelta': delta0,
-                        'mu_alpha': mu_x,
-                        'mu_delta': mu_y,
-                        'parallax': parallax,
-                    },
-                    'chi2': chi2,
-                    'dof': dof,
-                }
-            else:
-                A,cols = _null_matrix_builder(data,self.ref_epoch)
-                x = np.concatenate([data.x,data.y])
-                err = np.concatenate([data.x_err,data.y_err])
-                mu,chi2 = _lsq_helper(A,x,err)
-                dof = 2*len(data.t)-len(mu)
-                return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
+           
+            A,cols = _null_matrix_builder(data,ref_epoch)
+            x = np.concatenate([data.x,data.y])
+            err = np.concatenate([data.x_err,data.y_err])
+            mu,chi2 = _lsq_helper(A,x,err)
+            dof = 2*len(data.t)-len(mu)
+            return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
             
         elif isinstance(data,RadialVelocityData):
-            A,cols = _null_matrix_builder(data,self.ref_epoch)
+            A,cols = _null_matrix_builder(data,ref_epoch)
             x = data.rv
             err = data.rv_err
             mu,chi2 = _lsq_helper(A,x,err)
             dof = len(data.t)-len(mu)
             return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
         elif isinstance(data,JointData):
-            A,cols = _null_matrix_builder(data,self.ref_epoch)
+            A,cols = _null_matrix_builder(data,ref_epoch)
             x = data._concat_obs()
             err = data._err()
             mu,chi2 = _lsq_helper(A,x,err)
             dof = len(x)-len(mu)
             return {'params':dict(zip(cols,mu)),'chi2':chi2,'dof':dof}
         elif isinstance(data,GaiaData):
-            A,cols = _null_matrix_builder(data,self.ref_epoch)
+            A,cols = _null_matrix_builder(data,ref_epoch)
             x = data.x
             err = data.err
             mu,chi2 = _lsq_helper(A,x,err)
@@ -112,9 +79,43 @@ class Fitter(ABC):
     def _astrometric_offset_seeds(self, data: Data):
         """Return sensible starting values for optional astrometric offsets."""
         pm_fit = self._null_hypothesis_fit(data)
+        if pm_fit is None:
+            raise RuntimeError("Null-hypothesis fitting returned no result.")
         return {
             'dalpha': pm_fit['params']['dalpha'],
             'ddelta': pm_fit['params']['ddelta'],
             'mu_alpha': pm_fit['params']['mu_alpha'],
             'mu_delta': pm_fit['params']['mu_delta'],
         }
+
+    def _canonical_priors(self,data):
+        """
+        Returns deep-copy of priors scaled to canonical units"""
+
+        canonical_priors = deepcopy(self.priors)
+        data_ref_epoch = getattr(data, 'ref_epoch', None)
+        if self.ref_epoch is None and data_ref_epoch is not None:
+            canonical_priors['Tepoch'] = FixedPrior(data_ref_epoch)
+
+        for name, prior in canonical_priors.items():
+            if name == 'Tepoch' and self.ref_epoch is None and data_ref_epoch is not None:
+                continue
+            unit = data.parameter_unit(name)
+            dimension = data.parameter_dimension(name)
+
+            if unit is None or dimension is None:
+                raise ValueError(f"Cannot determine unit or dimension for parameter '{name}'.")
+
+            factor = unit.to(CanonicalUnits[dimension])
+            prior.scale(factor)
+
+        return canonical_priors
+
+    def _reported_ref_epoch(self, data):
+        if self.ref_epoch is not None:
+            return self.ref_epoch
+        data_ref_epoch = getattr(data, 'ref_epoch', None)
+        if data_ref_epoch is None:
+            return None
+        unit = data.parameter_unit('t')
+        return data_ref_epoch / unit.to(CanonicalUnits['time'])

@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 all_parameters = {
     'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'piomega', 'P', 'A', 'B', 'C', 'F', 'G', 'H', 'cosi', 'sini', 'Mtot', 'mu',
@@ -468,7 +468,20 @@ Distance from the observer to the system.
 
 This is only well-defined for objects outside the solar system which have a distance much greater than the size of the observer's orbit around the Sun. At this distance, the difference between helio- and geo-centric distances is negligible.
 """
+rv_trend = "rv_trend"
+"""
+Linear radial velocity trend caused by massive, long period companions.
+"""
 
+def flux_parameter(band: Optional[str]) -> Optional[str]:
+    """
+    Define flux ratio parameter for given photometric band.
+    """
+    if band is None:
+        return None
+    if not isinstance(band, str):
+        raise ValueError(f"band must be a string or None, got {type(band)}")
+    return f'f_{band}'
 
 def log(param):
     """

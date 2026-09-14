@@ -5,21 +5,38 @@ from periapsis.data import Data, AstrometryData, RadialVelocityData, GaiaData, J
 from .fitter import Fitter
 from periapsis.fitting.results import FitResults
 from periapsis.utils.solvers import solve_kepler
-from periapsis.utils.helpers import _matrix_builder,_matrix_filler,_lsq_helper
+from periapsis.utils.helpers import _matrix_builder, _matrix_filler, _lsq_helper, _sigma,_jitter_check
 from periapsis.initial import InitialGuess, AstrometryLinearInitialGuess, RVInitialGuess, GaiaInitialGuess, JointInitialGuess
-from periapsis.prior import FixedPrior
+from periapsis.prior import Bounds, FixedPrior
 from periapsis.params.transforms import covered_parameters, build_transform_functions
+from periapsis.params.units import CanonicalUnits
 import periapsis.params as par
 import numpy as np
 import emcee
 from typing import Type
 
 class MCMCLinearFitter(Fitter):
-    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'), ref_epoch=0, **priors):
+    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'), ref_epoch=None, **priors):
         super().__init__(ref_epoch,**priors)
         self.nwalkers = nwalkers
         self.niter = niter
         self.fixed_prior_params = {p for p in self.priors.keys() if isinstance(self.priors[p], FixedPrior)}
+        sampled_params = tuple(sampled_params)
+        sampled_jitter_params = tuple(
+            name
+            for name, prior in self.priors.items()
+            if name.endswith("_jitter")
+            and not isinstance(prior, (Bounds, FixedPrior))
+            and name not in sampled_params
+        )
+        sampled_flux_params = tuple(
+            name
+            for name, prior in self.priors.items()
+            if name.startswith('f_')
+            and not isinstance(prior, (Bounds, FixedPrior))
+            and name not in sampled_params
+        )
+        sampled_params = (*sampled_params, *sampled_jitter_params, *sampled_flux_params)
         self.covered_params = covered_parameters({*sampled_params, *self.fixed_prior_params})
         if any(param not in self.covered_params for param in (par.P, par.e, par.Tp)):
             raise ValueError("MCMCLinearFitter requires sampled_params to define 'P', 'e', and 'Tp'.")
@@ -40,19 +57,25 @@ class MCMCLinearFitter(Fitter):
         if not isinstance(data, (AstrometryData, RadialVelocityData, JointData, GaiaData)):
             raise ValueError("MCMCLinearFitter supports AstrometryData, RadialVelocityData, JointData, and GaiaData.")
 
+        canonical_priors = self._canonical_priors(data)
+        canonical_ref_epoch = canonical_priors['Tepoch'].value
         param_order = self.param_order
-        param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, (par.P, par.e, par.Tp,))
+        transform_args = [par.P, par.e, par.Tp]
+        known_flux_params = (*param_order, *self.fixed_prior_params)
+        if any(name.startswith('f_') for name in known_flux_params):
+            transform_args.append(par.q)
+
+        param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, transform_args)
         ndim = len(param_order)
 
-        self.M, self.cols = _matrix_builder(data, self.ref_epoch)
+        self.M, self.cols = _matrix_builder(data, canonical_ref_epoch)
 
 
         # Matrix method cached variables
         if isinstance(data, AstrometryData):
             mm_eta = np.concatenate((data.x, data.y))
             mm_sigma = np.concatenate((data.x_err, data.y_err))
-            mm_w = 1/mm_sigma
-            mm_eta_w = mm_eta * mm_w
+            
             
         
         
@@ -75,10 +98,11 @@ class MCMCLinearFitter(Fitter):
             
             _matrix_filler(self.M,self.cols,params_dict,data)
 
-            mu,chi2 = _lsq_helper(self.M,mm_eta,mm_sigma)
+            sigma = _sigma(data, params_dict, mm_sigma)
+            mu,chi2 = _lsq_helper(self.M,mm_eta,sigma)
 
              
-            return mu, chi2
+            return mu, chi2, sigma
     
 
         early_prior_transforms = build_transform_functions([*self.sampled_params, *self.fixed_prior_params], self.early_prior_params)
@@ -88,40 +112,55 @@ class MCMCLinearFitter(Fitter):
             ln_prior = 0.0
             early_transformed = early_prior_transforms(
                 **dict(zip(param_order, params)),
-                **{name: self.priors[name].value for name in self.fixed_prior_params}
+                **{name: canonical_priors[name].value for name in self.fixed_prior_params}
             )
             for name in self.early_prior_params:
                 val = early_transformed[name]
                 if not np.isfinite(val):
                     return -np.inf
-                ln_prior += self.priors[name].logpdf(val)
+                ln_prior += canonical_priors[name].logpdf(val)
             
             # Calculate full orbit solution and chi2
-            params_dict = param_transforms(**dict(zip(param_order,params)), **{name: self.priors[name].value for name in self.fixed_prior_params})
+            params_dict = dict(zip(param_order, params))
+            params_dict.update({
+                name: canonical_priors[name].value
+                for name in self.fixed_prior_params
+            })
+            params_dict.update(param_transforms(**params_dict))
 
-            mu, chi2 = matrix_method(params_dict)
+            mu, chi2, sigma = matrix_method(params_dict)
 
             # Evaluate priors for parameters that require full orbit solution, short circuiting if any are invalid
             
             late_transformed = late_prior_transforms(
                 **dict(zip(param_order, params)),
-                **{**{name: self.priors[name].value for name in self.fixed_prior_params},
+                **{**{name: canonical_priors[name].value for name in self.fixed_prior_params},
                     **{name:mu[self.cols[name]] for name in self.cols }})
                 
             for name in self.late_prior_params:
                 val = late_transformed[name]
                 if not np.isfinite(val):
                     return -np.inf
-                ln_prior += self.priors[name].logpdf(val)
+                ln_prior += canonical_priors[name].logpdf(val)
 
             if not np.isfinite(chi2):
                 return -np.inf
             
-            ln_likelihood = -0.5 * chi2
+            
+            jitter_check = _jitter_check(data, params_dict)
+
+            if np.any(jitter_check):
+                ln_likelihood = -0.5 * (chi2
+                    + np.sum(np.log(2 * np.pi * sigma ** 2))
+                )
+            else:
+                ln_likelihood = -0.5 * chi2
 
             return ln_prior + ln_likelihood
         
-        null_hypothesis = self._null_hypothesis_fit(data)
+        null_hypothesis_canonical = self._null_hypothesis_fit(
+            data, ref_epoch=canonical_ref_epoch
+        )
 
         if initial is None:
             if isinstance(data, AstrometryData):
@@ -134,7 +173,7 @@ class MCMCLinearFitter(Fitter):
                 initial = JointInitialGuess
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for linearized MCMC initial guess generation.")
-        initial_instance = initial(data, rng, self.ref_epoch, **self.priors)
+        initial_instance = initial(data, rng, canonical_ref_epoch, **canonical_priors)
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
         sampler = emcee.EnsembleSampler(self.nwalkers, ndim, lnprob, args=(data,))
         sampler.run_mcmc(pos, self.niter,progress=True)
@@ -172,9 +211,14 @@ class MCMCLinearFitter(Fitter):
         
 
         for param in samples:
-            transformed_param = param_transforms(**dict(zip(param_order, param)), **{name: self.priors[name].value for name in self.fixed_prior_params})
-            
-            mu, _ = matrix_method(transformed_param)
+            transformed_param = dict(zip(param_order, param))
+            transformed_param.update({
+                name: canonical_priors[name].value
+                for name in self.fixed_prior_params
+            })
+            transformed_param.update(param_transforms(**transformed_param))
+
+            mu, _, _ = matrix_method(transformed_param)
             full_posterior.append((*param,*(mu[self.cols[name]] for name in self.cols)))
 
         post_labels = [*param_order, *self.cols.keys()]
@@ -183,11 +227,45 @@ class MCMCLinearFitter(Fitter):
         best_params = dict(zip(post_labels, full_posterior[best_i]))
         median_params = dict(zip(post_labels, np.median(full_posterior, axis=0)))
         for prior in self.fixed_prior_params:
-            best_params[prior] = self.priors[prior].value
-            median_params[prior] = self.priors[prior].value
+            best_params[prior] = canonical_priors[prior].value
+            median_params[prior] = canonical_priors[prior].value
+
+        if null_hypothesis_canonical is None:
+            raise RuntimeError("Null-hypothesis fitting returned no result.")
+
+        def from_canonical(name, value):
+            unit = data.parameter_unit(name)
+            dimension = data.parameter_dimension(name)
+            factor = unit.to(CanonicalUnits[dimension])
+            return np.asarray(value) / factor
+
+        full_posterior_array = np.asarray(full_posterior, dtype=float)
+        reported_posterior = np.column_stack([
+            from_canonical(name, full_posterior_array[:, i])
+            for i, name in enumerate(post_labels)
+        ])
+        reported_best_params = {
+            name: from_canonical(name, value)
+            for name, value in best_params.items()
+        }
+        reported_median_params = {
+            name: from_canonical(name, value)
+            for name, value in median_params.items()
+        }
+        null_hypothesis = dict(null_hypothesis_canonical)
+        null_hypothesis['params'] = {
+            name: from_canonical(name, value)
+            for name, value in null_hypothesis_canonical['params'].items()
+        }
+        parameter_factors = {
+            name: data.parameter_unit(name).to(
+                CanonicalUnits[data.parameter_dimension(name)]
+            )
+            for name in set(post_labels) | set(canonical_priors)
+        }
 
         columns = {label: [] for label in post_labels}
-        for sample in full_posterior:
+        for sample in reported_posterior:
             for label, value in zip(post_labels, sample):
                 columns[label].append(value)
 
@@ -197,20 +275,22 @@ class MCMCLinearFitter(Fitter):
         results_dict['Ess'] = Ess
         results_dict['mean_acceptance_fraction'] = maf
         results_dict['tau'] = tau
-        results_dict['param_means'] = param_means
+        results_dict['param_means'] = np.column_stack([
+            from_canonical(name, param_means[:, i])
+            for i, name in enumerate(param_order)
+        ])
         results_dict['param_names'] = post_labels
-        results_dict['MAP_params'] = best_params
-        results_dict['median_params'] = median_params
+        results_dict['MAP_params'] = reported_best_params
+        results_dict['median_params'] = reported_median_params
         results_dict['null_hypothesis'] = null_hypothesis
-        results_dict['ref_epoch'] = getattr(data, 'ref_epoch', None)
+        results_dict['ref_epoch'] = self._reported_ref_epoch(data)
         
         results_dict['raw_sampler'] = None
         results_dict['backend'] = 'emcee'
         results_dict['fit_method'] = 'linear'
         results_dict['priors'] = self.priors
-        # TODO: normalize ref_epoch
-        if results_dict['ref_epoch'] is not None:
-            results_dict['priors']['Tepoch'] = FixedPrior(results_dict['ref_epoch'])
+        results_dict['canonical_priors'] = canonical_priors
+        results_dict['parameter_factors'] = parameter_factors
         fit_results = FitResults(**results_dict)
         return fit_results
         

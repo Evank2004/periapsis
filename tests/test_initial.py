@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from astropy import units as u
 
 import periapsis.initial as initial_package
 import periapsis.initial.astrometry_initial as astrometry_module
@@ -17,6 +18,10 @@ from periapsis.initial import (
     JointInitialGuess,
     RVInitialGuess,
 )
+
+ASTRO_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
+RV_UNITS = {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr}
+GAIA_UNITS = {"t": u.yr, "x": u.rad, "err": u.rad}
 from periapsis.prior import FixedPrior
 
 
@@ -67,7 +72,8 @@ def make_rv_data():
         t=np.array([0.0, 1.0, 2.0, 3.0]),
         rv=np.array([0.0, 1.0, 0.0, -1.0]),
         rv_err=np.ones(4),
-        system="1"
+        system="1",
+        units=RV_UNITS,
     )
 
 
@@ -81,7 +87,8 @@ def make_astrometry_data():
         y_err=np.ones(6),
         plxf_x=np.abs(np.linspace(0.0, 5.0, 6)) + 0.1,
         plxf_y=np.abs(np.linspace(0.0, 5.0, 6)) + 0.1,
-        system="1"
+        system="1",
+        units=ASTRO_UNITS,
     )
 
 
@@ -94,7 +101,8 @@ def make_gaia_data():
         t=np.array([0.0, 1.0, 2.0, 3.0]),
         x=np.array([1.0, -0.5, 0.25, 0.75]),
         err=np.full(4, 0.1),
-        system="1"
+        system="1",
+        units=GAIA_UNITS,
     )
 
 
@@ -210,9 +218,9 @@ def test_zucker_period_search_uses_default_range_when_no_period_prior(
     ]
 
 
-def test_rv_negative_log_posterior_combines_chi2_and_priors(monkeypatch):
+def test_rv_negative_log_posterior_combines_log_likelihood_and_priors(monkeypatch):
     data = make_rv_data()
-    data.chi2 = lambda model: 8.0
+    data.log_likelihood = lambda model, offset_names=None: -4.0
     varying = StubPrior(-10.0, 10.0, logpdf_value=-1.5)
     fixed = FixedPrior(2.0)
     guess = RVInitialGuess(
@@ -240,7 +248,7 @@ def test_rv_negative_log_posterior_is_negative_infinity_outside_prior(
     monkeypatch,
 ):
     data = make_rv_data()
-    data.chi2 = lambda model: 0.0
+    data.log_likelihood = lambda model, offset_names=None: 0.0
     prior = StubPrior(0.0, 1.0, logpdf_value=-np.inf)
     guess = RVInitialGuess(data,ref_epoch=0.0,rng= np.random.RandomState(0), e=prior)
     monkeypatch.setattr(rv_module, "Orbit", lambda **parameters: object())
@@ -322,7 +330,7 @@ def test_astrometry_bounds_preserve_order_and_require_every_prior():
         guess._bounds(["P", "a"])
 
 
-def test_astrometry_log_likelihood_constructs_orbit_and_uses_chi2(monkeypatch):
+def test_astrometry_log_likelihood_constructs_orbit(monkeypatch):
     data = make_astrometry_data()
     captured = {}
 
@@ -330,7 +338,7 @@ def test_astrometry_log_likelihood_constructs_orbit_and_uses_chi2(monkeypatch):
         def __init__(self, **parameters):
             captured.update(parameters)
 
-    data.chi2 = lambda model: 12.0
+    data.log_likelihood = lambda model, offset_names=None: -6.0
     monkeypatch.setattr(astrometry_module, "Orbit", FakeOrbit)
     guess = AstrometryInitialGuess(data,ref_epoch=0.0, rng=np.random.RandomState(0))
 
@@ -523,6 +531,33 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
     )
 
 
+def test_astrometry_linear_objective_includes_fixed_epoch_transform(monkeypatch):
+    data = make_astrometry_data()
+    guess = AstrometryLinearInitialGuess(
+        data,
+        np.random.RandomState(0),
+        ref_epoch=1.5,
+        P=StubPrior(2.0, 8.0),
+        e=StubPrior(0.0, 0.9),
+        Tp=StubPrior(0.0, 8.0),
+        Tepoch=FixedPrior(1.5),
+    )
+    monkeypatch.setattr(
+        astrometry_module,
+        "matrix_method",
+        lambda self, params, data: (np.zeros(1), 2.0),
+    )
+
+    value = guess.neg_lnlike(
+        [4.0, 0.2, 1.0],
+        data,
+        guess.priors,
+        ["P", "e", "Tp"],
+    )
+
+    assert np.isfinite(value)
+
+
 def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
     data = make_gaia_data()
     guess = GaiaInitialGuess(
@@ -563,6 +598,7 @@ def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
             ]
         ),
     )
+    assert not np.allclose(matrices[1][:, 0], matrices[1][0, 0])
 
 
 def test_delisle_periodogram_uses_default_period_range(monkeypatch):
@@ -592,30 +628,38 @@ def test_gaia_initial_guess_uses_periodogram_and_adds_optional_jitter(
     monkeypatch,
 ):
     rng = RecordingRNG()
+    jitter_prior = StubPrior(0.001, 0.5, sample_value=0.05)
     guess = GaiaInitialGuess(
         make_gaia_data(), rng, ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
         e=StubPrior(0.1, 0.5),
         Tp=StubPrior(10.0, 14.0),
+        jitter=jitter_prior,
     )
     monkeypatch.setattr(guess, "Delisle_periodogram", lambda: (4.0, 0.8))
-    monkeypatch.setattr(
-        gaia_module.np.random,
-        "randn",
-        lambda *shape: np.zeros(shape),
-    )
+    optimizer_calls = {}
+
+    def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
+        optimizer_calls["global"] = (function, bounds, args, maxiter, polish, x0)
+        return SimpleNamespace(x=np.array([4.0, 0.3, 12.0, 0.05]))
+
+    def fake_minimize(function, x0, method, args, bounds, constraints, options):
+        optimizer_calls["local"] = (function, x0, method, args, bounds, constraints, options)
+        return SimpleNamespace(x=np.array([4.0, 0.3, 12.0, 0.05]))
+
+    monkeypatch.setattr(gaia_module, "differential_evolution", fake_differential_evolution)
+    monkeypatch.setattr(gaia_module, "minimize", fake_minimize)
 
     result = guess.get_initial_guess(
         ["P", "e", "Tp", "jitter"],
         nwalkers=3,
     )
 
-    np.testing.assert_allclose(
-        result,
-        np.tile([4.0, 0.3, 12.0, 0.005], (3, 1)),
-        rtol=0.5
-    )
-    assert rng.uniform_calls == [(0.1, 0.5, None), (10.0, 14.0, None)]
+    assert result.shape == (3, 4)
+    np.testing.assert_allclose(result[0], [4.0, 0.3, 12.0, 0.05])
+    np.testing.assert_allclose(optimizer_calls["global"][1], [(2.0, 8.0), (0.1, 0.5), (10.0, 14.0), (0.001, 0.5)])
+    np.testing.assert_allclose(optimizer_calls["global"][5][0], 4.0)
+    assert optimizer_calls["local"][2] == "SLSQP"
 
 
 def test_gaia_initial_guess_respects_arbitrary_parameter_order(monkeypatch):
@@ -634,8 +678,11 @@ def test_gaia_initial_guess_respects_arbitrary_parameter_order(monkeypatch):
 
     result = guess.get_initial_guess(["e", "Tp", "P"], nwalkers=2)
 
-    # Check that parameters are in the requested order
-    np.testing.assert_allclose(result, np.tile([0.3, 12.0, 4.0], (2, 1)), rtol=0.5)
+    # Check that parameters are returned in the requested order and within priors.
+    assert result.shape == (2, 3)
+    assert np.all((result[:, 0] >= 0.1) & (result[:, 0] <= 0.5))
+    assert np.all((result[:, 1] >= 10.0) & (result[:, 1] <= 14.0))
+    assert np.all((result[:, 2] >= 2.0) & (result[:, 2] <= 8.0))
 
 
 def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):

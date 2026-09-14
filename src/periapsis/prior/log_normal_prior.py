@@ -17,6 +17,13 @@ class LogNormalPrior(Prior):
 
         self.constants = -0.5*np.log(2*np.pi*self.std**2)
 
+    def scale(self, factor):
+        if factor <= 0:
+            raise ValueError("Prior scale factor must be positive.")
+        self.mean += np.log10(factor)
+        self.min = 10**(self.mean - 10*self.std)
+        self.max = 10**(self.mean + 10*self.std)
+
     def sample(self, random_state, size=1):
         return 10**random_state.normal(loc=self.mean, scale=self.std, size=size)
 

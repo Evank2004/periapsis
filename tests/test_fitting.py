@@ -1,5 +1,6 @@
 import numpy as np
 import pytest
+from astropy import units as u
 
 import periapsis.fitting.mcmc as mcmc_module
 import periapsis.fitting.mcmclinear as mcmc_linear_module
@@ -11,6 +12,11 @@ from periapsis.fitting import *
 from periapsis.initial import InitialGuess
 from periapsis.model import Orbit
 from periapsis.prior import Bounds, UniformPrior, FixedPrior
+from periapsis.utils.helpers import _matrix_builder, _matrix_filler, _sigma
+
+ASTRO_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
+RV_UNITS = {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr}
+GAIA_UNITS = {"t": u.yr, "x": u.rad, "err": u.rad}
 
 
 def test_mcmc_fitter_initializes():
@@ -18,6 +24,25 @@ def test_mcmc_fitter_initializes():
     fitter = MCMCFitter(nwalkers=10, niter=1000, sample_params=["P", "a1"], **priors)
     assert fitter.sample_params == {"P", "a1"}
     assert fitter.param_order == ("P", "a1")
+
+
+def test_fitter_uses_data_epoch_unless_explicit_epoch_is_given():
+    data = AstrometryData(
+        t=[0.0, 10.0],
+        x=[0.0, 0.0],
+        y=[0.0, 0.0],
+        x_err=[1.0, 1.0],
+        y_err=[1.0, 1.0],
+        ref_epoch=5.0,
+        system=1,
+        units={"t": u.day, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad},
+    )
+
+    data_epoch = DummyFitter()._canonical_priors(data)["Tepoch"].value
+    explicit_epoch = DummyFitter(ref_epoch=2.0)._canonical_priors(data)["Tepoch"].value
+
+    assert data_epoch == pytest.approx(5.0 * u.day.to(u.yr))
+    assert explicit_epoch == pytest.approx(2.0 * u.day.to(u.yr))
 
 def test_ultranest_fitter_initializes():
     priors = {"P": UniformPrior(1.0, 10.0), "a1": UniformPrior(0.1, 1.0)}
@@ -31,23 +56,139 @@ def test_mcmc_linear_fitter_initializes():
     assert fitter.sampled_params == {"P", "e", "Tp"}
     assert fitter.param_order == ("P", "e", "Tp")
 
+
+def test_mcmc_linear_fitter_adds_sampled_jitter_parameters():
+    priors = {
+        "P": UniformPrior(1.0, 10.0),
+        "e": UniformPrior(0.0, 1.0),
+        "Tp": UniformPrior(0.0, 10.0),
+        "astro_HST_jitter": UniformPrior(0.0, 1.0),
+        "rv_HARPS_jitter": UniformPrior(0.0, 1.0),
+    }
+
+    fitter = MCMCLinearFitter(
+        nwalkers=10,
+        niter=1000,
+        sampled_params=["P", "e", "Tp"],
+        **priors,
+    )
+
+    assert fitter.param_order == (
+        "P",
+        "e",
+        "Tp",
+        "astro_HST_jitter",
+        "rv_HARPS_jitter",
+    )
+
 def test_ultranest_linear_fitter_initializes():
     priors = {"P": UniformPrior(1.0, 10.0), "e": UniformPrior(0.0, 1.0), "Tp": UniformPrior(0.0, 10.0)}
     fitter = UltranestLinearFitter(**priors)
     assert fitter.output_params == {"P", "e", "Tp"}
     assert fitter.output_param_order == ("P", "e", "Tp")
 
-# def test_mcmc_gaia_fitter_initializes():
-#     priors = {"P": UniformPrior(1.0, 10.0), "e": UniformPrior(0.0, 1.0), "Tp": UniformPrior(0.0, 10.0)}
-#     fitter = MCMCGaiaFitter(nwalkers=10, niter=1000, sampled_params=["P", "e", "Tp"], **priors)
-#     assert fitter.sampled_params == {"P", "e", "Tp", "jitter"}
-#     assert fitter.param_order == ("P", "e", "Tp", "jitter")
 
-# def test_ultranest_gaia_fitter_initializes():
-#     priors = {"P": UniformPrior(1.0, 10.0), "e": UniformPrior(0.0, 1.0), "Tp": UniformPrior(0.0, 10.0)}
-#     fitter = UltranestGaiaFitter(**priors)
-#     assert fitter.output_params == {"P", "e", "Tp", "jitter"}
-#     assert fitter.output_param_order == ("P", "e", "Tp", "jitter")
+def test_ultranest_linear_fitter_keeps_flux_parameter_in_sample_order():
+    priors = {
+        "P": UniformPrior(1.0, 10.0),
+        "e": UniformPrior(0.0, 1.0),
+        "Tp": UniformPrior(0.0, 10.0),
+        "M1": UniformPrior(0.5, 2.0),
+        "M2": UniformPrior(0.5, 2.0),
+        "f_F814W": UniformPrior(0.1, 1.0),
+    }
+
+    fitter = UltranestLinearFitter(
+        output_params=["P", "e", "Tp"],
+        **priors,
+    )
+
+    assert "f_F814W" in fitter.sample_order
+
+
+def test_sigma_returns_cached_errors_without_jitter():
+    data = AstrometryData(
+        t=[1.0, 2.0],
+        x=[0.0, 0.0],
+        y=[0.0, 0.0],
+        x_err=[1.0, 2.0],
+        y_err=[3.0, 4.0],
+        units=ASTRO_UNITS,
+        system=1,
+    )
+    base_sigma = np.array([1.0, 2.0, 3.0, 4.0])
+
+    sigma = _sigma(data, {}, base_sigma)
+
+    assert sigma is base_sigma
+
+
+def test_sigma_applies_independent_joint_jitters():
+    astrometry = AstrometryData(
+        t=[1.0, 2.0],
+        x=[0.0, 0.0],
+        y=[0.0, 0.0],
+        x_err=[1.0, 2.0],
+        y_err=[3.0, 4.0],
+        system=1,
+        instrument="HST",
+        units=ASTRO_UNITS,
+    )
+    radial_velocity = RadialVelocityData(
+        t=[1.0, 2.0],
+        rv=[0.0, 0.0],
+        rv_err=[5.0, 6.0],
+        system=1,
+        instrument="HARPS",
+        units=RV_UNITS,
+    )
+    data = JointData([astrometry, radial_velocity])
+    base_sigma = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+
+    sigma = _sigma(
+        data,
+        {
+            "astro_HST_jitter": 1.0,
+            "rv_HARPS_jitter": 2.0,
+        },
+        base_sigma,
+    )
+
+    expected = np.sqrt(
+        base_sigma**2 + np.array([1.0, 1.0, 1.0, 1.0, 4.0, 4.0])
+    )
+    np.testing.assert_allclose(sigma, expected)
+
+
+def test_matrix_filler_applies_band_flux_factor_and_derives_q():
+    data = AstrometryData(
+        t=[0.0, 1.0],
+        x=[0.0, 0.0],
+        y=[0.0, 0.0],
+        x_err=[1.0, 1.0],
+        y_err=[1.0, 1.0],
+        system=1,
+        band="F814W",
+        units=ASTRO_UNITS,
+    )
+    matrix, columns = _matrix_builder(data, ref_epoch=0.0)
+    params = {
+        "P": 10.0,
+        "e": 0.0,
+        "Tp": 0.0,
+        "M1": 1.0,
+        "M2": 2.0,
+        "f_F814W": 0.5,
+    }
+
+    _matrix_filler(matrix, columns, params, data)
+
+    factor = 1 - (0.5 * (1 + 2)) / (2 * (1 + 0.5))
+    assert params["q"] == pytest.approx(2.0)
+    assert matrix[0, columns["B1"]] == pytest.approx(1.0 * factor)
+    assert matrix[0, columns["G1"]] == pytest.approx(0.0)
+
+
 
 
 test_priors = {
@@ -114,7 +255,7 @@ def test_mcmc_fitter_runs_with_astrometry_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
-    data=AstrometryData(t, x, y, 0.01, 0.01,1,1, ref_epoch=0.0, system=1)
+    data=AstrometryData(t, x, y, 0.01, 0.01, np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
     results = fitter.fit(data, np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
@@ -124,7 +265,7 @@ def test_mcmc_fitter_runs_with_rv_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
     v = model.rv(t, system=1)
-    data=RadialVelocityData(t, v, 0.01, system=1)
+    data=RadialVelocityData(t, v, 0.01, system=1, units=RV_UNITS)
     results = fitter.fit(data, np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
@@ -135,7 +276,7 @@ def test_mcmc_fitter_runs_with_gaia_data(monkeypatch):
     t = np.linspace(0, 10, 100)
     psi = np.random.uniform(0, 2 * np.pi, size=len(t))
     a = model.gaia_astrometry(t, spsi=np.sin(psi), cpsi=np.cos(psi), par_factor=1, system=1)
-    data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1)
+    data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1, units=GAIA_UNITS)
     initial_class, _calls = deterministic_initial({"P": 5.0, "a1": 1.0, "e": 0.5, "M0": np.pi / 2, "omega": np.pi / 4, "cosi": np.cos(np.pi / 4), "Omega": np.pi / 3})
     FastEmceeSampler.instances = []
     monkeypatch.setattr(mcmc_module.emcee, "EnsembleSampler", FastEmceeSampler)
@@ -159,7 +300,7 @@ def test_mcmc_linear_fitter_runs_with_astrometry_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
-    data = AstrometryData(t, x, y, 0.01, 0.01, 1,1, ref_epoch=0.0, system=1)
+    data = AstrometryData(t, x, y, 0.01, 0.01, np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
     results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
@@ -188,7 +329,7 @@ def test_mcmc_linear_fitter_runs_with_gaia_data(monkeypatch):
     t = np.linspace(0, 10, 100)
     psi = np.random.uniform(0, 2 * np.pi, size=len(t))
     a = model.gaia_astrometry(t, spsi=np.sin(psi), cpsi=np.cos(psi), par_factor=1, system=1)
-    data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1)
+    data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1, units=GAIA_UNITS)
     initial_class, _calls = deterministic_initial({"P": 5.0, "e": 0.5, "Tp": 1.0})
     FastEmceeSampler.instances = []
     monkeypatch.setattr(mcmc_linear_module.emcee, "EnsembleSampler", FastEmceeSampler)
@@ -201,7 +342,7 @@ def test_ultranest_fitter_runs_with_astrometry_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
-    data = AstrometryData(t, x, y, 0.01, 0.01, 2,1,ref_epoch=0.0, system=1)
+    data = AstrometryData(t, x, y, 0.01, 0.01, 2 * np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
     results = fitter.fit(data)
     assert isinstance(results, FitResults)
 
@@ -210,7 +351,7 @@ def test_ultranest_fitter_runs_with_rv_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t = np.linspace(0, 10, 100)
     v = model.rv(t, system=1)
-    data = RadialVelocityData(t, v, 0.01, system=1)
+    data = RadialVelocityData(t, v, 0.01, system=1, units=RV_UNITS)
     results = fitter.fit(data)
     assert isinstance(results, FitResults)
 
@@ -220,7 +361,7 @@ def test_ultranest_fitter_runs_with_gaia_data():
     t = np.linspace(0, 10, 100)
     psi = np.random.uniform(0, 2 * np.pi, size=len(t))
     a = model.gaia_astrometry(t, spsi=np.sin(psi), cpsi=np.cos(psi), par_factor=1, system=1)
-    data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1)
+    data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1, units=GAIA_UNITS)
     results = fitter.fit(data)
     assert isinstance(results, FitResults)
 
@@ -229,10 +370,10 @@ def test_ultranest_fitter_runs_with_joint_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
     x, y = model.astrometry(t_astrometry, np.zeros_like(t_astrometry, dtype=float), np.zeros_like(t_astrometry, dtype=float), system=1)
-    data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01,1,1, ref_epoch=0.0, system=1)
+    data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01, np.ones_like(t_astrometry), np.ones_like(t_astrometry), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
     t_rv = np.linspace(5.1, 15.1, 10)
     rv = model.rv(t_rv, system=1)
-    data_rv = RadialVelocityData(t_rv, rv, 0.01, system=1)
+    data_rv = RadialVelocityData(t_rv, rv, 0.01, system=1, units=RV_UNITS)
     data = JointData([data_astrometry, data_rv])
     results = fitter.fit(data)
     assert isinstance(results, FitResults)
@@ -242,7 +383,7 @@ def test_ultranest_linear_fitter_runs_with_astrometry_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
-    data = AstrometryData(t, x, y, 0.01, 0.01,1,1, ref_epoch=0.0, system=1)
+    data = AstrometryData(t, x, y, 0.01, 0.01, np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
     results = fitter.fit(data)
     assert isinstance(results, FitResults)
 
@@ -300,6 +441,7 @@ class DummyFitter(Fitter):
         return data
 
 
+
 def test_null_hypothesis_fit_uses_provided_mu_values():
     fitter = DummyFitter(ref_epoch=1.0)
     data = AstrometryData(
@@ -311,9 +453,8 @@ def test_null_hypothesis_fit_uses_provided_mu_values():
         plxf_x=[0, 0, 0],
         plxf_y=[0, 0, 0],
         ref_epoch=1.0,
-        mu_x=2.0,
-        mu_y=-1.0,
         system=1,
+        units=ASTRO_UNITS,
     )
 
     result = fitter._null_hypothesis_fit(data)
@@ -479,6 +620,7 @@ def make_exact_rv_problem():
         orbit.rv(times, system="1"),
         rv_err=0.2,
         system="1",
+        units=RV_UNITS,
     )
     priors = {
         "P": UniformPrior(3.0, 5.0),
@@ -518,10 +660,11 @@ def make_exact_astrometry_problem(ref_epoch=0.0, periastron_time=1.3):
         y,
         x_err=0.05,
         y_err=0.08,
-        plxf_x=1.0,
-        plxf_y=1.0,
+        plxf_x=np.ones_like(times),
+        plxf_y=np.ones_like(times),
         ref_epoch=ref_epoch,
         system="1",
+        units=ASTRO_UNITS,
     )
     priors = {
         "P": UniformPrior(3.0, 5.0),
@@ -567,6 +710,7 @@ def make_exact_gaia_problem():
         x=values,
         err=0.1,
         system="1",
+        units=GAIA_UNITS,
     )
     priors = {
         "P": UniformPrior(3.0, 5.0),
@@ -601,14 +745,15 @@ def make_exact_joint_problem():
         y,
         0.01,
         0.01,
-        1,
-        1,
+        np.ones_like(t_astrometry),
+        np.ones_like(t_astrometry),
         ref_epoch=0.0,
         system=1,
+        units=ASTRO_UNITS,
     )
     t_rv = np.linspace(5.1, 15.1, 10)
     rv = model.rv(t_rv, system=1)
-    data_rv = RadialVelocityData(t_rv, rv, 0.01, system=1)
+    data_rv = RadialVelocityData(t_rv, rv, 0.01, system=1, units=RV_UNITS)
     return JointData([data_astrometry, data_rv]), truth, dict(test_priors)
 
 
@@ -627,9 +772,8 @@ def test_null_hypothesis_fit_recovers_weighted_linear_motion():
         plxf_x=[0.0, 0.0, 0.0, 0.0, 0.0],
         plxf_y=[0.0, 0.0, 0.0, 0.0, 0.0],
         ref_epoch=ref_epoch,
-        mu_x=0.4,
-        mu_y=-0.2,
         system=1,
+        units=ASTRO_UNITS,
     )
 
     result = fitter._null_hypothesis_fit(data)
@@ -644,7 +788,7 @@ def test_null_hypothesis_fit_recovers_weighted_linear_motion():
         }
     )
     assert result["chi2"] == pytest.approx(0.0, abs=1e-24)
-    assert result["dof"] == 2 * len(times) - 3
+    assert result["dof"] == 2 * len(times) - 5
 
 
 

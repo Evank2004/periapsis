@@ -45,19 +45,30 @@ def _get_result_value(results, name, default=None):
     return getattr(results, name, default)
 
 
+def _summary_params(results, summary_name):
+    canonical_name = f"canonical_{summary_name}_params"
+    canonical_getter = getattr(results, canonical_name, None)
+    if callable(canonical_getter):
+        return canonical_getter()
+    params = getattr(results, f"{summary_name}_params", None)
+    if params is not None:
+        return params
+
+    samples = getattr(results, "samples", None)
+    if isinstance(samples, dict):
+        return samples.get(f"{summary_name}_params")
+
+    return None
+
+
 def red_chi2(results,data,savepath=None):
     '''
     Returns reduced Chi2 value for the MAP and median fit
     '''
     datas = _flatten_and_join(data)
 
-    map_params = getattr(results, 'MAP_params', None)
-    if map_params is None:
-        map_params = results.samples.get('MAP_params', None)
-
-    med_params = getattr(results, 'median_params', None)
-    if med_params is None:
-        med_params = results.samples.get('median_params', None)
+    map_params = _summary_params(results, "MAP")
+    med_params = _summary_params(results, "median")
 
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for reduced Chi2 calculation.")
@@ -110,13 +121,8 @@ def delta_chi2(results,data,savepath=None):
     Returns delta Chi2 value for orbit fit
     - proper motion fit'''
 
-    map_params = getattr(results, 'MAP_params', None)
-    if map_params is None:
-        map_params = results.samples.get('MAP_params', None)
-
-    med_params = getattr(results, 'median_params', None)
-    if med_params is None:
-        med_params = results.samples.get('median_params', None)
+    map_params = _summary_params(results, "MAP")
+    med_params = _summary_params(results, "median")
 
     if map_params is None or med_params is None:
         raise ValueError("Both MAP and median parameter sets are required for delta Chi2 calculation.")

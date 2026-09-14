@@ -3,10 +3,14 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from astropy import units as u
 
 from periapsis.data import AstrometryData, GaiaData, RadialVelocityData
 from periapsis.prior import FixedPrior
 from periapsis.stats import stat_funcs
+
+ASTRO_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
+RV_UNITS = {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr}
 
 
 class FakeOrbit:
@@ -141,6 +145,7 @@ def test_red_chi2_falls_back_to_parameter_sets_in_samples(monkeypatch):
         y_err=1.0,
         plxf_x=1.0,
         plxf_y=1.0,
+        units=ASTRO_UNITS,
         system=1,
     )
     data.chi2 = lambda model: model.parameters["chi2"]
@@ -169,6 +174,7 @@ def test_red_chi2_can_build_models_through_the_public_orbit_api(monkeypatch):
         y_err=1.0,
         plxf_x=1.0,
         plxf_y=1.0,
+        units=ASTRO_UNITS,
         system=1,
     )
     data.chi2 = lambda model: model.parameters["chi2"]
@@ -192,6 +198,7 @@ def test_red_chi2_merges_fixed_priors_into_models(monkeypatch):
         y_err=1.0,
         plxf_x=1.0,
         plxf_y=1.0,
+        units=ASTRO_UNITS,
         system=1,
     )
 
@@ -223,6 +230,7 @@ def test_red_chi2_uses_one_observable_per_rv_epoch(monkeypatch):
         t=np.arange(5.0),
         rv=np.zeros(5),
         rv_err=1.0,
+        units=RV_UNITS,
         system=1,
     )
     data.chi2 = lambda model: model.parameters["chi2"]
@@ -256,6 +264,7 @@ def test_delta_chi2_non_gaia_compares_proper_motion_fit(monkeypatch):
         y_err=1.0,
         plxf_x=1.0,
         plxf_y=1.0,
+        units=ASTRO_UNITS,
         system=1,
     )
     data.chi2 = lambda model: model.parameters["chi2"]

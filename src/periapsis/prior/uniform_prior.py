@@ -13,6 +13,15 @@ class UniformPrior(Prior):
 
         self.density = -np.log(upper_bound - lower_bound)
 
+    def scale(self, factor):
+        if factor <= 0:
+            raise ValueError("Prior scale factor must be positive.")
+        self.lower_bound *= factor
+        self.upper_bound *= factor
+        self.min = self.lower_bound
+        self.max = self.upper_bound
+        self.density = -np.log(self.upper_bound - self.lower_bound)
+
     def sample(self, random_state, size=1):
         return random_state.uniform(low=self.lower_bound, high=self.upper_bound, size=size)
 

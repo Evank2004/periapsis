@@ -2,6 +2,11 @@ from abc import ABC, abstractmethod
 
 class Prior(ABC):
     @abstractmethod
+    def scale(self, factor):
+        """Scale this numeric prior into canonical units."""
+        pass
+
+    @abstractmethod
     def sample(self, random_state, size=1):
         pass
 

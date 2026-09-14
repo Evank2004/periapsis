@@ -9,7 +9,7 @@ from periapsis.model import Orbit
 from periapsis.params import covered_parameters, build_transform_functions, overconstrained_parameters
 import numpy as np
 import emcee
-from typing import Type, cast, Iterable
+from typing import Type, cast, Iterable, Optional
 from dataclasses import dataclass
 from functools import lru_cache
 from periapsis.params.units import CanonicalUnits
@@ -213,7 +213,7 @@ class MCMCFitter(Fitter):
         
 
 
-    def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] | None = None) -> FitResults:
+    def fit(self, data: Data, rng: np.random.RandomState, initial: Optional[Type[InitialGuess]] = None) -> FitResults:
         if not isinstance(data, AstrometryData) and not isinstance(data, RadialVelocityData) and not isinstance(data, JointData) and not isinstance(data, GaiaData):
                 raise ValueError("Data must be an instance of AstrometryData, RadialVelocityData, JointData, or GaiaData for MCMC.")
         canonical_priors = self._canonical_priors(data)

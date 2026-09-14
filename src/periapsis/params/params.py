@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 all_parameters = {
     'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'piomega', 'P', 'A', 'B', 'C', 'F', 'G', 'H', 'cosi', 'sini', 'Mtot', 'mu',
@@ -473,7 +473,7 @@ rv_trend = "rv_trend"
 Linear radial velocity trend caused by massive, long period companions.
 """
 
-def flux_parameter(band: str | None) -> str | None:
+def flux_parameter(band: Optional[str]) -> Optional[str]:
     """
     Define flux ratio parameter for given photometric band.
     """

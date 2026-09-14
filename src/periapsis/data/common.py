@@ -3,11 +3,11 @@ from periapsis.model.orbit import Orbit
 from periapsis.params.units import UnitSystem
 from periapsis.params.params import flux_parameter
 from astropy import units as u
-from typing import Mapping, Any
+from typing import Mapping, Any, Optional
 import numpy as np
 
 class SystemData(Data):
-    def __init__(self, system, units):
+    def __init__(self, system, units: Optional[Mapping[str, Any]] = None):
         if system is None:
             raise ValueError(f"`system` must be provided for {self.__class__.__name__}. It can be either '1', '2', or 'relative'.")
         self.system = str(system)
@@ -53,7 +53,7 @@ def _orbit_value(orbit, name, default=None):
     return default
 
 class AstrometryData(SystemData):
-    def __init__(self, t, x, y, x_err, y_err,plxf_x=None,plxf_y=None,ref_epoch=None, units=Mapping[str,Any],
+    def __init__(self, t, x, y, x_err, y_err,plxf_x=None,plxf_y=None,ref_epoch=None, units: Optional[Mapping[str, Any]] = None,
                 system=None, instrument=None,band=None):
         if units is None:
             raise ValueError("Units must be provided for AstrometryData.")
@@ -182,7 +182,7 @@ class AstrometryData(SystemData):
     
 
 class RadialVelocityData(SystemData):
-    def __init__(self, t, rv, rv_err, units=Mapping[str,Any], system=None,rv_trend=False,instrument=None):
+    def __init__(self, t, rv, rv_err, units: Optional[Mapping[str, Any]] = None, system=None,rv_trend=False,instrument=None):
         if units is None:
             raise ValueError("Units must be provided for RadialVelocityData.")
         super().__init__(system, units)

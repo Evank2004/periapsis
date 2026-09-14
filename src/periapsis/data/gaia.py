@@ -1,16 +1,14 @@
 from .common import SystemData,_orbit_value, _gaussian_log_likelihood
 from periapsis.model.orbit import Orbit
 from periapsis.utils.solvers import solve_kepler
-from typing import Mapping, Any
+from typing import Mapping, Any, Optional
 from .data import Data
 import numpy as np
 
 
 
 class GaiaData(SystemData):
-    def __init__(self, spsi,cpsi,t,plx_fac,x,err,units = Mapping[str,Any], system=None,band=None):
-        if units is None:
-            raise ValueError("Units must be provided for GaiaData.")
+    def __init__(self, spsi,cpsi,t,plx_fac,x,err,units: Optional[Mapping[str, Any]] = None, system=None,band=None):
         super().__init__(system, units)
         required_units = {"t", "x", "err"}
         missing_units = required_units - self.unit_system.units.keys()

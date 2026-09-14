@@ -10,6 +10,14 @@ class Bounds(Prior):
         if lower is not None and upper is not None and lower > upper:
             raise ValueError("Lower bound cannot be greater than upper bound.")
 
+    def scale(self, factor):
+        if factor <= 0:
+            raise ValueError("Prior scale factor must be positive.")
+        if self.lower is not None:
+            self.lower *= factor
+        if self.upper is not None:
+            self.upper *= factor
+
     def sample(self, random_state, size=1):
         raise NotImplementedError("Bounds does not support sampling.")
 

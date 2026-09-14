@@ -16,6 +16,15 @@ class NormalPrior(Prior):
 
         self.constants = -0.5*np.log(2*np.pi*self.std**2)
 
+    def scale(self, factor):
+        if factor <= 0:
+            raise ValueError("Prior scale factor must be positive.")
+        self.mean *= factor
+        self.std *= factor
+        self.min = self.mean - 10*self.std
+        self.max = self.mean + 10*self.std
+        self.constants = -0.5*np.log(2*np.pi*self.std**2)
+
     def sample(self, random_state, size=1):
         return random_state.normal(loc=self.mean, scale=self.std, size=size)
     

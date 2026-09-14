@@ -7,6 +7,11 @@ class FixedPrior(Prior):
         self.min = value
         self.max = value
 
+    def scale(self, factor):
+        self.value *= factor
+        self.min = self.value
+        self.max = self.value
+
     def sample(self, random_state, size=1):
         return np.ones(size) * self.value
 

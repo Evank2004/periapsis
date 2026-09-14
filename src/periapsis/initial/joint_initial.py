@@ -1,5 +1,5 @@
 from .initial import InitialGuess
-from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler,_null_matrix_builder,_fill_periodogram_periodic
+from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler,_null_matrix_builder,_fill_periodogram_periodic,_sigma
 from .astrometry_initial import AstrometryInitialGuess
 from .rv_initial import RVInitialGuess
 from .gaia_initial import GaiaInitialGuess
@@ -75,15 +75,8 @@ class JointInitialGuess(InitialGuess):
 
         _matrix_filler(self.M_base,self.cols,params_dict,self.data)
 
-        M_w = self.M_base*self.w[:,np.newaxis]
-
-        MT_M = M_w.T @ M_w
-        MT_eta = M_w.T @ self.m_eta_w
-
-        mu = np.linalg.solve(MT_M, MT_eta)
-        model_werr = M_w @ mu
-        resids = self.m_eta_w - model_werr
-        chi2 = np.sum(resids**2)
+        sigma = _sigma(self.data,params_dict,self.sigma)
+        _,chi2 = _lsq_helper(self.M_base,self.eta,sigma)
 
         return chi2
 
@@ -105,6 +98,7 @@ class JointInitialGuess(InitialGuess):
         
     def neg_lnlike(self,params,param_in):
         params_dict = dict(zip(param_in, params))
+        params_dict.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
         lp = self.lnprior(params_dict)
         if not np.isfinite(lp):
             return np.inf
@@ -123,7 +117,7 @@ class JointInitialGuess(InitialGuess):
         initial_points = []
         for i in self.priors.keys():
             prior = self.priors[i]
-            if isinstance(prior,Bounds):
+            if isinstance(prior,(Bounds, FixedPrior)):
                 continue
             param_in.append(i)
             if i == 'P':
@@ -147,8 +141,11 @@ class JointInitialGuess(InitialGuess):
         )
 
         def bounds_transform_fn(bound):
-            transform = build_transform_functions(param_in, [bound])
-            return lambda x: transform(**dict(zip(param_in, x)))[bound]
+            transform = build_transform_functions([*param_in, *self.fixed_prior_params], [bound])
+            return lambda x: transform(
+                **dict(zip(param_in, x)),
+                **{name: prior.value for name, prior in self.fixed_prior_params.items()},
+            )[bound]
                 
         constraints = []
         for name, bound in self.priors.items():
@@ -167,7 +164,8 @@ class JointInitialGuess(InitialGuess):
         )   
 
         best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
-        transform = build_transform_functions(param_in, param_order)
+        best_prior_values.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
+        transform = build_transform_functions([*param_in, *self.fixed_prior_params], param_order)
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:

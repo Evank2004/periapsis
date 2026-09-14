@@ -5,6 +5,8 @@ from periapsis.data.common import AstrometryData, RadialVelocityData
 from periapsis.data.gaia import GaiaData
 from periapsis.data.joint_data import JointData
 from periapsis.utils.solvers import _orbit_coords_nu
+from periapsis.params import flux_parameter
+from periapsis.params.transforms import build_transform_functions, q_f_to_photocenter_factor
 
 def _lsq_helper(M,x,err):
     w = 1.0 / err
@@ -74,7 +76,8 @@ def _matrix_builder(data,ref_epoch):
         if isinstance(d, AstrometryData):
             key_create(f'dalpha')
             key_create(f'mu_alpha')
-            key_create(f'parallax')
+            if d.parallax is True:
+                key_create(f'parallax')
             key_create(f'ddelta')
             key_create(f'mu_delta')
             key_create(f'B{system}')
@@ -85,6 +88,8 @@ def _matrix_builder(data,ref_epoch):
             key_create(f'gamma')
             key_create(f'h{system}')
             key_create(f'c{system}')
+            if d.rv_trend is True:
+                key_create(f'rv_trend')
         elif isinstance(d, GaiaData):
             key_create(f'dalpha')
             key_create(f'mu_alpha')
@@ -96,6 +101,11 @@ def _matrix_builder(data,ref_epoch):
             key_create(f'A{system}')
             key_create(f'F{system}')
 
+    offsets = isinstance(data,JointData) and data.instrument_offsets is True
+    if offsets:
+        for name in data.instrument_offset_names():
+            key_create(name)
+
     M = np.zeros((nrows, len(cols)))
 
     row_idx = 0
@@ -106,14 +116,32 @@ def _matrix_builder(data,ref_epoch):
             dt = d.t - ref_epoch
             M[row_idx:row_idx+n_obs, cols[f'dalpha']] = 1.0
             M[row_idx:row_idx+n_obs, cols[f'mu_alpha']] = dt
-            M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plxf_x
+            if d.parallax is True:
+                M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plxf_x
             M[row_idx+n_obs:row_idx+2*n_obs, cols[f'ddelta']] = 1.0
             M[row_idx+n_obs:row_idx+2*n_obs, cols[f'mu_delta']] = dt
-            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'parallax']] = d.plxf_y
+            if d.parallax is True:
+                M[row_idx+n_obs:row_idx+2*n_obs, cols[f'parallax']] = d.plxf_y
+            if offsets:
+                instrument = str(d.instrument)
+                x_name = f"astro_{instrument}_x_offset"
+                y_name = f"astro_{instrument}_y_offset"
+                if x_name in cols:
+                    M[row_idx:row_idx+n_obs, cols[x_name]] = 1.0
+                if y_name in cols:
+                    M[row_idx+n_obs:row_idx+2*n_obs, cols[y_name]] = 1.0
             row_idx += 2 * n_obs
         elif isinstance(d, RadialVelocityData):
             n_obs = len(d.t)
             M[row_idx:row_idx+n_obs, cols[f'gamma']] = 1.0
+            if d.rv_trend is True:
+                dt = d.t - ref_epoch
+                M[row_idx:row_idx+n_obs, cols[f'rv_trend']] = dt
+            if offsets:
+                instrument = str(d.instrument)
+                rv_name = f"rv_{instrument}_offset"
+                if rv_name in cols:
+                    M[row_idx:row_idx+n_obs, cols[rv_name]] = 1.0
             row_idx += n_obs
         elif isinstance(d, GaiaData):
             n_obs = len(d.t)
@@ -123,6 +151,11 @@ def _matrix_builder(data,ref_epoch):
             M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plx_fac 
             M[row_idx:row_idx+n_obs, cols[f'ddelta']] = d.cpsi
             M[row_idx:row_idx+n_obs, cols[f'mu_delta']] = dt*d.cpsi
+            if offsets:
+                instrument = str(d.instrument)
+                gaia_name = f"astro_{instrument}_offset"
+                if gaia_name in cols:
+                    M[row_idx:row_idx+n_obs, cols[gaia_name]] = 1.0
             row_idx += n_obs
 
     return M, cols
@@ -142,10 +175,11 @@ def _matrix_filler(M,cols,params,data):
             e = params['e']
             Tp = params['Tp']
             X,Y,nu = _orbit_coords_nu(P,e,Tp,d.t)
-            M[row_idx:row_idx+n_obs, cols[f'B{system}']] = X
-            M[row_idx:row_idx+n_obs, cols[f'G{system}']] = Y
-            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'A{system}']] = X
-            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'F{system}']] = Y
+            f_factor = _photocenter_factor(d, params)
+            M[row_idx:row_idx+n_obs, cols[f'B{system}']] = X * f_factor
+            M[row_idx:row_idx+n_obs, cols[f'G{system}']] = Y * f_factor
+            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'A{system}']] = X * f_factor
+            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'F{system}']] = Y * f_factor
             row_idx += 2 * n_obs
         elif isinstance(d, RadialVelocityData):
             n_obs = len(d.t)
@@ -162,10 +196,11 @@ def _matrix_filler(M,cols,params,data):
             e = params['e']
             Tp = params['Tp']
             X,Y,nu = _orbit_coords_nu(P,e,Tp,d.t)
-            M[row_idx:row_idx+n_obs, cols[f'B{system}']] = X*d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'G{system}']] = Y*d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'A{system}']] = X*d.cpsi
-            M[row_idx:row_idx+n_obs, cols[f'F{system}']] = Y*d.cpsi
+            f_factor = _photocenter_factor(d, params)
+            M[row_idx:row_idx+n_obs, cols[f'B{system}']] = f_factor*X*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'G{system}']] = f_factor*Y*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'A{system}']] = f_factor*X*d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'F{system}']] = f_factor*Y*d.cpsi
             row_idx += n_obs
 
     
@@ -213,7 +248,8 @@ def _null_matrix_builder(data,ref_epoch):
         if isinstance(d, AstrometryData):
             key_create(f'dalpha')
             key_create(f'mu_alpha')
-            key_create(f'parallax')
+            if d.parallax is True:
+                key_create(f'parallax')
             key_create(f'ddelta')
             key_create(f'mu_delta')
         elif isinstance(d, RadialVelocityData):
@@ -225,6 +261,11 @@ def _null_matrix_builder(data,ref_epoch):
             key_create(f'ddelta')
             key_create(f'mu_delta')
 
+    offsets = isinstance(data,JointData) and data.instrument_offsets is True
+    if offsets:
+        for name in data.instrument_offset_names():
+            key_create(name)
+
     M = np.zeros((nrows, len(cols)))
 
     row_idx = 0
@@ -234,14 +275,29 @@ def _null_matrix_builder(data,ref_epoch):
             dt = d.t - ref_epoch
             M[row_idx:row_idx+n_obs, cols[f'dalpha']] = 1.0
             M[row_idx:row_idx+n_obs, cols[f'mu_alpha']] = dt
-            M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plxf_x
+            if d.parallax is True:
+                M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plxf_x
             M[row_idx+n_obs:row_idx+2*n_obs, cols[f'ddelta']] = 1.0
             M[row_idx+n_obs:row_idx+2*n_obs, cols[f'mu_delta']] = dt
-            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'parallax']] = d.plxf_y
+            if d.parallax is True:
+                M[row_idx+n_obs:row_idx+2*n_obs, cols[f'parallax']] = d.plxf_y
+            if offsets:
+                instrument = str(d.instrument)
+                x_name = f"astro_{instrument}_x_offset"
+                y_name = f"astro_{instrument}_y_offset"
+                if x_name in cols:
+                    M[row_idx:row_idx+n_obs, cols[x_name]] = 1.0
+                if y_name in cols:
+                    M[row_idx+n_obs:row_idx+2*n_obs, cols[y_name]] = 1.0
             row_idx += 2 * n_obs
         elif isinstance(d, RadialVelocityData):
             n_obs = len(d.t)
             M[row_idx:row_idx+n_obs, cols[f'gamma']] = 1.0
+            if offsets:
+                instrument = str(d.instrument)
+                rv_name = f"rv_{instrument}_offset"
+                if rv_name in cols:
+                    M[row_idx:row_idx+n_obs, cols[rv_name]] = 1.0
             row_idx += n_obs
         elif isinstance(d, GaiaData):
             n_obs = len(d.t)
@@ -251,6 +307,11 @@ def _null_matrix_builder(data,ref_epoch):
             M[row_idx:row_idx+n_obs, cols[f'ddelta']] = d.cpsi
             M[row_idx:row_idx+n_obs, cols[f'mu_delta']] = dt*d.cpsi
             M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plx_fac
+            if offsets:
+                instrument = str(d.instrument)
+                gaia_name = f"astro_{instrument}_offset"
+                if gaia_name in cols:
+                    M[row_idx:row_idx+n_obs, cols[gaia_name]] = 1.0
             row_idx += n_obs
 
     return M, cols
@@ -288,8 +349,8 @@ def _fill_periodogram_periodic(M,cols,ref_epoch,data,phase):
         elif isinstance(d, GaiaData):
             n_obs = len(d.t)
             dt= d.t - ref_epoch
-            cos_phase = np.cos(phase)
-            sin_phase = np.sin(phase)
+            cos_phase = np.cos(phase * dt)
+            sin_phase = np.sin(phase * dt)
             M[row_idx:row_idx+n_obs, cols[f'B{system}']] = cos_phase*d.spsi
             M[row_idx:row_idx+n_obs, cols[f'G{system}']] = sin_phase*d.spsi
             M[row_idx:row_idx+n_obs, cols[f'A{system}']] = cos_phase*d.cpsi
@@ -345,3 +406,81 @@ def _flatten_and_join(data):
 
     return list(combined_data.values())
 
+def _jitter_name(data):
+    if isinstance(data,(AstrometryData,GaiaData)):
+        prefix = "astro"
+    elif isinstance(data,RadialVelocityData):
+        prefix = "rv"
+    else:
+        raise ValueError(f"Unsupported data type: {type(data)}")
+
+    if data.instrument is None:
+        return f"{prefix}_jitter"
+
+    return f"{prefix}_{data.instrument}_jitter"
+
+def _sigma(data, params_dict, base_sigma):
+
+    if not isinstance(data,JointData):
+        jitter_name = _jitter_name(data)
+        jitter = params_dict.get(jitter_name)
+
+        if jitter is None:
+            return base_sigma
+        return np.sqrt(base_sigma**2 + jitter**2)
+
+    jitters = [params_dict.get(_jitter_name(component)) for component in data.datas]
+    if all(jitter is None for jitter in jitters):
+        return base_sigma
+
+    sigmas = []
+    row_start = 0
+    for component, jitter in zip(data.datas, jitters):
+        if isinstance(component, AstrometryData):
+            row_count = 2 * len(component.t)
+        elif isinstance(component, (RadialVelocityData, GaiaData)):
+            row_count = len(component.t)
+        else:
+            raise ValueError(f"Unsupported data type: {type(component)}")
+
+        component_sigma = base_sigma[row_start:row_start + row_count]
+        if jitter is not None:
+            component_sigma = np.sqrt(component_sigma**2 + jitter**2)
+        sigmas.append(component_sigma)
+        row_start += row_count
+
+    return np.concatenate(sigmas)
+
+def _jitter_check(data,params_dict):
+    """Returns rows whose likelihood has a jitter paramerer"""
+    components = data.datas if isinstance(data,JointData) else [data]
+    rows_with_jitter = []
+
+    for datas in components:
+        has_jitter = _jitter_name(datas) in params_dict
+
+        if isinstance(datas, AstrometryData):
+            n_rows = 2 * len(datas.t)
+        elif isinstance(datas, (RadialVelocityData, GaiaData)):
+            n_rows = len(datas.t)
+        else:
+            raise ValueError(f"Unsupported data type: {type(datas)}")
+
+        rows_with_jitter.append(np.full(n_rows, has_jitter, dtype=bool))
+
+    return np.concatenate(rows_with_jitter)
+
+def _photocenter_factor(data,params):
+
+    flux_name = flux_parameter(getattr(data,'band',None))
+
+    if flux_name is None or data.system in ('relative',""):
+        return 1.0
+    if flux_name not in params:
+        return 1.0
+
+    if 'q' not in params:
+        transform = build_transform_functions(params.keys(), ('q',))
+        params.update(transform(**params))
+
+    return q_f_to_photocenter_factor(params['q'],params[flux_name],data.system)

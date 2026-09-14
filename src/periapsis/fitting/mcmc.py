@@ -1,5 +1,5 @@
 import warnings
-
+from copy import deepcopy
 from .fitter import Fitter
 from .results import FitResults
 from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData,GaiaData
@@ -12,6 +12,7 @@ import emcee
 from typing import Type, cast, Iterable
 from dataclasses import dataclass
 from functools import lru_cache
+from periapsis.params.units import CanonicalUnits
 
 
 @dataclass(frozen=True)
@@ -25,7 +26,7 @@ class _PosteriorContext:
 
 
 class MCMCFitter(Fitter):
-    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable,ref_epoch=0, pool=None, **priors):
+    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable,ref_epoch=None, pool=None, **priors):
         super().__init__(ref_epoch,**priors)
         if nwalkers <= 0 or niter <= 0:
             raise ValueError("nwalkers and niter must be positive integers.")
@@ -44,9 +45,9 @@ class MCMCFitter(Fitter):
         self.prior_params = set(priors.keys())
         self.fixed_prior_params = {p for p in self.prior_params if isinstance(self.priors[p], FixedPrior)}
         self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], Bounds)}
-        self.sample_covered_params = covered_parameters([*self.sample_params, *self.fixed_prior_params])
+        self.sample_covered_params = covered_parameters(set(self.sample_params) | self.fixed_prior_params)
         self.prior_covered_params = covered_parameters(self.non_bound_prior_params)
-        self.posterior_covered_params = covered_parameters(self.sample_params.union(self.non_bound_prior_params))
+        self.posterior_covered_params = covered_parameters(set(self.sample_params) | self.non_bound_prior_params)
         self.overconstrained_priors = overconstrained_parameters(self.non_bound_prior_params)
 
         missing_priors = self.sample_params.difference(self.prior_covered_params)
@@ -67,7 +68,8 @@ class MCMCFitter(Fitter):
         if sampled_and_fixed:
             raise ValueError(f"Sampled parameters cannot be fixed. {sorted(sampled_and_fixed)} are fixed.")
 
-    def _sample_priors(self, param_order, size: int, rng: np.random.RandomState) -> dict[str, np.ndarray]:
+    
+    def _sample_priors(self, param_order, size: int, rng: np.random.RandomState) -> np.ndarray:
         """
         Samples the prior distributions, and then uses rejection sampling to ensure that the sampled parameters are consistent with any provided bounds.
         """
@@ -136,7 +138,7 @@ class MCMCFitter(Fitter):
         for index, prior in context.direct_prior_items:
             if isinstance(prior, FixedPrior):
                 continue  # Skip fixed priors
-            contribution = prior.logpdf(params[index])
+            contribution = cast(float, prior.logpdf(params[index]))
             if not np.isfinite(contribution):
                 return -np.inf
             lp += contribution
@@ -151,7 +153,7 @@ class MCMCFitter(Fitter):
             for name, prior in context.derived_prior_items:
                 if isinstance(prior, FixedPrior):
                     continue  # Skip fixed priors
-                contribution = prior.logpdf(transformed[name])
+                contribution = cast(float, prior.logpdf(transformed[name]))
                 if not np.isfinite(contribution):
                     return -np.inf
                 lp += contribution
@@ -159,30 +161,33 @@ class MCMCFitter(Fitter):
             values.update(transformed)
         
         model = Orbit(**values)
-        chi2 = context.data.chi2(model)
-        if not np.isfinite(chi2):
+        log_likelihood = context.data.log_likelihood(model)
+        if not np.isfinite(log_likelihood):
             return -np.inf
-        return lp - 0.5 * chi2
+        return lp + log_likelihood
     
 
-    def _posterior_context(self, data: Data) -> _PosteriorContext:
+    def _posterior_context(self, data: Data, priors=None) -> _PosteriorContext:
+        if priors is None:
+            priors = self.priors
+
         param_order = self.param_order
         param_indexes = {
             name: index for index, name in enumerate(param_order)
         }
         fixed_items = tuple(
             (name, prior.value)
-            for name, prior in self.priors.items()
+            for name, prior in priors.items()
             if isinstance(prior, FixedPrior)
         )
         known_names = tuple(
             dict.fromkeys((*param_order, *(name for name, _ in fixed_items)))
         )
-        reachable = covered_parameters(known_names)
+        reachable = covered_parameters(set(known_names))
 
         direct_prior_items = []
         derived_prior_items = []
-        for name, prior in self.priors.items():
+        for name, prior in priors.items():
             if isinstance(prior, FixedPrior):
                 continue
             if name in param_indexes:
@@ -208,14 +213,20 @@ class MCMCFitter(Fitter):
         
 
 
-    def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
+    def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] | None = None) -> FitResults:
         if not isinstance(data, AstrometryData) and not isinstance(data, RadialVelocityData) and not isinstance(data, JointData) and not isinstance(data, GaiaData):
                 raise ValueError("Data must be an instance of AstrometryData, RadialVelocityData, JointData, or GaiaData for MCMC.")
+        canonical_priors = self._canonical_priors(data)
+        canonical_ref_epoch = canonical_priors['Tepoch'].value if 'Tepoch' in canonical_priors else self.ref_epoch
 
-        null_hypothesis = self._null_hypothesis_fit(data)
+
+        null_hypothesis_canonical = self._null_hypothesis_fit(
+            data,
+            ref_epoch=canonical_ref_epoch,
+        )
 
         param_order = self.param_order
-        context = self._posterior_context(data)
+        context = self._posterior_context(data,canonical_priors)
 
         ndim = len(self.sample_params)
         # pos = np.clip(initial_guess + 1e-4 * np.random.randn(self.nwalkers, ndim), lower, upper)
@@ -231,7 +242,7 @@ class MCMCFitter(Fitter):
                 initial = GaiaInitialGuess
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for MCMC initial guess generation.")
-        initial_instance = initial(data, rng, self.ref_epoch, **self.priors)
+        initial_instance = initial(data, rng, canonical_ref_epoch, **canonical_priors)
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
 
         
@@ -272,26 +283,69 @@ class MCMCFitter(Fitter):
         best_params = dict(zip(param_order, samples[best_i]))
         median_params = dict(zip(param_order, np.median(samples, axis=0)))
         for prior in self.fixed_prior_params:
-            best_params[prior] = self.priors[prior].value
-            median_params[prior] = self.priors[prior].value
+            best_params[prior] = canonical_priors[prior].value
+            median_params[prior] = canonical_priors[prior].value
+
+        def _from_canonical(name,value):
+            unit = data.parameter_unit(name)
+            dimension = data.parameter_dimension(name)
+            if unit is None or dimension is None:
+                raise ValueError(f"Could not resolve units for parameter '{name}'.")
+            factor = unit.to(CanonicalUnits[dimension])
+            return value / factor
+
+        reported_samps = np.empty_like(samples)
+        for i, name in enumerate(param_order):
+            reported_samps[:, i] = _from_canonical(name, samples[:, i])
+
+        reported_param_means = np.empty_like(param_means)
+        for i, name in enumerate(param_order):
+            reported_param_means[:, i] = _from_canonical(name, param_means[:, i])
+
+        reported_best_params = {
+            name: _from_canonical(name, value)
+            for name, value in best_params.items()
+        }
+        reported_median_params = {
+            name: _from_canonical(name, value)
+            for name, value in median_params.items()
+        }
+
+        if null_hypothesis_canonical is None:
+            raise RuntimeError("Null-hypothesis fitting returned no result.")
+
+        null_hypothesis = deepcopy(null_hypothesis_canonical)
+        for name, value in null_hypothesis["params"].items():
+            null_hypothesis["params"][name] = _from_canonical(name, value)
+
+        parameter_factors = {}
+        known_output_names = set(param_order) | set(canonical_priors)
+        for name in known_output_names:
+            unit = data.parameter_unit(name)
+            dimension = data.parameter_dimension(name)
+            if unit is not None and dimension is not None:
+                parameter_factors[name] = unit.to(CanonicalUnits[dimension])
         
         results_dict = {}
         for i, name in enumerate(param_order):
-            results_dict[name] = samples[:, i]
+            results_dict[name] = reported_samps[:, i]
 
         results_dict['lnprob'] = lnprobs
         results_dict['Ess'] = Ess
         results_dict['mean_acceptance_fraction'] = mean_acceptance_fraction
         results_dict['tau'] = tau
-        results_dict['param_means'] = param_means
+        results_dict['param_means'] = reported_param_means
         results_dict['param_names'] = param_order
-        results_dict['MAP_params'] = best_params
-        results_dict['median_params'] = median_params
+        results_dict['MAP_params'] = reported_best_params
+        results_dict['median_params'] = reported_median_params
         results_dict['null_hypothesis'] = null_hypothesis
-        results_dict['ref_epoch'] = self.ref_epoch
+        results_dict['ref_epoch'] = self._reported_ref_epoch(data)
+        
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'emcee'
         results_dict['priors'] = self.priors
+        results_dict['canonical_priors'] = canonical_priors
+        results_dict['parameter_factors'] = parameter_factors
         fit_results = FitResults(**results_dict)
         return fit_results
 

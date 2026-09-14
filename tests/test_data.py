@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 import numpy as np
 import pytest
+from astropy import units as u
 
 import periapsis.data as data_package
 from periapsis.data import (
@@ -14,15 +15,18 @@ from periapsis.data import (
 
 
 class DummyOrbit:
-    def __init__(self, x=(), y=(), rv=(), gaia=(), derived_params=None):
+    def __init__(self, x=(), y=(), rv=(), gaia=(), params=None, derived_params=None):
         self.x = np.asarray(x)
         self.y = np.asarray(y)
         self.rv_values = np.asarray(rv)
         self.gaia = np.asarray(gaia)
+        self.params = {} if params is None else params
         self.derived_params = {} if derived_params is None else derived_params
         self.calls = []
+        self.astrometry_kwargs = None
 
     def astrometry(self, t, plxf_x=0.0, plxf_y=0.0, system=None, **kwargs):
+        self.astrometry_kwargs = kwargs
         self.calls.append(("astrometry", t, plxf_x, plxf_y, system))
         return self.x, self.y
 
@@ -46,6 +50,7 @@ def make_astrometry(**overrides):
         "y_err": np.array([2.0, 1.0, 2.0]),
         "plxf_x": np.abs(np.array([1.0, 1.0, 1.0])),
         "plxf_y": np.abs(np.array([1.0, 1.0, 1.0])),
+        "units": {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad},
         "system": "1",
     }
     arguments.update(overrides)
@@ -57,6 +62,7 @@ def make_rv(**overrides):
         "t": np.array([1.0, 2.0, 3.0]),
         "rv": np.array([10.0, 12.0, 14.0]),
         "rv_err": np.array([1.0, 2.0, 1.0]),
+        "units": {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr},
         "system": "2",
     }
     arguments.update(overrides)
@@ -71,6 +77,7 @@ def make_gaia(**overrides):
         "plx_fac": np.array([0.2, 0.3, 0.4]),
         "x": np.array([1.0, 2.0, 3.0]),
         "err": np.array([1.0, 2.0, 1.0]),
+        "units": {"t": u.yr, "x": u.rad, "err": u.rad},
         "system": "1",
     }
     arguments.update(overrides)
@@ -85,6 +92,27 @@ def test_data_package_exports_all_public_data_classes():
         "JointData",
         "GaiaData",
     ]
+
+
+def test_astrometry_data_converts_reference_epoch_to_canonical_time():
+    data = make_astrometry(ref_epoch=10.0, units={
+        "t": u.day,
+        "x": u.rad,
+        "y": u.rad,
+        "x_err": u.rad,
+        "y_err": u.rad,
+    })
+
+    assert data.ref_epoch == pytest.approx(10.0 * u.day.to(u.yr))
+
+
+def test_astrometry_likelihood_passes_band_flux_ratio_to_orbit():
+    data = make_astrometry(band="G")
+    orbit = DummyOrbit(x=np.zeros(3), y=np.zeros(3), params={"f_G": 0.4})
+
+    data.log_likelihood(orbit)
+
+    assert orbit.astrometry_kwargs == {"flux_ratio": 0.4}
 
 
 def test_data_base_class_is_abstract():
@@ -136,6 +164,7 @@ def test_astrometry_converts_scalar_inputs_to_one_dimensional_arrays():
         y_err=0.75,
         plxf_x=0.1,
         plxf_y=0.2,
+        units={"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad},
         system=1,
     )
 
@@ -181,16 +210,6 @@ def test_astrometry_uses_explicit_reference_epoch():
     assert data.ref_epoch == 2.5
 
 
-def test_astrometry_stores_proper_motion_only_when_both_components_exist():
-    complete = make_astrometry(mu_x=1.2, mu_y=-0.4)
-    partial = make_astrometry(mu_x=1.2)
-
-    assert complete.mu_x == 1.2
-    assert complete.mu_y == -0.4
-    assert partial.mu_x is None
-    assert partial.mu_y is None
-
-
 def test_astrometry_chi2_uses_both_weighted_coordinates_and_system():
     data = make_astrometry()
     orbit = DummyOrbit(
@@ -211,6 +230,49 @@ def test_astrometry_chi2_uses_both_weighted_coordinates_and_system():
     assert system == "1"
 
 
+def test_astrometry_log_likelihood_applies_component_offsets():
+    data = make_astrometry(
+        x=[2.0, 4.0, 6.0],
+        y=[-1.0, 1.0, 3.0],
+        instrument="HST",
+    )
+    orbit = DummyOrbit(
+        x=[1.0, 3.0, 5.0],
+        y=[0.0, 2.0, 4.0],
+        params={
+            "astro_HST_x_offset": 1.0,
+            "astro_HST_y_offset": -1.0,
+        },
+    )
+
+    result = data.log_likelihood(
+        orbit,
+        offset_names={
+            "astro_HST_x_offset",
+            "astro_HST_y_offset",
+        },
+    )
+
+    assert result == pytest.approx(0.0)
+
+
+def test_astrometry_log_likelihood_uses_one_jitter_for_both_coordinates():
+    data = make_astrometry(
+        x=[1.0, 1.0, 1.0],
+        y=[1.0, 1.0, 1.0],
+        x_err=1.0,
+        y_err=1.0,
+    )
+    orbit = DummyOrbit(
+        x=[0.0, 0.0, 0.0],
+        y=[0.0, 0.0, 0.0],
+        params={"astro_jitter": 1.0},
+    )
+
+    expected = -0.5 * 6 * (0.5 + np.log(4 * np.pi))
+    assert data.log_likelihood(orbit) == pytest.approx(expected)
+
+
 def test_astrometry_observation_accessors_return_original_arrays():
     data = make_astrometry()
 
@@ -226,7 +288,7 @@ def test_astrometry_observation_accessors_return_original_arrays():
 
 
 def test_radial_velocity_converts_scalars_and_broadcasts_uncertainty():
-    scalar = RadialVelocityData(t=1.0, rv=2.0, rv_err=0.5, system=1)
+    scalar = RadialVelocityData(t=1.0, rv=2.0, rv_err=0.5, system=1, units={"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr})
     broadcast = make_rv(rv_err=0.25)
 
     assert scalar.t.shape == scalar.rv.shape == scalar.rv_err.shape == (1,)
@@ -276,6 +338,7 @@ def test_gaia_converts_scalars_to_one_dimensional_arrays():
         x=3.0,
         err=0.1,
         system=1,
+        units={"t": u.yr, "x": u.rad, "err": u.rad},
     )
 
     for value in (
@@ -325,25 +388,47 @@ def test_gaia_chi2_uses_reported_uncertainties_without_jitter():
     assert call[5] == "1"
 
 
-def test_gaia_chi2_combines_explicit_jitter_in_quadrature():
-    data = make_gaia(x=[2.0, 2.0, 2.0], err=1.0)
-    orbit = DummyOrbit(gaia=[0.0, 0.0, 0.0])
-
-    result = data.chi2(orbit, jitter=1.0)
-
-    assert result == pytest.approx(6.0)
-
-
-def test_gaia_orbit_jitter_takes_precedence_over_explicit_jitter():
-    data = make_gaia(x=[3.0, 3.0, 3.0], err=1.0)
+def test_gaia_log_likelihood_applies_scalar_instrument_offset():
+    data = make_gaia(x=[2.0, 2.0, 2.0])
     orbit = DummyOrbit(
         gaia=[0.0, 0.0, 0.0],
-        derived_params={"jitter": 2.0},
+        params={"astro_Gaia_offset": 2.0},
     )
 
-    result = data.chi2(orbit, jitter=10.0)
+    result = data.log_likelihood(
+        orbit,
+        offset_names={"astro_Gaia_offset"},
+    )
 
-    assert result == pytest.approx(27.0 / 5.0)
+    assert result == pytest.approx(0.0)
+
+
+def test_joint_log_likelihood_only_applies_nonreference_offsets():
+    reference = make_astrometry(
+        x=[0.0, 0.0, 0.0],
+        y=[0.0, 0.0, 0.0],
+        instrument="HST",
+    )
+    offset = make_astrometry(
+        x=[2.0, 2.0, 2.0],
+        y=[-3.0, -3.0, -3.0],
+        instrument="JWST",
+    )
+    data = JointData([reference, offset], instrument_offsets=True)
+    orbit = DummyOrbit(
+        x=[0.0, 0.0, 0.0],
+        y=[0.0, 0.0, 0.0],
+        params={
+            "astro_JWST_x_offset": 2.0,
+            "astro_JWST_y_offset": -3.0,
+        },
+    )
+
+    assert data.instrument_offset_names() == [
+        "astro_JWST_x_offset",
+        "astro_JWST_y_offset",
+    ]
+    assert data.log_likelihood(orbit) == pytest.approx(0.0)
 
 
 def test_gaia_basic_observation_accessors():

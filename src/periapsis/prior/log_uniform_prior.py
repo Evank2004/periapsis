@@ -13,6 +13,14 @@ class LogUniformPrior(Prior):
         self.min = lower_bound
         self.max = upper_bound
 
+    def scale(self, factor):
+        if factor <= 0:
+            raise ValueError("Prior scale factor must be positive.")
+        self.lower_bound *= factor
+        self.upper_bound *= factor
+        self.min = self.lower_bound
+        self.max = self.upper_bound
+
     def sample(self, random_state, size=1):
         return 10**random_state.uniform(low=np.log10(self.lower_bound), high=np.log10(self.upper_bound), size=size)
 

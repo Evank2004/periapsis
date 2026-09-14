@@ -1,4 +1,5 @@
 import numpy as np
+from astropy import units as u
 from periapsis.utils.solvers import solve_mass, solve_kepler, solve_M2_from_mass_function
 from .params import all_parameters, ang_parameters, wrapped_parameters
 from collections import defaultdict, deque
@@ -355,14 +356,16 @@ def Ma_fa_to_minMb(Ma, fa):
     return minMb
 
 def parallax_to_distance(parallax):
-    # TODO: units
-    distance = 1.0 / parallax
-    return distance
+    rad = u.Unit("rad")
+    arcsec = u.Unit("arcsec")
+    parallax_arcsec = (np.asarray(parallax) * rad).to_value(arcsec)
+    return 1.0 / parallax_arcsec
 
 def distance_to_parallax(distance):
-    # TODO: units
-    parallax = 1.0 / distance
-    return parallax
+    rad = u.Unit("rad")
+    arcsec = u.Unit("arcsec")
+    parallax_arcsec = (1.0 / np.asarray(distance)) * arcsec
+    return parallax_arcsec.to_value(rad)
 
 def sini_cosi_to_i(sini, cosi):
     i = np.arctan2(sini, cosi)
@@ -387,6 +390,16 @@ def c_h_to_K_omega(c, h):
     omega = np.arctan2(h, -c)
     K = np.sqrt(c**2 + h**2)
     return K, omega
+
+def q_f_to_photocenter_factor(q, flux_ratio,system):
+    if system in ('relative',""):
+        photocenter_factor = 1.0
+    elif system == '1':
+        photocenter_factor = 1 - (flux_ratio*(1+q))/(q*(1+ flux_ratio))
+    elif system == '2':
+        photocenter_factor = (flux_ratio -q)/(1+flux_ratio)
+
+    return photocenter_factor
 
 def add_ab(a, b):
     return a + b
@@ -557,6 +570,15 @@ _transform_graph = [
     (('M1', 'q',), ('M2',), mul_ab),
     (('M2', 'q',), ('M1',), div_ab),
     (('Mtot', 'q',), ('M1', 'M2'), Mtot_q_to_M1_M2),
+    (('a1','a2'),('q',), div_ab),
+    (('q', 'a2'), ('a1',), mul_ab),
+    (('q', 'a1'), ('a2',), div_ab),
+    (('a1sini', 'a2sini'), ('q',), div_ab),
+    (('q', 'a2sini'), ('a1sini',), mul_ab),
+    (('q', 'a1sini'), ('a2sini',), div_ab),
+    (('K1', 'K2'), ('q',), div_ab),
+    (('q', 'K2'), ('K1',), mul_ab),
+    (('q', 'K1'), ('K2',), div_ab),
     (('n', 'K1', 'e'), ('a1sini',), n_K_e_to_asini),
     (('n', 'K2', 'e'), ('a2sini',), n_K_e_to_asini),
     (('a1sini', 'n', 'e'), ('K1',), asini_n_e_to_K),

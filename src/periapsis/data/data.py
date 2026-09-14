@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+from astropy import units as u
 import numpy as np
 
 from periapsis.model.orbit import Orbit
@@ -15,7 +15,7 @@ class Data(ABC):
     t: np.ndarray
 
     @abstractmethod
-    def chi2(self, orbit: Orbit):
+    def chi2(self, orbit: Orbit) -> float:
         """
         Computes the chi-squared value of the given orbit parameters compared to the data. 
         
@@ -28,6 +28,26 @@ class Data(ABC):
         -------
         chi2 : float
             The chi-squared value of the given orbit parameters compared to the data.
+        """
+        pass
+
+    @abstractmethod
+    def log_likelihood(self, orbit: Orbit, offset_names=None) -> float:
+        """
+        Computes the log-likelihood of the given orbit parameters compared to the data. 
+        
+        Parameters
+        ----------
+        orbit: Orbit
+            The orbit for which to compute the log-likelihood value.
+        offset_names: list of str, optional
+            A list of parameter names that should be treated as offsets in the model. 
+            If provided, these parameters will be added to the model predictions before computing the log-likelihood.
+
+        Returns
+        -------
+        log_likelihood : float
+            The log-likelihood value of the given orbit parameters compared to the data.
         """
         pass
 
@@ -67,11 +87,18 @@ class Data(ABC):
         """
         pass
 
+    @property
     @abstractmethod
-    def dof(self):
+    def dof(self)-> int:
         """
         Returns the degrees of freedom of the data.
         """
         pass
 
-   
+    @abstractmethod
+    def parameter_unit(self, param_name) -> u.Unit:
+        pass
+
+    @abstractmethod
+    def parameter_dimension(self, param_name) -> str:
+        pass

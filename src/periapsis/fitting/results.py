@@ -18,6 +18,8 @@ class FitResults:
         self.m1 = samples.pop('m1', None)
         self.mass_function = samples.pop('mass_function', None)
         self.priors = samples.pop('priors', dict())
+        self.canonical_priors = samples.pop('canonical_priors', None)
+        self.parameter_factors = samples.pop('parameter_factors', {})
         self.Ess = samples.pop('Ess', None)
         self.tau = samples.pop('tau', None)
         self.mean_acceptance_fraction = samples.pop('mean_acceptance_fraction', None)
@@ -29,6 +31,9 @@ class FitResults:
 
         if self.priors is None:
             self.priors = dict()
+
+        if self.param_names is None:
+            self.param_names = []
 
         self.fixed_params = {name for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)}
         self.known_params = {
@@ -56,8 +61,40 @@ class FitResults:
             known_param_values.update({name: self.priors[name].value for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)})
 
         if known_params:
+            canonical_values = {
+                name: value * self.parameter_factors.get(name, 1.0)
+                for name, value in known_param_values.items()
+            }
             transform = build_transform_function(known_params, key)
-            return transform(**known_param_values)
+            value = transform(**canonical_values)
+            return value / self.parameter_factors.get(key, 1.0)
+
+    def canonical_MAP_params(self):
+        """Return the MAP parameter dictionary in canonical units."""
+        if self.MAP_params is None:
+            return None
+        return {
+            name: value * self.parameter_factors.get(name, 1.0)
+            for name, value in self.MAP_params.items()
+        }
+
+    def canonical_median_params(self):
+        """Return the median parameter dictionary in canonical units."""
+        if self.median_params is None:
+            return None
+        return {
+            name: value * self.parameter_factors.get(name, 1.0)
+            for name, value in self.median_params.items()
+        }
+
+    def canonical_sample_array(self):
+        """Return the stored sampled parameters in canonical units."""
+        if self.param_names is None:
+            raise ValueError("Parameter names are required for canonical samples.")
+        return np.column_stack([
+            np.asarray(self.samples[name]) * self.parameter_factors.get(name, 1.0)
+            for name in self.param_names
+        ])
 
 
     def __contains__(self, key):

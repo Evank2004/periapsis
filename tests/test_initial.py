@@ -272,8 +272,8 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
     monkeypatch.setattr(guess, "Zucker_pdc", lambda: 5.0)
     optimizer_calls = {}
 
-    def fake_differential_evolution(function, bounds, args, maxiter, polish):
-        optimizer_calls["global"] = (function, bounds, args, maxiter, polish)
+    def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
+        optimizer_calls["global"] = (function, bounds, args, maxiter, polish, x0)
         return SimpleNamespace(x=np.array([6.0, 0.4]))
 
     def fake_minimize(function, x0, method, args, bounds, options):
@@ -307,6 +307,7 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
         (data,),
         2000,
         False,
+        np.array([6.0, 0.4]),
     )
     assert optimizer_calls["local"][2:] == (
         "L-BFGS-B",
@@ -496,8 +497,8 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
     monkeypatch.setattr(guess, "lomb_scargle", lambda: (3.0, 6.0))
     calls = {}
 
-    def fake_differential_evolution(function, bounds, args, maxiter, polish):
-        calls["global"] = (function, bounds, args, maxiter, polish)
+    def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
+        calls["global"] = (function, bounds, args, maxiter, polish, x0)
         return SimpleNamespace(x=np.array([3.0, 6.0, 0.3]))
 
     def fake_minimize(function, x0, method, args, bounds, constraints, options):
@@ -521,6 +522,7 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
         (data, guess.priors, ["a", "P", "e"]),
         2000,
         False,
+        np.array([3.0, 6.0, 0.3]),
     )
     assert calls["local"][2:] == (
         "SLSQP",

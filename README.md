@@ -17,8 +17,8 @@ import periapsis as p
 import numpy as np
 
 fit_data = p.JointData([
-    p.AstrometryData(t_astro, x, y,x_err,y_err,units={'t':'yr','x':'mas','y':'mas','x_err':'mas','y_err':'mas'},system=1),
-    p.RadialVelocityData(t_rv, rv,rv_err,units={'t':'yr','rv':'km/s','rv_err':'km/s'},system=1)
+    p.AstrometryData(t_astro, x, y,x_err,y_err,units={'t':'day','x':'mas','y':'mas','x_err':'mas','y_err':'mas'},system=1),
+    p.RadialVelocityData(t_rv, rv,rv_err,units={'t':'day','rv':'km/s','rv_err':'km/s'},system=1)
 ])
 
 fitter = p.MCMCFitter(

@@ -302,13 +302,13 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
     np.testing.assert_allclose(result, expected)
     assert result.shape == (3, 2)
     assert eccentricity_prior.sample_calls == [(rng, 1)]
-    assert optimizer_calls["global"][1:] == (
+    assert optimizer_calls["global"][1:5] == (
         [(1.0, 10.0), (0.0, 0.9)],
         (data,),
         2000,
         False,
-        np.array([6.0, 0.4]),
     )
+    np.testing.assert_array_equal(optimizer_calls["global"][5], [6.0, 0.4])
     assert optimizer_calls["local"][2:] == (
         "L-BFGS-B",
         (data,),
@@ -517,13 +517,13 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
     expected = np.array([[8.0, 0.0], [8.0008, 0.0000]])
     np.testing.assert_allclose(result, expected)
     assert eccentricity_prior.sample_calls == [(rng, 1)]
-    assert calls["global"][1:] == (
+    assert calls["global"][1:5] == (
         [(1.0, 10.0), (2.0, 8.0), (0.0, 0.9)],
         (data, guess.priors, ["a", "P", "e"]),
         2000,
         False,
-        np.array([3.0, 6.0, 0.3]),
     )
+    np.testing.assert_array_equal(calls["global"][5], [3.0, 6.0, 0.3])
     assert calls["local"][2:] == (
         "SLSQP",
         (data, guess.priors, ["a", "P", "e"]),

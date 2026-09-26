@@ -308,7 +308,7 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
         2000,
         False,
     )
-    np.testing.assert_array_equal(optimizer_calls["global"][5], [6.0, 0.4])
+    np.testing.assert_array_equal(optimizer_calls["global"][5], [5.0, 0.3])
     assert optimizer_calls["local"][2:] == (
         "L-BFGS-B",
         (data,),

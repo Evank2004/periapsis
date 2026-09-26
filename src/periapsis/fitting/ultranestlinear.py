@@ -25,7 +25,7 @@ class UltranestLinearFitter(Fitter):
         self.max_ncalls = max_ncalls
         self.output_params = frozenset(output_params)
         self.output_param_order = tuple(output_params)
-        self.prior_params = set(priors.keys())
+        self.prior_params = set(self.priors.keys())
         self.fixed_prior_params = {p for p in self.prior_params if isinstance(self.priors[p], FixedPrior)}
         self.non_fixed_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], FixedPrior)}
         self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], Bounds)}

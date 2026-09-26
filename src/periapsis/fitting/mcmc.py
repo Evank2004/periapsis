@@ -42,7 +42,7 @@ class MCMCFitter(Fitter):
         self.param_indexes = {
             name: index for index, name in enumerate(self.param_order)
         }
-        self.prior_params = set(priors.keys())
+        self.prior_params = set(self.priors.keys())
         self.fixed_prior_params = {p for p in self.prior_params if isinstance(self.priors[p], FixedPrior)}
         self.non_bound_prior_params = {p for p in self.prior_params if not isinstance(self.priors[p], Bounds)}
         self.sample_covered_params = covered_parameters(set(self.sample_params) | self.fixed_prior_params)
@@ -336,6 +336,7 @@ class MCMCFitter(Fitter):
         results_dict['tau'] = tau
         results_dict['param_means'] = reported_param_means
         results_dict['param_names'] = param_order
+        results_dict['sampled_param_names'] = param_order
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params
         results_dict['null_hypothesis'] = null_hypothesis

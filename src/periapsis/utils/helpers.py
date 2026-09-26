@@ -407,7 +407,9 @@ def _flatten_and_join(data):
     return list(combined_data.values())
 
 def _jitter_name(data):
-    if isinstance(data,(AstrometryData,GaiaData)):
+    if isinstance(data, GaiaData):
+        return "astro_jitter"
+    if isinstance(data, AstrometryData):
         prefix = "astro"
     elif isinstance(data,RadialVelocityData):
         prefix = "rv"

@@ -128,7 +128,8 @@ class AstrometryInitialGuess(InitialGuess):
             bounds=bounds, 
             args=(self.data, self.priors,param_in), 
             maxiter=2000,
-            polish=False
+            polish=False,
+            x0=initial_points
         )
 
         def bounds_transform_fn(bound):
@@ -230,7 +231,8 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
             bounds=bounds, 
             args=(self.data, self.priors,param_in), 
             maxiter=2000,
-            polish=False
+            polish=False,
+            x0=initial_points
         )
 
         orbit = minimize(

@@ -191,6 +191,26 @@ def test_period_to_mean_motion_is_vectorized():
     np.testing.assert_array_equal(periods, [1.0, 2.0, 4.0])
 
 
+def test_rv_c_h_convention_matches_orbital_velocity_expansion():
+    K = 7.3
+    omega = 0.4
+    transformed = build_transform_functions(
+        {"K", "omega"}, ["c", "h"]
+    )(K=K, omega=omega)
+    c, h = transformed["c"], transformed["h"]
+    recovered = build_transform_functions(
+        {"c", "h"}, ["K", "omega"]
+    )(c=c, h=h)
+    nu = np.linspace(0.0, 6.0, 17)
+
+    matrix_rv = h * (np.cos(nu) + 0.2) + c * np.sin(nu)
+    orbital_rv = K * (np.cos(nu + omega) + 0.2 * np.cos(omega))
+
+    np.testing.assert_allclose(recovered["K"], K)
+    np.testing.assert_allclose(recovered["omega"], omega)
+    np.testing.assert_allclose(matrix_rv, orbital_rv)
+
+
 def test_ellipse_shape_parameters_are_derived_together():
     function = build_transform_functions(
         {"a", "e"}, ["b", "p", "r_p", "r_a"]

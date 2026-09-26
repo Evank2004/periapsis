@@ -61,6 +61,25 @@ def _summary_params(results, summary_name):
     return None
 
 
+def _fit_jitter(params, data):
+    if isinstance(data, GaiaData):
+        return params.get("astro_jitter", params.get("astro_Gaia_jitter"))
+    prefix = "astro" if isinstance(data, AstrometryData) else "rv"
+    name = f"{prefix}_jitter" if data.instrument is None else f"{prefix}_{data.instrument}_jitter"
+    return params.get(name)
+
+
+def _model_chi2(model, params, data):
+    jitter = _fit_jitter(params, data)
+    if isinstance(data, AstrometryData):
+        return data.chi2(model, jitter_x=jitter, jitter_y=jitter)
+    if isinstance(data, RadialVelocityData):
+        return data.chi2(model, jitter=jitter)
+    if isinstance(data, GaiaData):
+        return data.chi2(model, jitter=jitter)
+    return data.chi2(model)
+
+
 def red_chi2(results,data,savepath=None):
     '''
     Returns reduced Chi2 value for the MAP and median fit
@@ -84,26 +103,11 @@ def red_chi2(results,data,savepath=None):
   
     for d in datas:
         
-        if not isinstance(d,(GaiaData)):
-            map_model = Orbit(**map_params)
-            med_model = Orbit(**med_params)
-            map_chi2.append(d.chi2(map_model))
-            med_chi2.append(d.chi2(med_model))
-            dof += d.dof     
-        else:
-            if "jitter" not in map_params: 
-                jit = getattr(results, 'jitter', None)
-                if jit is None:
-                    jit = results.samples.get('jitter', None)
-                if jit is not None:
-                    map_params['jitter'] = jit
-                    med_params['jitter'] = jit
-
-            map_model = Orbit(**map_params)
-            med_model = Orbit(**med_params)
-            map_chi2.append(GaiaData.chi2(d,map_model))
-            med_chi2.append(GaiaData.chi2(d,med_model))
-            dof += d.dof  # for Gaia data, only one dimension is used for chi2 calculation
+        map_model = Orbit(**map_params)
+        med_model = Orbit(**med_params)
+        map_chi2.append(_model_chi2(map_model, map_params, d))
+        med_chi2.append(_model_chi2(med_model, med_params, d))
+        dof += d.dof
             
     map_chi2 = np.sum(map_chi2)
     med_chi2 = np.sum(med_chi2)
@@ -138,26 +142,11 @@ def delta_chi2(results,data,savepath=None):
     med_chi2 = []
     dof = 0
     for d in datas:
-        if not isinstance(d,(GaiaData)):
-            map_model = Orbit(**map_params)
-            med_model = Orbit(**med_params)
-            map_chi2.append(d.chi2(map_model))
-            med_chi2.append(d.chi2(med_model))
-            dof += d.dof
-        elif isinstance(d,(GaiaData)):
-            if "jitter" not in map_params: 
-                jit = getattr(results, 'jitter', None)
-                if jit is None:
-                    jit = results.samples.get('jitter', None)
-                if jit is not None:
-                    map_params['jitter'] = jit
-                    med_params['jitter'] = jit
-
-            map_model = Orbit(**map_params)
-            med_model = Orbit(**med_params)
-            map_chi2.append(GaiaData.chi2(d,map_model))
-            med_chi2.append(GaiaData.chi2(d,med_model))
-            dof += d.dof  # for Gaia data, only one dimension is used for chi2 calculation
+        map_model = Orbit(**map_params)
+        med_model = Orbit(**med_params)
+        map_chi2.append(_model_chi2(map_model, map_params, d))
+        med_chi2.append(_model_chi2(med_model, med_params, d))
+        dof += d.dof
 
     map_chi2 = np.sum(map_chi2)
     med_chi2 = np.sum(med_chi2)
@@ -203,6 +192,8 @@ def credible_intervals(results):
     return credible_intervals
 
 def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
+    if hasattr(results, "add_mass_samples") and "M2" not in results.samples:
+        results.add_mass_samples(data)
     red_chi2_map, red_chi2_med,uwe_map,uwe_med,orbit_dof = red_chi2(results,data)
     delta_chi2_map, delta_chi2_med,p_map,p_med,sig_significance = delta_chi2(results,data)
     intervals = credible_intervals(results)

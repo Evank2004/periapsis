@@ -372,22 +372,22 @@ def sini_cosi_to_i(sini, cosi):
     return i
 
 def K_omega_to_c_h(K, omega):
-    c = -K * np.cos(omega)
-    h = K * np.sin(omega)
+    c = -K * np.sin(omega)
+    h = K * np.cos(omega)
     return c, h
 
 def c_omega_to_K_h(c, omega):
-    K = -c/np.cos(omega)
-    h = K * np.sin(omega)
+    K = -c/np.sin(omega)
+    h = K * np.cos(omega)
     return K, h
 
 def h_omega_to_K_c(h, omega):
-    K = h/np.sin(omega)
-    c = -K * np.cos(omega)
+    K = h/np.cos(omega)
+    c = -K * np.sin(omega)
     return K, c
 
 def c_h_to_K_omega(c, h):
-    omega = np.arctan2(h, -c)
+    omega = np.arctan2(-c, h)
     K = np.sqrt(c**2 + h**2)
     return K, omega
 

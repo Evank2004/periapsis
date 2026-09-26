@@ -280,6 +280,7 @@ class MCMCLinearFitter(Fitter):
             for i, name in enumerate(param_order)
         ])
         results_dict['param_names'] = post_labels
+        results_dict['sampled_param_names'] = param_order
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params
         results_dict['null_hypothesis'] = null_hypothesis

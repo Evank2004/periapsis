@@ -15,9 +15,11 @@ class Fitter(ABC):
     """
 
     def __init__(self, ref_epoch=None, **priors):
+        self._use_data_ref_epoch = 'Tepoch' not in priors and ref_epoch is None
         self.priors = priors
         self.ref_epoch = ref_epoch
-        self.priors['Tepoch'] = FixedPrior(0.0 if ref_epoch is None else ref_epoch)
+        if 'Tepoch' not in self.priors:
+            self.priors['Tepoch'] = FixedPrior(0.0 if ref_epoch is None else ref_epoch)
 
     @abstractmethod
     def fit(self, data: Data) -> FitResults:
@@ -94,11 +96,11 @@ class Fitter(ABC):
 
         canonical_priors = deepcopy(self.priors)
         data_ref_epoch = getattr(data, 'ref_epoch', None)
-        if self.ref_epoch is None and data_ref_epoch is not None:
+        if self._use_data_ref_epoch and data_ref_epoch is not None:
             canonical_priors['Tepoch'] = FixedPrior(data_ref_epoch)
 
         for name, prior in canonical_priors.items():
-            if name == 'Tepoch' and self.ref_epoch is None and data_ref_epoch is not None:
+            if name == 'Tepoch' and self._use_data_ref_epoch and data_ref_epoch is not None:
                 continue
             unit = data.parameter_unit(name)
             dimension = data.parameter_dimension(name)

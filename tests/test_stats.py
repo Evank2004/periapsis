@@ -148,7 +148,7 @@ def test_red_chi2_falls_back_to_parameter_sets_in_samples(monkeypatch):
         units=ASTRO_UNITS,
         system=1,
     )
-    data.chi2 = lambda model: model.parameters["chi2"]
+    data.chi2 = lambda model, **kwargs: model.parameters["chi2"]
     results = make_results(
         MAP_params=None,
         median_params=None,
@@ -177,7 +177,7 @@ def test_red_chi2_can_build_models_through_the_public_orbit_api(monkeypatch):
         units=ASTRO_UNITS,
         system=1,
     )
-    data.chi2 = lambda model: model.parameters["chi2"]
+    data.chi2 = lambda model, **kwargs: model.parameters["chi2"]
     results = make_results(
         MAP_params={"chi2": 6.0},
         median_params={"chi2": 3.0},
@@ -202,7 +202,7 @@ def test_red_chi2_merges_fixed_priors_into_models(monkeypatch):
         system=1,
     )
 
-    def chi2(model):
+    def chi2(model, **kwargs):
         assert model.parameters["e"] == 0.25
         return model.parameters["chi2"]
 
@@ -233,7 +233,7 @@ def test_red_chi2_uses_one_observable_per_rv_epoch(monkeypatch):
         units=RV_UNITS,
         system=1,
     )
-    data.chi2 = lambda model: model.parameters["chi2"]
+    data.chi2 = lambda model, **kwargs: model.parameters["chi2"]
     results = make_results(
         MAP_params={"chi2": 6.0, "P": 2.0},
         median_params={"chi2": 3.0, "P": 2.0},
@@ -267,7 +267,7 @@ def test_delta_chi2_non_gaia_compares_proper_motion_fit(monkeypatch):
         units=ASTRO_UNITS,
         system=1,
     )
-    data.chi2 = lambda model: model.parameters["chi2"]
+    data.chi2 = lambda model, **kwargs: model.parameters["chi2"]
     results = make_results(
         MAP_params={"chi2": 8.0, "P": 2.0},
         median_params={"chi2": 10.0, "P": 3.0},

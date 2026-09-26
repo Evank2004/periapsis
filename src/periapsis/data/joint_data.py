@@ -110,6 +110,15 @@ class JointData(Data):
             
     def parameter_unit(self,param_name):
 
+        rv_parameters = {
+            "K", "K1", "K2", "c", "c1", "c2", "h", "h1", "h2",
+            "gamma", "rv_trend",
+        }
+        if param_name in rv_parameters:
+            for data in self.datas:
+                if isinstance(data, RadialVelocityData):
+                    return data.parameter_unit(param_name)
+
         if param_name.startswith("astro_"):
             for data in self.datas:
                 if isinstance(data, (AstrometryData,GaiaData)):
@@ -130,6 +139,15 @@ class JointData(Data):
         raise KeyError(f"No unit found for parameter '{param_name}'.")
 
     def parameter_dimension(self,param_name):
+
+        rv_parameters = {
+            "K", "K1", "K2", "c", "c1", "c2", "h", "h1", "h2",
+            "gamma", "rv_trend",
+        }
+        if param_name in rv_parameters:
+            for data in self.datas:
+                if isinstance(data, RadialVelocityData):
+                    return data.parameter_dimension(param_name)
 
         if param_name.startswith("astro_"):
             for data in self.datas:

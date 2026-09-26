@@ -29,8 +29,8 @@ class UltranestFitter(Fitter):
         self.max_iters = max_iters
         self.max_ncalls = max_ncalls
 
-        self.prior_params = set(priors.keys())
-        self.prior_order = tuple(priors.keys())
+        self.prior_params = set(self.priors.keys())
+        self.prior_order = tuple(self.priors.keys())
         self.fixed_prior_params = {p for p in self.prior_order if isinstance(self.priors[p], FixedPrior)}
         self.non_fixed_prior_params = {p for p in self.prior_order if not isinstance(self.priors[p], FixedPrior)}
         self.non_bound_prior_params = {p for p in self.prior_order if not isinstance(self.priors[p], Bounds)}

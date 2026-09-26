@@ -13,26 +13,24 @@ pip install periapsis
 ## Usage Example
 
 ```python
-from periapsis.data import AstrometryData, RadialVelocityData, JointData
-from periapsis.fitting import MCMCFitter
-from periapsis.prior import UniformPrior
+import periapsis as p
 import numpy as np
 
-fit_data = JointData([
-    AstrometryData(t_astro, x, y),
-    RadialVelocityData(t_rv, rv),
+fit_data = p.JointData([
+    p.AstrometryData(t_astro, x, y,x_err,y_err,units={'t':'yr','x':'mas','y':'mas','x_err':'mas','y_err':'mas'},system=1),
+    p.RadialVelocityData(t_rv, rv,rv_err,units={'t':'yr','rv':'km/s','rv_err':'km/s'},system=1)
 ])
 
-fitter = MCMCFitter(
+fitter = p.MCMCFitter(
     nwalkers=32,
     niter=10000,
-    P=UniformPrior(10, 20000), # orbital period, days
-    t0=UniformPrior(1990, 2050), # time of periapsis passage
-    a=UniformPrior(0.01, 1000), # semi-major axis, AU
-    e=UniformPrior(0, 1), # eccentricity
-    cosi=UniformPrior(-1, 1), # cos(inclination)
-    omega=UniformPrior(0, 2*np.pi), # argument of periapsis
-    bigomega=UniformPrior(0, 2*np.pi), # longitude of ascending node
+    P=p.UniformPrior(10, 20000), # orbital period, days
+    t0=p.UniformPrior(1990, 2050), # time of periapsis passage
+    a=p.UniformPrior(0.01, 1000), # semi-major axis, AU
+    e=p.UniformPrior(0, 1), # eccentricity
+    cosi=p.UniformPrior(-1, 1), # cos(inclination)
+    omega=p.UniformPrior(0, 2*np.pi), # argument of periapsis
+    bigomega=p.UniformPrior(0, 2*np.pi), # longitude of ascending node
 )
 
 result = fitter.fit(fit_data)

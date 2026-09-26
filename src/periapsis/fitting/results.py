@@ -1,6 +1,8 @@
 import numpy as np
+from astropy import units as u
 from periapsis.utils.solvers import transform_theile
 from periapsis.utils.solvers import solve_mass
+from periapsis.model.orbit import Orbit
 from periapsis.prior import Prior, FixedPrior, Bounds
 from periapsis.params import build_transform_function, covered_parameters, overconstrained_parameters
 
@@ -14,6 +16,7 @@ class FitResults:
         self.median_params = samples.pop('median_params', None)
         self.null_hypothesis = samples.pop('null_hypothesis', None)
         self.param_names = samples.pop('param_names', None)
+        self.sampled_param_names = samples.pop('sampled_param_names', None)
         self.sampler = self.backend
         self.m1 = samples.pop('m1', None)
         self.mass_function = samples.pop('mass_function', None)
@@ -44,6 +47,8 @@ class FitResults:
 
 
     def __getitem__(self, key):
+        if key in self.samples:
+            return self.samples[key]
         if self.param_names is not None and key in self.param_names:
             return self.samples[key]
         
@@ -110,62 +115,42 @@ class FitResults:
         if len(self.priors) == 0:
             raise ValueError("No priors are available to sample from.")
         return SampledPriors(self.priors, self.param_names, size, random_state)    
+
+    def add_mass_samples(self, data, m1=None):
+        """Derive M2 from canonical posterior orbital samples."""
+        if not data.has_astrometry():
+            return
+        if m1 is None and self.canonical_priors is not None:
+            prior = self.canonical_priors.get("M1")
+            if isinstance(prior, FixedPrior):
+                m1 = prior.value
+        if m1 is None or self.canonical_priors is None:
+            return
+
+        fixed = {
+            name: prior.value
+            for name, prior in self.canonical_priors.items()
+            if isinstance(prior, FixedPrior)
+        }
+        masses = []
+        for sample in self.canonical_sample_array():
+            params = dict(zip(self.param_names, sample))
+            params.update(fixed)
+            orbit = Orbit(**params)
+            a1 = float(orbit["a1"])
+            if data.parameter_dimension("a1") == "angle":
+                if "distance" not in orbit:
+                    masses.append(np.nan)
+                    continue
+                a1 = (
+                    a1 * float(orbit["distance"]) * u.rad * u.pc
+                ).to_value(u.AU, equivalencies=u.dimensionless_angles())
+            masses.append(solve_mass(a1, float(orbit["P"]), float(m1)))
+
+        self.samples["M2"] = np.asarray(masses)
+        self.M2 = self.samples["M2"]
+        return self.M2
         
-
-    # def add_mass_samples(self, m1=None):
-    #     """Add secondary-mass samples derived from the orbital samples."""
-    #     if m1 is None:
-    #         m1 = self.m1
-    #     if m1 is None:
-    #         return
-
-    #     param_names = self.param_names or self.samples.get('param_names', [])
-    #     if not param_names:
-    #         return
-
-    #     period_name = next((name for name in param_names if name in {'P', 'p', 'period', 'Period'}), None)
-    #     a1_name = next((name for name in param_names if name in {'a1', 'a', 'semimajoraxis', 'semi_major_axis'}), None)
-
-    #     if period_name is None:
-    #         return
-
-    #     if a1_name is None:
-    #         # Attempt to compute a1 from Thiele-Innes parameters if available
-    #         A_name = next((name for name in param_names if name in {'A','A1'}), None)
-    #         B_name = next((name for name in param_names if name in {'B','B1'}), None)
-    #         F_name = next((name for name in param_names if name in {'F','F1'}), None)
-    #         G_name = next((name for name in param_names if name in {'G','G1'}), None)
-
-    #         if A_name and B_name and F_name and G_name:
-    #             A_samps = self.samples.get(A_name)
-    #             B_samps = self.samples.get(B_name)
-    #             F_samps = self.samples.get(F_name)
-    #             G_samps = self.samples.get(G_name)
-
-    #             a1_samps, _, _, _ = transform_theile(A_samps, B_samps, F_samps, G_samps)
-    #             self.samples['a1'] = a1_samps
-    #             a1_name = 'a1'
-    #         else:
-                
-    #             return
-
-    #     plx_samps = (
-    #         self.samples.get('parallax', None) if isinstance(self.samples, dict) else None
-    #         )
-
-    #     P_samps = self.samples.get(period_name)
-    #     a1_samps = self.samples.get(a1_name)
-        
-    #     if plx_samps is not None:
-    #         a1_samps = a1_samps / plx_samps  # Convert to AU if parallax is provided
-    #     f_M = a1_samps**3 / P_samps**2  # Mass function
-    #     m2_samps = solve_mass(np.asarray(a1_samps, dtype=float), np.asarray(P_samps, dtype=float), float(m1))
-    #     m2_samps = np.where(np.isfinite(m2_samps) & (m2_samps > 0), m2_samps, np.nan)
-    #     self.samples['M2'] = m2_samps
-    #     self.samples['mass_function'] = f_M
-    #     setattr(self,'mass_function',f_M)
-    #     setattr(self,'M2',m2_samps)
-
 
 class SampledPriors:
     def __init__(self, priors: dict[str, Prior], param_order, size, rng: np.random.RandomState):

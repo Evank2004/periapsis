@@ -59,6 +59,17 @@ def test_angular_astrometry_sets_projected_parameters_to_radians():
     assert units.canonical_units["parallax"] == u.rad
 
 
+def test_orbital_angles_remain_radians_when_astrometry_is_in_mas():
+    units = UnitSystem({"x": "mas", "y": "mas", "parallax": "mas"})
+
+    assert units.get_parameter_unit("omega1") == u.rad
+    assert units.get_parameter_unit("Omega1") == u.rad
+    assert units.get_parameter_unit("i") == u.rad
+    assert units.get_parameter_unit("M0") == u.rad
+    assert units.get_parameter_unit("a1") == u.mas
+    assert units.get_parameter_unit("parallax") == u.mas
+
+
 def test_linear_astrometry_sets_projected_parameters_to_au():
     units = UnitSystem(
         {

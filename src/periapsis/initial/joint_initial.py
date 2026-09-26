@@ -3,7 +3,7 @@ from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler
 from .astrometry_initial import AstrometryInitialGuess
 from .rv_initial import RVInitialGuess
 from .gaia_initial import GaiaInitialGuess
-from periapsis.prior import Bounds,FixedPrior
+from periapsis.prior import Bounds, FixedPrior, LogUniformPrior
 from periapsis.params.transforms import build_transform_functions
 from periapsis.utils.solvers import solve_kepler
 from periapsis.data import Data, JointData, GaiaData, RadialVelocityData, AstrometryData
@@ -169,6 +169,14 @@ class JointInitialGuess(InitialGuess):
         best_values = transform(**best_prior_values)
         poss = []
         for name in param_order:
-            poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers))
+            value = best_values[name]
+            prior = self.priors.get(name)
+            if isinstance(prior, LogUniformPrior):
+                # Jitter is a positive scale and can be many orders of magnitude
+                # smaller than the canonical-unit perturbation used by other params.
+                values = value * 10 ** self.rng.normal(0.0, 0.01, size=nwalkers)
+                poss.append(np.clip(values, prior.min, prior.max))
+            else:
+                poss.append(value + self.rng.normal(0, 1e-4, size=nwalkers))
         pos = np.column_stack(poss)
         return pos

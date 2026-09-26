@@ -49,11 +49,12 @@ def mcmc_autocorrelation_plot(results,savepath=None):
     '''
    
     param_means = np.asarray(results.samples['param_means'])
-    param_names = results.param_names
-    if results.fit_method =='linear':
-        param_names = [name for name in param_names if name in ('P', 'e', 'Tp')]
-        name_to_idx = {name: i for i, name in enumerate(results.param_names)}
-        param_means = param_means[:, [name_to_idx[name] for name in param_names]]
+    if param_means.ndim != 2:
+        raise ValueError("Parameter means must be a two-dimensional array.")
+    param_names = getattr(results, 'sampled_param_names', None)
+    if param_names is None:
+        param_names = list(results.param_names)
+        
 
     lags = np.arange(param_means.shape[0])
     autocorrs = {}
@@ -306,28 +307,37 @@ def _apply_center_offset_astro(x, y,plxf_x,plxf_y, params, dt, center=True):
     if params is None or not center:
         return np.asarray(x), np.asarray(y)
 
+    plxf_x = 0.0 if plxf_x is None else plxf_x
+    plxf_y = 0.0 if plxf_y is None else plxf_y
+
     dalpha = params.get(par.dalpha, 0)
     ddelta = params.get(par.ddelta, 0)
     mu_alpha = params.get(par.mu_alpha, 0)
     mu_delta = params.get(par.mu_delta, 0)
     parallax = params.get(par.parallax, 0)
+    dt = np.asarray(dt) - params.get(par.Tepoch, 0)
     return np.asarray(x) - dalpha - mu_alpha * dt - plxf_x*parallax, np.asarray(y) - ddelta - mu_delta * dt - plxf_y*parallax
 
-def _pericenter_coords(params, system):
-
+def _pericenter_coords(model, system):
+    params = model.derived_params
     alpha_peri = params[f'B{system}'] * (1 - params['e'])
     delta_peri = params[f'A{system}'] * (1 - params['e'])
     return alpha_peri, delta_peri
 
 def orbit_plot(results, data, savepath=None):
 
-    gs = gridspec.GridSpec(2, 2, width_ratios=[1.75, 1], height_ratios=[1, 1], wspace=0.2, hspace=0.05)
+    gs = gridspec.GridSpec(2, 2, width_ratios=[1.75, 1], height_ratios=[1, 1], wspace=0.4, hspace=0.05)
     
-    fig = plt.figure()
+    fig = plt.figure(figsize=(10, 6))
     ax1 = fig.add_subplot(gs[0, 0])
     ax2 = fig.add_subplot(gs[1, 0])
     ax3 = fig.add_subplot(gs[:, 1])
-    datas = _flatten_joint(data)
+    datas = [
+        d for d in _flatten_joint(data)
+        if isinstance(d, (AstrometryData, GaiaData))
+    ]
+    if not datas:
+        raise ValueError("Multi-orbit plotting requires astrometry or Gaia data.")
 
     def _astrometry_data_for_system(system):
         return next(
@@ -357,7 +367,7 @@ def orbit_plot(results, data, savepath=None):
         alpha_map, delta_map = map_model.pure_orbit(tfold, system=system)
         alpha_med, delta_med = med_model.pure_orbit(tfold, system=system)
 
-        alpha_peri, delta_peri = _pericenter_coords(map_params, system)
+        alpha_peri, delta_peri = _pericenter_coords(map_model, system)
 
         plot_t = _plot_time(plot_data, tfold)
         plot_alpha_map = _plot_position(plot_data, alpha_map)
@@ -383,11 +393,13 @@ def orbit_plot(results, data, savepath=None):
 
 
     def _plot_astrometry_data(results,data):
-
-        alpha_obs, delta_obs = _apply_center_offset_astro(
-            data.x, data.y, data.plxf_x, data.plxf_y,
-            results.canonical_MAP_params(), data.t,
+        map_model = Orbit(**results.canonical_MAP_params())
+        model_alpha, model_delta = map_model.astrometry(
+            data.t, data.plxf_x, data.plxf_y, system=data.system
         )
+        orbit_alpha, orbit_delta = map_model.pure_orbit(data.t, system=data.system)
+        alpha_obs = data.x - (model_alpha - orbit_alpha)
+        delta_obs = data.y - (model_delta - orbit_delta)
         dt_obs = _plot_time(data, data.t)
 
         ax1.errorbar(dt_obs, _plot_position(data, alpha_obs), yerr=_plot_position(data, data.x_err),color='k', fmt='o',markersize=4,zorder=2)
@@ -446,7 +458,7 @@ def orbit_plot(results, data, savepath=None):
     #Deduplicates labels if multiple systems are plotted
     handles, labels = ax3.get_legend_handles_labels()
     unique_legend = dict(zip(labels, handles))
-    ax3.legend(unique_legend.values(), unique_legend.keys())
+    ax3.legend(unique_legend.values(), unique_legend.keys(),fontsize='small',loc='best')
     ax3.invert_xaxis()
     
 
@@ -469,15 +481,17 @@ def sky_motion_plot(results, data, savepath=None):
         ddelta = _plot_to_canonical(data, 'ddelta', null_fit['params']['ddelta'])
         mu_alpha = _plot_to_canonical(data, 'mu_alpha', null_fit['params']['mu_alpha'])
         mu_delta = _plot_to_canonical(data, 'mu_delta', null_fit['params']['mu_delta'])
-        parallax = _plot_to_canonical(data, 'parallax', null_fit['params']['parallax'])
+        parallax_value = null_fit['params'].get('parallax', 0.0)
+        parallax = _plot_to_canonical(data, 'parallax', parallax_value)
 
         if isinstance(data, GaiaData):
             tfold = np.linspace(data.t.min(), data.t.max(), 1000)
+            dt = tfold - results.canonical_MAP_params().get('Tepoch', 0)
             plx_alpha = np.interp(tfold,data.t,data.plx_fac*data.spsi)
             plx_delta = np.interp(tfold,data.t,data.plx_fac*data.cpsi)
 
-            alpha_lin = mu_alpha *tfold + dalpha + plx_alpha*parallax
-            delta_lin = mu_delta *tfold + ddelta + plx_delta*parallax
+            alpha_lin = mu_alpha * dt + dalpha + plx_alpha*parallax
+            delta_lin = mu_delta * dt + ddelta + plx_delta*parallax
             ax.plot(_plot_position(data, alpha_lin), _plot_position(data, delta_lin), label='Linear Model', color='orange', linestyle='-.', zorder=1, alpha=0.7)
 
             map_plot_dict = data._astrometry(Orbit(**results.canonical_MAP_params()))
@@ -486,26 +500,28 @@ def sky_motion_plot(results, data, savepath=None):
             ax.plot(_plot_position(data, med_plot_dict['ra_sky']), _plot_position(data, med_plot_dict['dec_sky']), label='Median Sky Track', color='purple', linestyle='-', zorder=1)
 
         if isinstance(data,AstrometryData):
-            
-            alpha_lin = mu_alpha * tfold + dalpha + data.plxf_x*parallax
-            delta_lin = mu_delta * tfold + ddelta + data.plxf_y*parallax
+            plxf_x = 0.0 if data.plxf_x is None else data.plxf_x
+            plxf_y = 0.0 if data.plxf_y is None else data.plxf_y
+            dt = tfold - results.canonical_MAP_params().get('Tepoch', 0)
+            alpha_lin = mu_alpha * dt + dalpha + plxf_x*parallax
+            delta_lin = mu_delta * dt + ddelta + plxf_y*parallax
             ax.plot(_plot_position(data, alpha_lin), _plot_position(data, delta_lin), label='Linear Model', color='orange', linestyle='-.', zorder=1, alpha=0.7)
 
             map_model = Orbit(**results.canonical_MAP_params())
             med_model = Orbit(**results.canonical_median_params())
             alpha_map, delta_map = map_model.astrometry(tfold, data.plxf_x, data.plxf_y, system=data.system)
             alpha_med, delta_med = med_model.astrometry(tfold, data.plxf_x, data.plxf_y, system=data.system)
-            ax.plot(_plot_position(data, alpha_map), _plot_position(data, delta_map), label='MAP Sky Track', color='red', linestyle='-', zorder=1)
-            ax.plot(_plot_position(data, alpha_med), _plot_position(data, delta_med), label='Median Sky Track', color='purple', linestyle='-', zorder=1)
+            ax.plot(_plot_position(data, alpha_map), _plot_position(data, delta_map), label='MAP Sky Track', color='red', linestyle='-', zorder=3)
+            ax.plot(_plot_position(data, alpha_med), _plot_position(data, delta_med), label='Median Sky Track', color='purple', linestyle='-', zorder=3)
 
 
     def _plot_data(results, data):
         if isinstance(data, GaiaData):
             map_plot_dict = data._astrometry(Orbit(**results.canonical_MAP_params()))
-            ax.scatter(_plot_position(data, map_plot_dict['ra_sky_data']), _plot_position(data, map_plot_dict['dec_sky_data']), color='k', s=15, zorder=3)
+            ax.scatter(_plot_position(data, map_plot_dict['ra_sky_data']), _plot_position(data, map_plot_dict['dec_sky_data']), color='k', s=15, zorder=1)
             
         elif isinstance(data, AstrometryData):
-            ax.scatter(_plot_position(data, data.x), _plot_position(data, data.y), color='k', s=15, zorder=3)
+            ax.scatter(_plot_position(data, data.x), _plot_position(data, data.y), color='k', s=15, zorder=1)
             
 
 
@@ -583,6 +599,8 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
         t_max.append(np.max(d.t))
     tfold = np.linspace(np.min(t_min), np.max(t_max), 1000)
     for d in datas:
+        if not isinstance(d, (AstrometryData, GaiaData)):
+            continue
         _plot_orbit_samples(results, d, Nplot, tfold)
         _plot_map_median_orbits(results, d, tfold)
 
@@ -820,15 +838,9 @@ def rv_multi_fit_plot(results,data,Nplot=100,savepath=None):
         return None
 
     param_names = results.param_names
-    samples = results.samples.get('samples', None)
-    if samples is None:
-        if not param_names:
-            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
-    
-        sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
-        if len(sample_arrays) != len(param_names):
-            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
-        samples = results.canonical_sample_array()
+    if not param_names:
+        raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+    samples = results.canonical_sample_array()
 
     map_params = results.canonical_MAP_params()
     med_params = results.canonical_median_params()
@@ -893,15 +905,9 @@ def multi_phase_plot(results,data,Nplot=100,savepath=None):
         datas = [data] if isinstance(data, RadialVelocityData) else []
 
     param_names = results.param_names
-    samples = results.samples.get('samples', None)
-    if samples is None:
-        if not param_names:
-            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
-        
-        sample_arrays = [results.samples[name] for name in param_names if name in results.samples]
-        if len(sample_arrays) != len(param_names):
-            raise ValueError("Posterior samples are not available for multi-orbit plotting.")
-        samples = results.canonical_sample_array()
+    if not param_names:
+        raise ValueError("Posterior samples are not available for multi-orbit plotting.")
+    samples = results.canonical_sample_array()
         
     
     map_params = results.canonical_MAP_params()

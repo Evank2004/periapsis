@@ -44,6 +44,20 @@ def test_fitter_uses_data_epoch_unless_explicit_epoch_is_given():
     assert data_epoch == pytest.approx(5.0 * u.day.to(u.yr))
     assert explicit_epoch == pytest.approx(2.0 * u.day.to(u.yr))
 
+
+def test_fitter_preserves_explicit_t_epoch_prior():
+    data = RadialVelocityData(
+        t=[2017.0, 2018.0],
+        rv=[0.0, 0.0],
+        rv_err=[1.0, 1.0],
+        system=1,
+        units=RV_UNITS,
+    )
+
+    fitter = DummyFitter(Tepoch=FixedPrior(2017.0))
+
+    assert fitter._canonical_priors(data)["Tepoch"].value == pytest.approx(2017.0)
+
 def test_ultranest_fitter_initializes():
     priors = {"P": UniformPrior(1.0, 10.0), "a1": UniformPrior(0.1, 1.0)}
     fitter = UltranestFitter(output_params=["P", "a1"], **priors)

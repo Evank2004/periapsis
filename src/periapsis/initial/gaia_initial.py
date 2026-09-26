@@ -138,9 +138,12 @@ class GaiaInitialGuess(InitialGuess):
         for name in param_order:
             if name not in best_values:
                 raise ValueError(f"Missing initial guess for parameter: {name}")
-            poss.append(
-                best_values[name]
-                + self.rng.normal(0, 1e-4, size=nwalkers) * best_values[name]
-            )
+            values = best_values[name] + self.rng.normal(
+                0, 1e-4, size=nwalkers
+            ) * max(abs(best_values[name]), 1.0)
+            prior = self.priors.get(name)
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                values = np.clip(values, prior.min, prior.max)
+            poss.append(values)
 
         return np.column_stack(poss)

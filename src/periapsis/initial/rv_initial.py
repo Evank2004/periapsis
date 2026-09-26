@@ -125,7 +125,8 @@ class RVInitialGuess(InitialGuess):
             bounds=bounds, 
             args=(self.data,),
             maxiter=2000,
-            polish=False
+            polish=False,
+            x0=initial_points
         )
 
         orbit = minimize(

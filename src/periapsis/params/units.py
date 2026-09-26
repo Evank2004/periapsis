@@ -58,6 +58,7 @@ time_aliases = {
     'day': u.d,
     'yr': u.yr,
     'year': u.yr,
+    'yrs': u.yr,
 }
 
 mass_aliases = {
@@ -195,6 +196,7 @@ _PARAMETER_DIMENSIONS = {
     "gamma": "velocity",
     "e": "dimensionless",
     "q": "dimensionless",
+    "t0": "dimensionless",
     "parallax_factor": "dimensionless",
 }
 
@@ -284,6 +286,8 @@ class UnitSystem:
     def get_parameter_dimension(self, param_name):
         if param_name in self.dimensionality:
             return self.dimensionality[param_name]
+        if param_name.startswith("log"):
+            return "dimensionless"
         if param_name in _PROJECTED_POSITION_PARAMETERS:
             return self.astrometry_dimension or "length"
         if param_name in _PROPER_MOTION_PARAMETERS:
@@ -305,7 +309,11 @@ class UnitSystem:
         if dimension == "time":
             return self.units["t"]
         if dimension in {"angle", "length"}:
-            if self.astrometry_dimension == dimension and "x" in self.units:
+            uses_astrometry_unit = (
+                param_name in _PROJECTED_POSITION_PARAMETERS
+                or param_name == "parallax"
+            )
+            if uses_astrometry_unit and self.astrometry_dimension == dimension and "x" in self.units:
                 return self.units["x"]
             return CanonicalUnits[dimension]
         if dimension in {"angular_velocity", "linear_velocity"}:

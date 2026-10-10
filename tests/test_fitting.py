@@ -964,9 +964,15 @@ def test_mcmc_log_posterior_uses_real_orbit_likelihood_and_all_direct_priors():
         priors[name].logpdf(truth[name])
         for name in sampled
     )
+    expected_log_likelihood = -0.5 * np.sum(
+        np.log(2 * np.pi * data.rv_err ** 2)
+    )
 
     assert data.chi2(Orbit(**truth)) == pytest.approx(0.0, abs=1e-24)
-    assert value == pytest.approx(expected_log_prior, abs=1e-10)
+    assert value == pytest.approx(
+        expected_log_prior + expected_log_likelihood,
+        abs=1e-10,
+    )
 
 
 def test_mcmc_log_posterior_rejects_direct_prior_violation_before_likelihood():
@@ -1005,8 +1011,12 @@ def test_mcmc_log_posterior_evaluates_prior_on_derived_parameter():
 
     assert [name for name, _prior in context.derived_prior_items] == ["n"]
     value = fitter._log_posterior(np.array([truth["P"]]), context)
+    expected_log_likelihood = -0.5 * np.sum(
+        np.log(2 * np.pi * data.rv_err ** 2)
+    )
     assert value == pytest.approx(
-        mean_motion_prior.logpdf(2.0 * np.pi / truth["P"]),
+        mean_motion_prior.logpdf(2.0 * np.pi / truth["P"])
+        + expected_log_likelihood,
         abs=1e-10,
     )
 
@@ -1191,8 +1201,15 @@ def test_mcmc_linear_likelihood_uses_absolute_periastron_time(
         prior.logpdf(truth[name])
         for name, prior in priors.items()
     )
+    expected_log_likelihood = -0.5 * np.sum(
+        np.log(
+            2
+            * np.pi
+            * np.concatenate((data.x_err ** 2, data.y_err ** 2))
+        )
+    )
     assert ProbeEmceeSampler.value == pytest.approx(
-        expected_log_prior,
+        expected_log_prior + expected_log_likelihood,
         abs=1e-8,
     )
 
@@ -1425,7 +1442,17 @@ def test_ultranest_linear_likelihood_respects_nonzero_reference_epoch(
     with pytest.raises(ProbeComplete):
         fitter.fit(data, quiet=True)
 
-    assert ProbeNestedSampler.value == pytest.approx(0.0, abs=1e-8)
+    expected_log_likelihood = -0.5 * np.sum(
+        np.log(
+            2
+            * np.pi
+            * np.concatenate((data.x_err ** 2, data.y_err ** 2))
+        )
+    )
+    assert ProbeNestedSampler.value == pytest.approx(
+        expected_log_likelihood,
+        abs=1e-8,
+    )
 
 
 def test_ultranest_linear_fit_reports_sampler_ess_and_valid_counts(

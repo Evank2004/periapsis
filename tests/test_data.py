@@ -253,7 +253,10 @@ def test_astrometry_log_likelihood_applies_component_offsets():
         },
     )
 
-    assert result == pytest.approx(0.0)
+    expected = -0.5 * np.sum(
+        np.log(2 * np.pi * np.concatenate((data.x_err ** 2, data.y_err ** 2)))
+    )
+    assert result == pytest.approx(expected)
 
 
 def test_astrometry_log_likelihood_uses_one_jitter_for_both_coordinates():
@@ -400,7 +403,8 @@ def test_gaia_log_likelihood_applies_scalar_instrument_offset():
         offset_names={"astro_Gaia_offset"},
     )
 
-    assert result == pytest.approx(0.0)
+    expected = -0.5 * np.sum(np.log(2 * np.pi * data.err ** 2))
+    assert result == pytest.approx(expected)
 
 
 def test_joint_log_likelihood_only_applies_nonreference_offsets():
@@ -428,7 +432,13 @@ def test_joint_log_likelihood_only_applies_nonreference_offsets():
         "astro_JWST_x_offset",
         "astro_JWST_y_offset",
     ]
-    assert data.log_likelihood(orbit) == pytest.approx(0.0)
+    expected = sum(
+        -0.5 * np.sum(
+            np.log(2 * np.pi * np.concatenate((component.x_err ** 2, component.y_err ** 2)))
+        )
+        for component in (reference, offset)
+    )
+    assert data.log_likelihood(orbit) == pytest.approx(expected)
 
 
 def test_gaia_basic_observation_accessors():

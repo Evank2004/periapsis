@@ -42,9 +42,8 @@ def _gaussian_log_likelihood(residuals,err,jitter):
     """
     if jitter is not None:
         err = np.sqrt(err**2 + jitter**2)
-        log_likelihood = -0.5 * np.sum((residuals / err) ** 2 + np.log(2 * np.pi * err ** 2))
-    else:
-        log_likelihood = -0.5 * np.sum((residuals/err)**2)
+    log_likelihood = -0.5 * np.sum((residuals / err) ** 2 + np.log(2 * np.pi * err ** 2))
+    
     return log_likelihood
 
 def _orbit_value(orbit, name, default=None):
@@ -155,13 +154,11 @@ class AstrometryData(SystemData):
             if self.instrument is None
             else f"astro_{self.instrument}_jitter"
         )
-        if jitter_name in orbit.params:
-            jitter = orbit.params[jitter_name]
-            ln_like_x = _gaussian_log_likelihood(residuals_x, self.x_err, jitter)
-            ln_like_y = _gaussian_log_likelihood(residuals_y, self.y_err, jitter)
-        else:
-            ln_like_x = -0.5 * np.sum((residuals_x / self.x_err) ** 2)
-            ln_like_y = -0.5 * np.sum((residuals_y / self.y_err) ** 2)
+
+        jitter = orbit.params.get(jitter_name)
+
+        ln_like_x = _gaussian_log_likelihood(residuals_x,self.x_err,jitter)
+        ln_like_y = _gaussian_log_likelihood(residuals_y,self.y_err,jitter)
             
         return ln_like_x + ln_like_y
 
@@ -232,13 +229,11 @@ class RadialVelocityData(SystemData):
             if self.instrument is None
             else f"rv_{self.instrument}_jitter"
         )
-        if jitter_name in orbit.params:
-            jitter = orbit.params[jitter_name]
-            ln_like_rv = _gaussian_log_likelihood(residuals_rv, self.rv_err, jitter)
-        else:
-            ln_like_rv = -0.5 * np.sum((residuals_rv / self.rv_err) ** 2 )
-        
 
+        jitter = orbit.params.get(jitter_name)
+        ln_like_rv = _gaussian_log_likelihood(residuals_rv,self.rv_err,jitter)
+        
+        
         return ln_like_rv
 
     def has_astrometry(self) -> bool:

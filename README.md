@@ -25,7 +25,8 @@ fitter = p.MCMCFitter(
     nwalkers=32,
     niter=10000,
     P=p.UniformPrior(10, 20000), # orbital period, days
-    Tp=p.UniformPrior(1990, 2050), # time of periapsis passage
+    t0=p.UniformPrior(-0.5, 0.5), # Tp/P, 
+    # where Tp is time of periapsis passage
     a1=p.UniformPrior(0.01, 1000), # semi-major axis, AU
     e=p.UniformPrior(0, 1), # eccentricity
     cosi=p.UniformPrior(-1, 1), # cos(inclination)

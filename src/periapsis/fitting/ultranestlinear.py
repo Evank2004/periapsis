@@ -3,8 +3,7 @@ from periapsis.model import Orbit
 from .fitter import Fitter
 from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData,GaiaData
 from periapsis.fitting.results import FitResults
-from periapsis.utils.solvers import solve_kepler
-from periapsis.utils.helpers import _matrix_builder,_matrix_filler, _lsq_helper, _sigma,_jitter_check
+from periapsis.utils.helpers import _matrix_builder,_matrix_filler, _lsq_helper, _sigma
 from periapsis.prior import FixedPrior, Bounds
 from periapsis.params.units import CanonicalUnits
 import periapsis.params as par
@@ -134,14 +133,10 @@ class UltranestLinearFitter(Fitter):
                     return reject_logl
                 if upper is not None and bound_param_dict[name] > upper:
                     return reject_logl # TODO possibly slope inwards towards the bounds instead of hard cutoff
-            jitter_check = _jitter_check(data,params_dict)
 
-            if np.any(jitter_check):
-                ln_like = -0.5 * (
-                    chi2 + np.sum(np.log(2 * np.pi * sigma ** 2))
-                )
-            else:
-                ln_like = -0.5 * chi2
+            ln_like = -0.5 * (
+                chi2 + np.sum(np.log(2 * np.pi * sigma ** 2))
+            )
 
             return ln_like  
 

@@ -69,16 +69,13 @@ class GaiaData(SystemData):
         for jitter_name in ('astro_jitter',f'astro_Gaia_jitter'):
             if jitter_name in orbit.params:
                 jitter = orbit.params[jitter_name]
-                use_jitter = True
+                
                 break
         else:
             jitter = None
-            use_jitter = False
+            
 
-        if use_jitter:
-            ln_like = _gaussian_log_likelihood(residuals, self.err, jitter)
-        else:
-            ln_like = -0.5 * np.sum((residuals / self.err) ** 2 )
+        ln_like = _gaussian_log_likelihood(residuals,self.err,jitter)
         return ln_like
 
     def has_astrometry(self) -> bool:

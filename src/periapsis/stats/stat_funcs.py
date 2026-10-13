@@ -18,10 +18,11 @@ def _json_default(value):
 
 
 def _credible_interval_summary(samples):
-    m2sig, m1sig, p1sig, p2sig = np.percentile(samples, [2.275, 15.865, 84.135, 97.725])
+    m2sig, m1sig, med,p1sig, p2sig = np.percentile(samples, [2.275, 15.865,50, 84.135, 97.725])
     return {
         '-2sigma': m2sig,
         '-1sigma': m1sig,
+        'median': med,
         '+1sigma': p1sig,
         '+2sigma': p2sig,
     }

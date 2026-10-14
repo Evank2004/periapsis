@@ -754,7 +754,7 @@ def residuals_plot(results, data, savepath=None):
             x_resids = d.x - x_model
             dt_obs = _plot_time(d, d.t)
 
-            ax.errorbar(dt_obs, _plot_position(d, x_resids), yerr=_plot_position(d, d.err),color='tab:orange', fmt='o',markersize=4,label=f'Gaia Residuals',zorder=2)
+            ax.errorbar(dt_obs, _plot_position(d, x_resids), yerr=_plot_position(d, d.err),color='tab:blue', fmt='o',markersize=4,label=f'Gaia Residuals',zorder=2)
             ax.set_ylabel(rf"Residuals [{_plot_unit(d, 'x')}]")
             ax.set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
             ax.axhline(0, color='red', linestyle='--')

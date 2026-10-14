@@ -11,7 +11,7 @@ import numpy as np
 from scipy.optimize import differential_evolution,minimize, NonlinearConstraint
 
 class JointInitialGuess(InitialGuess):
-    def __init__(self, data: JointData, rng: np.random.RandomState, ref_epoch=0.0, **priors):
+    def __init__(self, data: JointData, rng: np.random.RandomState, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
         self.data = data
         self.eta = data._concat_obs()
@@ -22,7 +22,9 @@ class JointInitialGuess(InitialGuess):
         self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
         
         #pre allocate large matrix
-        self.M_base,self.cols = _matrix_builder(data, ref_epoch)
+        self.M_base, self.cols = _matrix_builder(
+            data, ref_epoch, linear_params=linear_params
+        )
 
 
     def Delisle_joint(self,num_freq=10000):

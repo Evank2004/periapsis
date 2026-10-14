@@ -16,6 +16,16 @@ def _json_default(value):
         return value.item()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
+def _latex_credible_interval(label, summary):
+    median = float(summary["median"])
+    lower_error = median - float(summary["-1sigma"])
+    upper_error = float(summary["+1sigma"]) - median
+
+    return (
+        rf"${label} = {median:.2f}"
+        rf"^{{+{upper_error:.2f}}}"
+        rf"_{{-{lower_error:.2f}}}$"
+    )
 
 def _credible_interval_summary(samples):
     m2sig, m1sig, med,p1sig, p2sig = np.percentile(samples, [2.275, 15.865,50, 84.135, 97.725])
@@ -189,6 +199,10 @@ def credible_intervals(results):
     m2_samples = _get_result_value(results, 'M2')
     if m2_samples is not None:
         credible_intervals['M2'] = _credible_interval_summary(m2_samples)
+    else:
+        min_m2_samples = _get_result_value(results, 'minM2')
+        if min_m2_samples is not None:
+            credible_intervals['minM2'] = _credible_interval_summary(min_m2_samples)
 
     return credible_intervals
 
@@ -246,9 +260,12 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
 
 
     if pretty_print:
-        print(json.dumps(stats, indent=indent, sort_keys=True, default=_json_default))
+        print(json.dumps(stats, indent=indent, sort_keys=False, default=_json_default))
         print("\n" + "=" * 80 + "\n")
-        print(json.dumps(fit_results, indent=indent, sort_keys=True, default=_json_default))
+        print(json.dumps(fit_results, indent=indent, sort_keys=False, default=_json_default))
+        print("\nLaTeX 1-sigma credible intervals:")
+        for label in sorted(intervals):
+            print(_latex_credible_interval(label, intervals[label]))
 
     if savepath is not None:
         with open(savepath/"stats.json", "w") as f:

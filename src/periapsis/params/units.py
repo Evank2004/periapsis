@@ -12,6 +12,8 @@ CanonicalUnits = {
     'distance': u.pc,
     "angular_velocity": u.rad / u.yr,
     "linear_velocity": u.AU / u.yr,
+    "angular_acceleration": u.rad / u.yr**2,
+    "linear_acceleration": u.AU / u.yr**2,
     "dimensionless": u.dimensionless_unscaled,
 }
 
@@ -194,6 +196,7 @@ _PARAMETER_DIMENSIONS = {
     "h2": "velocity",
     "rv": "velocity",
     "gamma": "velocity",
+    "dgamma": "linear_acceleration",
     "e": "dimensionless",
     "q": "dimensionless",
     "t0": "dimensionless",
@@ -212,7 +215,7 @@ _PROJECTED_POSITION_PARAMETERS = {
 
 _PROPER_MOTION_PARAMETERS = {"mu_alpha", "mu_delta"}
 
-
+_ASTROMETRIC_ACCELERATION_PARAMETERS = {"dmu_alpha", "dmu_delta"}
 
 def get_unit_type(unit):
     """Determine the physical dimension represented by an Astropy unit."""
@@ -281,6 +284,11 @@ class UnitSystem:
                 return "linear_velocity"
             return "angular_velocity"
 
+        if name in _ASTROMETRIC_ACCELERATION_PARAMETERS:
+            if self.astrometry_dimension == "length":
+                return "linear_acceleration"
+            return "angular_acceleration"
+
         return _PARAMETER_DIMENSIONS.get(name, get_unit_type(unit))
 
     def get_parameter_dimension(self, param_name):
@@ -295,6 +303,12 @@ class UnitSystem:
                 "linear_velocity"
                 if self.astrometry_dimension == "length"
                 else "angular_velocity"
+            )
+        if param_name in _ASTROMETRIC_ACCELERATION_PARAMETERS:
+            return (
+                "linear_acceleration"
+                if self.astrometry_dimension == "length"
+                else "angular_acceleration"
             )
         if param_name in _PARAMETER_DIMENSIONS:
             return _PARAMETER_DIMENSIONS[param_name]
@@ -322,6 +336,17 @@ class UnitSystem:
             return self.units["x"] / self.units["t"]
         if dimension == "velocity" and "rv" in self.units:
             return self.units["rv"]
+
+        if param_name == 'dgamma':
+            if "rv" in self.units and "t" in self.units:
+                return self.units["rv"] / self.units["t"]
+            return CanonicalUnits["linear_acceleration"]  
+
+        if param_name in _ASTROMETRIC_ACCELERATION_PARAMETERS:
+            if "x" in self.units and "t" in self.units:
+                return self.units["x"] / (self.units["t"] ** 2)
+            return CanonicalUnits["linear_acceleration"] if self.astrometry_dimension == "length" else CanonicalUnits["angular_acceleration"]
+        
         return CanonicalUnits[dimension]
 
     def convert_to_canonical(self, param_name, value):

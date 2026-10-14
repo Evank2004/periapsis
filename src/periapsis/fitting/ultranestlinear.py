@@ -12,7 +12,7 @@ import ultranest
 
 
 class UltranestLinearFitter(Fitter):
-    def __init__(self, output_params=(par.P, par.e, par.Tp,),ref_epoch=None,min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
+    def __init__(self, output_params=(par.P, par.e, par.Tp,),linear_params=(),ref_epoch=None,min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
         super().__init__(ref_epoch, **priors)
         self.min_num_live_points = min_num_live_points
         self.min_ess = min_ess
@@ -22,6 +22,7 @@ class UltranestLinearFitter(Fitter):
         self.Lepsilon = Lepsilon
         self.max_iters = max_iters
         self.max_ncalls = max_ncalls
+        self.linear_params = frozenset(linear_params)
         self.output_params = frozenset(output_params)
         self.output_param_order = tuple(output_params)
         self.prior_params = set(self.priors.keys())
@@ -55,7 +56,9 @@ class UltranestLinearFitter(Fitter):
 
         canonical_priors = self._canonical_priors(data)
         canonical_ref_epoch = canonical_priors['Tepoch'].value
-        self.M, self.cols = _matrix_builder(data, canonical_ref_epoch)
+        self.M, self.cols = _matrix_builder(
+            data, canonical_ref_epoch, linear_params=self.linear_params
+        )
         param_order = self.sample_order
         transform_args = [par.P,par.e,par.Tp]
         full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]

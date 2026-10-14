@@ -11,9 +11,9 @@ _astrometry_param_names = {
 }
 
 _astrometry_linear_param_names = {
-    "": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta'},
-    "1": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta'},
-    "2": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta'},
+    "": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta', 'dmu_alpha','dmu_delta'},
+    "1": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta', 'dmu_alpha','dmu_delta'},
+    "2": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta', 'dmu_alpha','dmu_delta'},
 }
 _rv_param_names = {
     "": {'K', 'e', 'Tp', 'Tepoch', 'P', 'omega'}, # Relative RVs
@@ -22,9 +22,9 @@ _rv_param_names = {
 }
 
 _rv_linear_param_names = {
-    "": {'gamma','rv_trend'},
-    "1": {'gamma','rv_trend'},
-    "2": {'gamma','rv_trend'}
+    "": {'gamma','dgamma'},
+    "1": {'gamma','dgamma'},
+    "2": {'gamma','dgamma'}
 }
 
 _xyz_param_names = {
@@ -163,6 +163,12 @@ class Orbit():
             alpha += values['parallax'] * plxf_x
             delta += values['parallax'] * plxf_y
 
+        if 'dmu_alpha' in values:
+            alpha += 0.5*values['dmu_alpha'] * dt**2
+
+        if 'dmu_delta' in values:
+            delta += 0.5*values['dmu_delta'] * dt**2
+
         return alpha, delta
     
     def pure_orbit(self,t,system=None):
@@ -228,6 +234,13 @@ class Orbit():
             wss += (values['ddelta']) * cpsi
         if 'parallax' in values:
             wss += values['parallax'] * par_factor
+
+        if 'dmu_alpha' in values:
+            wss += 0.5 * (values['dmu_alpha']) * dt**2 * spsi
+        if 'dmu_delta' in values:
+            wss += 0.5 * (values['dmu_delta']) * dt**2 * cpsi
+
+
         return wss
 
     def rv(self, t, system=None):
@@ -257,8 +270,8 @@ class Orbit():
         values = self.derived_params
         if 'gamma' in values and system != "":
             rv += values['gamma']
-        if 'rv_trend' in values:
-            rv += values['rv_trend'] * dt
+        if 'dgamma' in values:
+            rv += values['dgamma'] * dt
         return rv
     
     def xyz(self, t, system=None):

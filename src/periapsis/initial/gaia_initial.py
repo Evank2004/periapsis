@@ -10,9 +10,11 @@ from .initial import InitialGuess
 
 class GaiaInitialGuess(InitialGuess):
     """Class for obtaining initial guess for Gaia data"""
-    def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, **priors):
+    def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
-        self.M_base, self.cols = _matrix_builder(data, ref_epoch)
+        self.M_base, self.cols = _matrix_builder(
+            data, ref_epoch, linear_params=linear_params
+        )
         
 
     def Delisle_periodogram(self,num_freq=10000):

@@ -211,6 +211,26 @@ def test_orbit_astrometry_applies_offsets_and_proper_motion():
     assert orb.astrometry(12.0, 0.0, 0.0, system='1') == pytest.approx((3.0, -1.0))
 
 
+def test_orbit_astrometry_applies_proper_motion_acceleration():
+    orb = Orbit(
+        P=1.0, e=0.0, Tp=10.0, Tepoch=10.0,
+        A1=0.0, B1=0.0, F1=0.0, G1=0.0,
+        dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0,
+        dmu_alpha=1.0, dmu_delta=-2.0,
+    )
+
+    assert orb.astrometry(12.0, 0.0, 0.0, system='1') == pytest.approx((2.0, -4.0))
+
+
+def test_orbit_rv_applies_radial_acceleration():
+    orb = Orbit(
+        P=1.0, e=0.0, Tp=0.0, Tepoch=0.0,
+        K=4.0, omega=0.0, gamma=0.0, dgamma=2.0,
+    )
+
+    assert orb.rv(0.25, system='relative') == pytest.approx(0.5)
+
+
 def test_orbit_method_derivations_are_cached():
     orb = Orbit(
         P=1.0, e=0.0, Tp=0.0, Tepoch=0.0,
@@ -249,6 +269,19 @@ def test_orbit_gaia_astrometry_computes_for_fully_defined_orbit():
     assert isinstance(result1, float)
     result2 = orb.gaia_astrometry(t, spsi=spsi, cpsi=cpsi, par_factor=par_factor, system='2')
     assert isinstance(result2, float)
+
+
+def test_orbit_gaia_astrometry_projects_acceleration_terms():
+    orb = Orbit(
+        P=1.0, e=0.0, Tp=0.0, Tepoch=0.0,
+        A=0.0, B=0.0, F=0.0, G=0.0,
+        dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0,
+        dmu_alpha=2.0, dmu_delta=4.0, parallax=0.0,
+    )
+
+    assert orb.gaia_astrometry(
+        2.0, spsi=0.6, cpsi=0.8, par_factor=0.0, system='relative'
+    ) == pytest.approx(8.8)
 
 
 def test_orbit_gaia_astrometry_uses_orbital_phase_and_all_projection_terms():

@@ -112,7 +112,7 @@ class JointData(Data):
 
         rv_parameters = {
             "K", "K1", "K2", "c", "c1", "c2", "h", "h1", "h2",
-            "gamma", "rv_trend",
+            "gamma", "dgamma",
         }
         if param_name in rv_parameters:
             for data in self.datas:
@@ -142,7 +142,7 @@ class JointData(Data):
 
         rv_parameters = {
             "K", "K1", "K2", "c", "c1", "c2", "h", "h1", "h2",
-            "gamma", "rv_trend",
+            "gamma", "dgamma",
         }
         if param_name in rv_parameters:
             for data in self.datas:

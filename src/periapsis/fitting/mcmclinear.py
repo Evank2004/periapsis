@@ -15,7 +15,7 @@ import emcee
 from typing import Type
 
 class MCMCLinearFitter(Fitter):
-    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'), ref_epoch=None, **priors):
+    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'),linear_params =(), ref_epoch=None, **priors):
         super().__init__(ref_epoch,**priors)
         self.nwalkers = nwalkers
         self.niter = niter
@@ -50,7 +50,8 @@ class MCMCLinearFitter(Fitter):
             raise ValueError(f"Missing priors for sampled parameters: {missing}")
         self.early_prior_params = {p for p in self.priors.keys() if not isinstance(self.priors[p], FixedPrior) and p in self.covered_params}
         self.late_prior_params = {p for p in self.priors.keys() if not isinstance(self.priors[p], FixedPrior) and p not in self.covered_params}
-        
+
+        self.linear_params = frozenset(linear_params)
 
     def fit(self, data: Data, rng: np.random.RandomState, initial: Type[InitialGuess] = None) -> FitResults:
         if not isinstance(data, (AstrometryData, RadialVelocityData, JointData, GaiaData)):
@@ -67,7 +68,9 @@ class MCMCLinearFitter(Fitter):
         param_transforms = build_transform_functions({*param_order, *self.fixed_prior_params}, transform_args)
         ndim = len(param_order)
 
-        self.M, self.cols = _matrix_builder(data, canonical_ref_epoch)
+        self.M, self.cols = _matrix_builder(
+            data, canonical_ref_epoch, linear_params=self.linear_params
+        )
 
 
         # Matrix method cached variables
@@ -156,18 +159,28 @@ class MCMCLinearFitter(Fitter):
             data, ref_epoch=canonical_ref_epoch
         )
 
+        initial_kwargs = {}
         if initial is None:
             if isinstance(data, AstrometryData):
                 initial = AstrometryLinearInitialGuess
+                initial_kwargs["linear_params"] = self.linear_params
             elif isinstance(data, RadialVelocityData):
                 initial = RVInitialGuess
             elif isinstance(data, GaiaData):
                 initial = GaiaInitialGuess
+                initial_kwargs["linear_params"] = self.linear_params
             elif isinstance(data, JointData):
                 initial = JointInitialGuess
+                initial_kwargs["linear_params"] = self.linear_params
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for linearized MCMC initial guess generation.")
-        initial_instance = initial(data, rng, canonical_ref_epoch, **canonical_priors)
+        initial_instance = initial(
+            data,
+            rng,
+            canonical_ref_epoch,
+            **initial_kwargs,
+            **canonical_priors,
+        )
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
         sampler = emcee.EnsembleSampler(self.nwalkers, ndim, lnprob, args=(data,))
         sampler.run_mcmc(pos, self.niter,progress=True)

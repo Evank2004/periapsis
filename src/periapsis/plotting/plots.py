@@ -551,8 +551,88 @@ def sky_motion_plot(results, data, savepath=None):
         print(f"Saved sky motion plot to {savepath}")
 
     return fig
-    
 
+def astrometry_phase_plot(results, data, savepath=None):
+    '''
+    Plots astrometry data in phase space
+    '''
+    if isinstance(data, JointData):
+        datas = [d for d in _flatten_joint(data) if isinstance(d, AstrometryData)]
+    elif isinstance(data, AstrometryData):
+        datas = [data]
+    elif isinstance(data, (RadialVelocityData, GaiaData)):
+        return None
+    else:
+        datas = []
+
+    if not datas:
+        return None
+
+    fig, ax = plt.subplots(2, 1, sharex=True)
+    map_model = Orbit(**results.canonical_MAP_params())
+    period = map_model['P']
+    periastron_time = map_model['Tp']
+
+    def plot_system(system, system_datas):
+        time_fold = np.linspace(
+            periastron_time - 0.5 * period,
+            periastron_time + 0.5 * period,
+            10000,
+        )
+        phase_fold = (time_fold - periastron_time + 0.5 * period) / period
+        sort_map = np.argsort(phase_fold)
+
+        alpha_model, delta_model = map_model.pure_orbit(time_fold, system=system)
+
+        ax[0].plot(
+            phase_fold[sort_map],
+            _plot_position(system_datas[0], alpha_model)[sort_map],
+            label=f'MAP Fit ({system})', color='red', linestyle='-',
+        )
+        ax[1].plot(
+            phase_fold[sort_map],
+            _plot_position(system_datas[0], delta_model)[sort_map],
+            label=f'MAP Fit ({system})', color='red', linestyle='-',
+        )
+
+        for d in system_datas:
+            model_alpha, model_delta = map_model.astrometry(
+                d.t, d.plxf_x, d.plxf_y, system=d.system
+            )
+            orbit_alpha, orbit_delta = map_model.pure_orbit(
+                d.t, system=d.system
+            )
+            alpha_data = d.x - (model_alpha - orbit_alpha)
+            delta_data = d.y - (model_delta - orbit_delta)
+            phase = (d.t - periastron_time + 0.5 * period) / period % 1
+
+            ax[0].errorbar(
+                phase,
+                _plot_position(d, alpha_data),
+                yerr=_plot_position(d, d.x_err),
+                fmt='o', color='k', markersize=4,
+            )
+            ax[1].errorbar(
+                phase,
+                _plot_position(d, delta_data),
+                yerr=_plot_position(d, d.y_err),
+                fmt='o', color='k', markersize=4,
+            )
+
+    for system in sorted({d.system for d in datas}):
+        plot_system(system, [d for d in datas if d.system == system])
+
+    ax[0].set_ylabel(rf"RA [{_plot_unit(datas[0], 'x')}]" )
+    ax[1].set_ylabel(rf"Dec [{_plot_unit(datas[0], 'y')}]" )
+    ax[1].set_xlabel("Phase")
+    ax[0].legend(loc='best')
+    ax[1].legend(loc='best')
+
+    if savepath is not None:
+        fig.savefig(f'{savepath}/astrometry_phase.png', dpi=300)
+        print(f"Saved astrometry phase plot to {savepath}")
+
+    return fig
 
 def multi_orbit_plot(results, data, Nplot=100, savepath=None):
     '''
@@ -618,6 +698,74 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
         print(f"Saved multi-orbit plot to {savepath}")
 
     return fig
+
+def residuals_plot(results, data, savepath=None):
+    '''
+    Plots residuals of data from the MAP model
+    '''
+    fig, ax = plt.subplots()
+
+    datas = _flatten_joint(data)
+    for d in datas:
+        if isinstance(d,AstrometryData):
+            fig, ax = plt.subplots(2, 1, sharex=True)
+            map_model = Orbit(**results.canonical_MAP_params())
+            model_alpha, model_delta = map_model.astrometry(d.t, d.plxf_x, d.plxf_y, system=d.system)
+            
+            alpha_resids = d.x - model_alpha
+            delta_resids = d.y - model_delta
+            dt_obs = _plot_time(d, d.t)
+
+            ax[0].errorbar(dt_obs, _plot_position(d, alpha_resids), yerr=_plot_position(d, d.x_err),color='tab:blue', fmt='o',markersize=4,label=f'RA Residuals',zorder=2)
+            ax[1].errorbar(dt_obs, _plot_position(d, delta_resids), yerr=_plot_position(d, d.y_err),color='tab:blue', fmt='o',markersize=4,label=f'Dec Residuals',zorder=2)
+            ax[0].set_ylabel(rf"Residuals [{_plot_unit(d, 'x')}]")
+            ax[1].set_ylabel(rf"Residuals [{_plot_unit(d, 'y')}]")
+            ax[1].set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
+            ax[0].axhline(0, color='red', linestyle='--')
+            ax[1].axhline(0, color='red', linestyle='--')
+            ax[0].legend(loc='best')
+            ax[1].legend(loc='best')
+
+            if savepath is not None:
+                fig.savefig(f'{savepath}/residuals_plot_{d.system}_astrometry.png', dpi=300)
+                print(f"Saved residuals plot for system {d.system} to {savepath}")
+            return fig
+
+        if isinstance(d,RadialVelocityData):
+            map_model = Orbit(**results.canonical_MAP_params())
+            model_rv = map_model.rv(d.t, system=d.system)
+            rv_resids = d.rv - model_rv
+            dt_obs = _plot_time(d, d.t)
+
+            ax.errorbar(dt_obs, _plot_velocity(d, rv_resids), yerr=_plot_velocity(d, d.rv_err),color='tab:blue', fmt='o',markersize=4,label=f'RV Residuals',zorder=2)
+            ax.set_ylabel(rf"Residuals [{_plot_unit(d, 'rv')}]")
+            ax.set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
+            ax.axhline(0, color='red', linestyle='--')
+            ax.legend(loc='best')
+
+            if savepath is not None:
+                fig.savefig(f'{savepath}/residuals_plot_{d.system}_rv.png', dpi=300)
+                print(f"Saved residuals plot for system {d.system} to {savepath}")
+            return fig
+        
+        if isinstance(d, (GaiaData)):
+            map_model = Orbit(**results.canonical_MAP_params())
+            x_model = map_model.gaia_astrometry(d.t, d.spsi,d.cpsi,d.plx_fac, system=d.system)
+            x_resids = d.x - x_model
+            dt_obs = _plot_time(d, d.t)
+
+            ax.errorbar(dt_obs, _plot_position(d, x_resids), yerr=_plot_position(d, d.err),color='tab:blue', fmt='o',markersize=4,label=f'Gaia Residuals',zorder=2)
+            ax.set_ylabel(rf"Residuals [{_plot_unit(d, 'x')}]")
+            ax.set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
+            ax.axhline(0, color='red', linestyle='--')
+            ax.legend(loc='best')
+
+        if savepath is not None:
+            fig.savefig(f'{savepath}/residuals_plot_{d.system}_gaia.png', dpi=300)
+            print(f"Saved residuals plot for system {d.system} to {savepath}")
+
+        return fig
+
 
 
 def distribution(results, param, scale='linear', unit='', savepath=None):
@@ -1008,6 +1156,8 @@ def all_plots(results, data: Data, scale=None, savepath=None):
         orbit_plot(results,data,savepath=savepath)
         sky_motion_plot(results,data,savepath=savepath)
         multi_orbit_plot(results,data,savepath=savepath)
+        astrometry_phase_plot(results,data,savepath=savepath)
+    residuals_plot(results,data,savepath=savepath)
     mass_distribution(results,scale=scale,savepath=savepath)
 
 

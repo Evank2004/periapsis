@@ -8,11 +8,79 @@ from periapsis.data.common import AstrometryData, RadialVelocityData
 from periapsis.data.gaia import GaiaData
 from periapsis.data.joint_data import JointData
 from periapsis.fitting.results import FitResults
-from periapsis.plotting.plots import orbit_plot, phase_fold_rv_plot, rv_fit_plot
+from periapsis.plotting.plots import (
+    astrometry_phase_plot,
+    orbit_plot,
+    phase_fold_rv_plot,
+    residuals_plot,
+    rv_fit_plot,
+)
 
 ASTRO_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
 RV_UNITS = {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr}
 GAIA_UNITS = {"t": u.yr, "x": u.rad, "err": u.rad}
+
+
+def make_astrometry_results():
+    params = {
+        "P": 10.0,
+        "e": 0.1,
+        "Tp": 1.0,
+        "A1": 0.5,
+        "B1": 0.3,
+        "F1": 0.2,
+        "G1": 0.1,
+        "dalpha": 0.0,
+        "ddelta": 0.0,
+        "mu_alpha": 0.0,
+        "mu_delta": 0.0,
+    }
+    return FitResults(
+        MAP_params=params,
+        median_params=params,
+        priors={},
+        param_names=set(params),
+    )
+
+
+def make_rv_results():
+    params = {
+        "P": 10.0,
+        "e": 0.1,
+        "Tp": 1.0,
+        "K": 5.0,
+        "omega": 0.2,
+        "gamma": 0.0,
+    }
+    return FitResults(
+        MAP_params=params,
+        median_params=params,
+        priors={},
+        param_names=set(params),
+    )
+
+
+def make_gaia_results():
+    params = {
+        "P": 10.0,
+        "e": 0.1,
+        "Tp": 1.0,
+        "A1": 0.5,
+        "B1": 0.3,
+        "F1": 0.2,
+        "G1": 0.1,
+        "dalpha": 0.0,
+        "ddelta": 0.0,
+        "mu_alpha": 0.0,
+        "mu_delta": 0.0,
+        "parallax": 1.0,
+    }
+    return FitResults(
+        MAP_params=params,
+        median_params=params,
+        priors={},
+        param_names=set(params),
+    )
 
 
 def test_phase_fold_rv_plot_uses_each_dataset_system_once():
@@ -256,4 +324,83 @@ def test_orbit_plot_accepts_joint_astrometry_data():
     fig = orbit_plot(results, data)
     assert fig is not None
     assert len(fig.axes) >= 3
+    plt.close(fig)
+
+
+
+def test_residuals_plot_accepts_rv_and_gaia_data():
+    rv_t = np.linspace(0.0, 20.0, 6)
+    rv_data = RadialVelocityData(
+        rv_t,
+        np.zeros_like(rv_t),
+        np.ones_like(rv_t),
+        system="relative",
+        units=RV_UNITS,
+    )
+    rv_fig = residuals_plot(make_rv_results(), rv_data)
+    assert rv_fig is not None
+    assert len(rv_fig.axes) == 1
+    plt.close(rv_fig)
+
+    gaia_t = np.linspace(0.0, 20.0, 6)
+    gaia_data = GaiaData(
+        np.ones_like(gaia_t),
+        np.zeros_like(gaia_t),
+        gaia_t,
+        np.ones_like(gaia_t),
+        np.zeros_like(gaia_t),
+        np.ones_like(gaia_t),
+        system="1",
+        units=GAIA_UNITS,
+    )
+    gaia_fig = residuals_plot(make_gaia_results(), gaia_data)
+    assert gaia_fig is not None
+    assert len(gaia_fig.axes) == 1
+    plt.close(gaia_fig)
+
+
+def test_astrometry_phase_plot_accepts_regular_astrometry_data():
+    t = np.linspace(0.0, 20.0, 6)
+    data = AstrometryData(
+        t,
+        np.zeros_like(t),
+        np.zeros_like(t),
+        np.ones_like(t),
+        np.ones_like(t),
+        system="1",
+        units=ASTRO_UNITS,
+    )
+
+    fig = astrometry_phase_plot(make_astrometry_results(), data)
+
+    assert fig is not None
+    assert len(fig.axes) == 2
+    plt.close(fig)
+
+
+def test_astrometry_phase_plot_ignores_rv_components_in_joint_data():
+    t = np.linspace(0.0, 20.0, 6)
+    data = JointData([
+        AstrometryData(
+            t,
+            np.zeros_like(t),
+            np.zeros_like(t),
+            np.ones_like(t),
+            np.ones_like(t),
+            system="1",
+            units=ASTRO_UNITS,
+        ),
+        RadialVelocityData(
+            t,
+            np.zeros_like(t),
+            np.ones_like(t),
+            system="relative",
+            units=RV_UNITS,
+        ),
+    ])
+
+    fig = astrometry_phase_plot(make_astrometry_results(), data)
+
+    assert fig is not None
+    assert len(fig.axes) == 2
     plt.close(fig)

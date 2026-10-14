@@ -203,6 +203,43 @@ def test_matrix_filler_applies_band_flux_factor_and_derives_q():
     assert matrix[0, columns["G1"]] == pytest.approx(0.0)
 
 
+def test_matrix_builder_adds_requested_acceleration_columns():
+    astrometry = AstrometryData(
+        t=[0.0, 2.0],
+        x=[0.0, 0.0],
+        y=[0.0, 0.0],
+        x_err=[1.0, 1.0],
+        y_err=[1.0, 1.0],
+        system=1,
+        units=ASTRO_UNITS,
+    )
+    matrix, columns = _matrix_builder(
+        astrometry,
+        ref_epoch=0.0,
+        linear_params=("dmu_alpha", "dmu_delta"),
+    )
+
+    assert {"dmu_alpha", "dmu_delta"}.issubset(columns)
+    np.testing.assert_allclose(matrix[:, columns["dmu_alpha"]], [0.0, 2.0, 0.0, 0.0])
+    np.testing.assert_allclose(matrix[:, columns["dmu_delta"]], [0.0, 0.0, 0.0, 2.0])
+
+    radial_velocity = RadialVelocityData(
+        t=[0.0, 2.0],
+        rv=[0.0, 0.0],
+        rv_err=[1.0, 1.0],
+        system=1,
+        units=RV_UNITS,
+    )
+    rv_matrix, rv_columns = _matrix_builder(
+        radial_velocity,
+        ref_epoch=0.0,
+        linear_params=("dgamma",),
+    )
+
+    assert "dgamma" in rv_columns
+    np.testing.assert_allclose(rv_matrix[:, rv_columns["dgamma"]], [0.0, 2.0])
+
+
 
 
 test_priors = {

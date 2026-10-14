@@ -9,7 +9,7 @@ all_parameters = {
     'a1sini', 'a2sini',
     'Tepoch', 'Tp', 't0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
     'u01', 'u02', 'uM01', 'uM02', 'l01', 'l02', 'K1', 'K2',
-    'dalpha', 'ddelta', 'mu_alpha', 'mu_delta', 'gamma',
+    'dalpha', 'ddelta', 'mu_alpha', 'mu_delta','dmu_alpha','dmu_delta' ,'gamma','dgamma',
     'parallax', 'distance',
 }
 
@@ -424,6 +424,16 @@ mu_delta = "mu_delta"
 Proper motion of the barycenter measured in Dec direction.
 """
 
+dmu_alpha = "dmu_alpha"
+"""
+acceleration term in proper motion from long period companions
+"""
+
+dmu_delta = "dmu_delta"
+"""
+acceleration term in proper motion from long period companions
+"""
+
 gamma = "gamma"
 """
 Systemic radial velocity of the barycenter of the system.
@@ -468,7 +478,7 @@ Distance from the observer to the system.
 
 This is only well-defined for objects outside the solar system which have a distance much greater than the size of the observer's orbit around the Sun. At this distance, the difference between helio- and geo-centric distances is negligible.
 """
-rv_trend = "rv_trend"
+dgamma = "dgamma"
 """
 Linear radial velocity trend caused by massive, long period companions.
 """

@@ -73,6 +73,7 @@ def test_credible_interval_summary_uses_standard_one_and_two_sigma_percentiles()
         {
             "-2sigma": np.percentile(samples, 2.275),
             "-1sigma": np.percentile(samples, 15.865),
+            "median": np.percentile(samples, 50),
             "+1sigma": np.percentile(samples, 84.135),
             "+2sigma": np.percentile(samples, 97.725),
         }
@@ -102,7 +103,7 @@ def test_credible_intervals_includes_derived_secondary_mass():
     mass_samples = np.array([1.0, 2.0, 3.0, 4.0])
     results = SimpleNamespace(
         param_names=["P"],
-        samples={"P": np.arange(4.0), "M2": mass_samples},
+        samples={"P": np.arange(4.0), "M2": mass_samples, "minM2": mass_samples + 1.0},
     )
 
     intervals = stat_funcs.credible_intervals(results)
@@ -110,6 +111,33 @@ def test_credible_intervals_includes_derived_secondary_mass():
     assert set(intervals) == {"P", "M2"}
     assert intervals["M2"] == pytest.approx(
         stat_funcs._credible_interval_summary(mass_samples)
+    )
+
+
+def test_credible_intervals_uses_minimum_mass_when_secondary_mass_is_missing():
+    min_mass_samples = np.array([1.0, 2.0, 3.0, 4.0])
+    results = SimpleNamespace(
+        param_names=["P"],
+        samples={"P": np.arange(4.0), "minM2": min_mass_samples},
+    )
+
+    intervals = stat_funcs.credible_intervals(results)
+
+    assert set(intervals) == {"P", "minM2"}
+    assert intervals["minM2"] == pytest.approx(
+        stat_funcs._credible_interval_summary(min_mass_samples)
+    )
+
+
+def test_latex_credible_interval_uses_two_decimal_places():
+    summary = {
+        "-1sigma": 1.012,
+        "median": 1.234,
+        "+1sigma": 1.567,
+    }
+
+    assert stat_funcs._latex_credible_interval("P", summary) == (
+        r"$P = 1.23^{+0.33}_{-0.22}$"
     )
 
 
@@ -307,6 +335,7 @@ def install_all_stats_dependencies(monkeypatch):
             "P": {
                 "-2sigma": 1.0,
                 "-1sigma": 2.0,
+                "median": 2.5,
                 "+1sigma": 3.0,
                 "+2sigma": 4.0,
             }

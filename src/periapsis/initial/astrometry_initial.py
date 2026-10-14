@@ -167,11 +167,13 @@ class AstrometryInitialGuess(InitialGuess):
 
 
 class AstrometryLinearInitialGuess(AstrometryInitialGuess):
-    def __init__(self, data, rng, ref_epoch=0.0, **priors):
+    def __init__(self, data, rng, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
         self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
         self.ref_epoch = ref_epoch
-        self.M, self.cols = _matrix_builder(data, self.ref_epoch)
+        self.M, self.cols = _matrix_builder(
+            data, self.ref_epoch, linear_params=linear_params
+        )
         self.eta = np.concatenate((data.x, data.y))
         self.err = np.concatenate((data.x_err, data.y_err))
         

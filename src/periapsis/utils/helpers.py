@@ -37,8 +37,9 @@ def _flatten_joint(data):
         else:
             return [data]
 
-def _matrix_builder(data,ref_epoch):
-
+def _matrix_builder(data,ref_epoch,linear_params=()):
+    
+    linear_params = set(linear_params)
     data_components = _flatten_joint(data)
 
     cols = {}
@@ -76,10 +77,14 @@ def _matrix_builder(data,ref_epoch):
         if isinstance(d, AstrometryData):
             key_create(f'dalpha')
             key_create(f'mu_alpha')
+            if "dmu_alpha" in linear_params:
+                key_create(f'dmu_alpha')
             if d.parallax is True:
                 key_create(f'parallax')
             key_create(f'ddelta')
             key_create(f'mu_delta')
+            if "dmu_delta" in linear_params:
+                key_create(f'dmu_delta')
             key_create(f'B{system}')
             key_create(f'G{system}')
             key_create(f'A{system}')
@@ -88,14 +93,18 @@ def _matrix_builder(data,ref_epoch):
             key_create(f'gamma')
             key_create(f'h{system}')
             key_create(f'c{system}')
-            if d.rv_trend is True:
-                key_create(f'rv_trend')
+            if "dgamma" in linear_params:
+                key_create(f'dgamma')
         elif isinstance(d, GaiaData):
             key_create(f'dalpha')
             key_create(f'mu_alpha')
+            if "dmu_alpha" in linear_params:
+                key_create(f'dmu_alpha')
             key_create(f'parallax')
             key_create(f'ddelta')
             key_create(f'mu_delta')
+            if "dmu_delta" in linear_params:
+                key_create(f'dmu_delta')
             key_create(f'B{system}')
             key_create(f'G{system}')
             key_create(f'A{system}')
@@ -122,6 +131,10 @@ def _matrix_builder(data,ref_epoch):
             M[row_idx+n_obs:row_idx+2*n_obs, cols[f'mu_delta']] = dt
             if d.parallax is True:
                 M[row_idx+n_obs:row_idx+2*n_obs, cols[f'parallax']] = d.plxf_y
+            if "dmu_alpha" in linear_params:
+                M[row_idx:row_idx+n_obs, cols[f'dmu_alpha']] = 0.5*dt**2  
+            if "dmu_delta" in linear_params:
+                M[row_idx+n_obs:row_idx+2*n_obs, cols[f'dmu_delta']] = 0.5*dt**2
             if offsets:
                 instrument = str(d.instrument)
                 x_name = f"astro_{instrument}_x_offset"
@@ -134,9 +147,9 @@ def _matrix_builder(data,ref_epoch):
         elif isinstance(d, RadialVelocityData):
             n_obs = len(d.t)
             M[row_idx:row_idx+n_obs, cols[f'gamma']] = 1.0
-            if d.rv_trend is True:
+            if "dgamma" in linear_params:
                 dt = d.t - ref_epoch
-                M[row_idx:row_idx+n_obs, cols[f'rv_trend']] = dt
+                M[row_idx:row_idx+n_obs, cols[f'dgamma']] = dt
             if offsets:
                 instrument = str(d.instrument)
                 rv_name = f"rv_{instrument}_offset"
@@ -151,6 +164,10 @@ def _matrix_builder(data,ref_epoch):
             M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plx_fac 
             M[row_idx:row_idx+n_obs, cols[f'ddelta']] = d.cpsi
             M[row_idx:row_idx+n_obs, cols[f'mu_delta']] = dt*d.cpsi
+            if "dmu_alpha" in linear_params:
+                M[row_idx:row_idx+n_obs, cols[f'dmu_alpha']] = 0.5*dt**2*d.spsi
+            if "dmu_delta" in linear_params:
+                M[row_idx:row_idx+n_obs, cols[f'dmu_delta']] = 0.5*dt**2*d.cpsi
             if offsets:
                 instrument = str(d.instrument)
                 gaia_name = f"astro_{instrument}_offset"

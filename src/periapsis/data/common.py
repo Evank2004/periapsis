@@ -179,7 +179,7 @@ class AstrometryData(SystemData):
     
 
 class RadialVelocityData(SystemData):
-    def __init__(self, t, rv, rv_err, units: Optional[Mapping[str, Any]] = None, system=None,rv_trend=False,instrument=None):
+    def __init__(self, t, rv, rv_err, units: Optional[Mapping[str, Any]] = None, system=None,instrument=None):
         super().__init__(system, units)
         required_units = {"t", "rv", "rv_err"}
         missing_units = required_units - self.unit_system.units.keys()
@@ -198,7 +198,7 @@ class RadialVelocityData(SystemData):
         if self.rv_err.shape != self.rv.shape:
             self.rv_err = np.broadcast_to(self.rv_err, self.rv.shape)
         
-        self.rv_trend = rv_trend
+        
         self.instrument = instrument
         
 

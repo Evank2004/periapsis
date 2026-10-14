@@ -703,7 +703,7 @@ def residuals_plot(results, data, savepath=None):
     '''
     Plots residuals of data from the MAP model
     '''
-    fig, ax = plt.subplots()
+    
 
     datas = _flatten_joint(data)
     for d in datas:
@@ -732,6 +732,7 @@ def residuals_plot(results, data, savepath=None):
             return fig
 
         if isinstance(d,RadialVelocityData):
+            fig, ax = plt.subplots()
             map_model = Orbit(**results.canonical_MAP_params())
             model_rv = map_model.rv(d.t, system=d.system)
             rv_resids = d.rv - model_rv
@@ -749,6 +750,7 @@ def residuals_plot(results, data, savepath=None):
             return fig
         
         if isinstance(d, (GaiaData)):
+            fig, ax = plt.subplots()
             map_model = Orbit(**results.canonical_MAP_params())
             x_model = map_model.gaia_astrometry(d.t, d.spsi,d.cpsi,d.plx_fac, system=d.system)
             x_resids = d.x - x_model

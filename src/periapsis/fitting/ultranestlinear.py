@@ -205,10 +205,20 @@ class UltranestLinearFitter(Fitter):
 
         best_i = int(np.argmax(logl))
         best_params = dict(zip(post_labels, full_posterior[best_i]))
-        median_params = dict(zip(post_labels, np.median(full_posterior_arr, axis=0)))
+        median_sampled_params = dict(zip(
+            standard_param_order,
+            np.median(full_posterior_arr[:, :len(standard_param_order)], axis=0),
+        ))
+        median_sampled_params.update({
+            name: canonical_priors[name].value
+            for name in self.fixed_prior_params
+        })
+        median_sampled_params.update(standard_param_transform(**median_sampled_params))
+        median_mu, _, _ = matrix_method(median_sampled_params)
+        median_params = dict(median_sampled_params)
+        median_params.update({name: median_mu[self.cols[name]] for name in self.cols})
         for prior in self.fixed_prior_params:
             best_params[prior] = canonical_priors[prior].value
-            median_params[prior] = canonical_priors[prior].value
 
         if null_hypothesis_canonical is None:
             raise RuntimeError("Null-hypothesis fitting returned no result.")

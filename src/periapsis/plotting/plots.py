@@ -587,13 +587,20 @@ def astrometry_phase_plot(results, data, savepath=None):
         ax[0].plot(
             phase_fold[sort_map],
             _plot_position(system_datas[0], alpha_model)[sort_map],
-            label=f'MAP Fit ({system})', color='red', linestyle='-',
+            label=f'MAP Fit ({system})', color='red', linestyle='-', linewidth=2,
         )
         ax[1].plot(
             phase_fold[sort_map],
             _plot_position(system_datas[0], delta_model)[sort_map],
-            label=f'MAP Fit ({system})', color='red', linestyle='-',
+            label=f'MAP Fit ({system})', color='red', linestyle='-', linewidth=2,
         )
+
+        alpha_resids = []
+        delta_resids = []
+        alpha_errs = []
+        delta_errs = []
+        phases = []
+
 
         for d in system_datas:
             model_alpha, model_delta = map_model.astrometry(
@@ -604,19 +611,81 @@ def astrometry_phase_plot(results, data, savepath=None):
             )
             alpha_data = d.x - (model_alpha - orbit_alpha)
             delta_data = d.y - (model_delta - orbit_delta)
-            phase = (d.t - periastron_time + 0.5 * period) / period % 1
+            phase = ((d.t - periastron_time + 0.5 * period) / period) % 1
 
+            alpha_resids.append(_plot_position(d, alpha_data))
+            delta_resids.append(_plot_position(d, delta_data))
+            alpha_errs.append(_plot_position(d, d.x_err))
+            delta_errs.append(_plot_position(d, d.y_err))
+            phases.append(phase)
+
+        alpha_resids = np.concatenate(alpha_resids)
+        delta_resids = np.concatenate(delta_resids)
+        alpha_errs = np.concatenate(alpha_errs)
+        delta_errs = np.concatenate(delta_errs)
+        phases = np.concatenate(phases)
+
+        points_per_bin = 20
+        minimum_bins = 4
+        if len(phases) < points_per_bin * minimum_bins:
             ax[0].errorbar(
-                phase,
-                _plot_position(d, alpha_data),
-                yerr=_plot_position(d, d.x_err),
-                fmt='o', color='k', markersize=4,
+                phases,
+                alpha_resids,
+                yerr=alpha_errs,
+                fmt='o', color='blue', alpha=0.3, markersize=3, zorder=1,
             )
             ax[1].errorbar(
-                phase,
-                _plot_position(d, delta_data),
-                yerr=_plot_position(d, d.y_err),
-                fmt='o', color='k', markersize=4,
+                phases,
+                delta_resids,
+                yerr=delta_errs,
+                fmt='o', color='blue', alpha=0.3, markersize=3, zorder=1,
+            )
+        else:
+            sort = np.argsort(phases)
+            phases_sorted = phases[sort]
+            alpha_resids_sorted = alpha_resids[sort]
+            delta_resids_sorted = delta_resids[sort]
+            alpha_errs_sorted = alpha_errs[sort]
+            delta_errs_sorted = delta_errs[sort]
+
+            num_bins = int(np.ceil(len(phases) / points_per_bin))
+            b_edges = np.linspace(0, 1, num_bins + 1)
+            b_centers = 0.5 * (b_edges[:-1] + b_edges[1:])
+            alpha_binned = []
+            delta_binned = []
+            alpha_err_binned = []
+            delta_err_binned = []
+            center = []
+            for i in range(num_bins):
+                good = (phases_sorted >= b_edges[i]) & (phases_sorted < b_edges[i + 1])
+                if np.sum(good) > 0:
+
+                    w_a = 1/(alpha_errs_sorted[good]**2)
+                    w_d = 1/(delta_errs_sorted[good]**2)
+                    mean_a = np.sum(w_a * alpha_resids_sorted[good]) / np.sum(w_a)
+                    mean_d = np.sum(w_d * delta_resids_sorted[good]) / np.sum(w_d)
+                    err_a = np.sqrt(1/np.sum(w_a))
+                    err_d = np.sqrt(1/np.sum(w_d))
+
+                    alpha_binned.append(mean_a)
+                    delta_binned.append(mean_d)
+                    alpha_err_binned.append(err_a)
+                    delta_err_binned.append(err_d)
+                    center.append(b_centers[i])
+
+            ax[0].errorbar(
+                center,
+                alpha_binned,
+                yerr=alpha_err_binned,
+                fmt='s', color='orange', markersize=5, zorder=3,
+                label=f'Binned Data ({system})',
+            )
+            ax[1].errorbar(
+                center,
+                delta_binned,
+                yerr=delta_err_binned,
+                fmt='s', color='orange', markersize=5, zorder=3,
+                label=f'Binned Data ({system})',
             )
 
     for system in sorted({d.system for d in datas}):
@@ -710,14 +779,20 @@ def residuals_plot(results, data, savepath=None):
         if isinstance(d,AstrometryData):
             fig, ax = plt.subplots(2, 1, sharex=True)
             map_model = Orbit(**results.canonical_MAP_params())
+            median_model = Orbit(**results.canonical_median_params())
             model_alpha, model_delta = map_model.astrometry(d.t, d.plxf_x, d.plxf_y, system=d.system)
+            median_alpha, median_delta = median_model.astrometry(d.t, d.plxf_x, d.plxf_y, system=d.system)
             
             alpha_resids = d.x - model_alpha
             delta_resids = d.y - model_delta
+            median_alpha_resids = d.x - median_alpha
+            median_delta_resids = d.y - median_delta
             dt_obs = _plot_time(d, d.t)
 
-            ax[0].errorbar(dt_obs, _plot_position(d, alpha_resids), yerr=_plot_position(d, d.x_err),color='tab:blue', fmt='o',markersize=4,label=f'RA Residuals',zorder=2)
-            ax[1].errorbar(dt_obs, _plot_position(d, delta_resids), yerr=_plot_position(d, d.y_err),color='tab:blue', fmt='o',markersize=4,label=f'Dec Residuals',zorder=2)
+            ax[0].errorbar(dt_obs, _plot_position(d, alpha_resids), yerr=_plot_position(d, d.x_err),color='tab:blue', fmt='o',markersize=4,label=f'RA MAP Residuals',zorder=2)
+            ax[1].errorbar(dt_obs, _plot_position(d, delta_resids), yerr=_plot_position(d, d.y_err),color='tab:blue', fmt='o',markersize=4,label=f'Dec MAP Residuals',zorder=2)
+            ax[0].plot(dt_obs, _plot_position(d, median_alpha_resids), color='tab:purple', marker='s', linestyle='', markersize=3, label='RA Median Residuals', zorder=2)
+            ax[1].plot(dt_obs, _plot_position(d, median_delta_resids), color='tab:purple', marker='s', linestyle='', markersize=3, label='Dec Median Residuals', zorder=2)
             ax[0].set_ylabel(rf"Residuals [{_plot_unit(d, 'x')}]")
             ax[1].set_ylabel(rf"Residuals [{_plot_unit(d, 'y')}]")
             ax[1].set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
@@ -734,11 +809,15 @@ def residuals_plot(results, data, savepath=None):
         if isinstance(d,RadialVelocityData):
             fig, ax = plt.subplots()
             map_model = Orbit(**results.canonical_MAP_params())
+            median_model = Orbit(**results.canonical_median_params())
             model_rv = map_model.rv(d.t, system=d.system)
+            median_rv = median_model.rv(d.t, system=d.system)
             rv_resids = d.rv - model_rv
+            median_rv_resids = d.rv - median_rv
             dt_obs = _plot_time(d, d.t)
 
-            ax.errorbar(dt_obs, _plot_velocity(d, rv_resids), yerr=_plot_velocity(d, d.rv_err),color='tab:blue', fmt='o',markersize=4,label=f'RV Residuals',zorder=2)
+            ax.errorbar(dt_obs, _plot_velocity(d, rv_resids), yerr=_plot_velocity(d, d.rv_err),color='tab:blue', fmt='o',markersize=4,label=f'RV MAP Residuals',zorder=2)
+            ax.plot(dt_obs, _plot_velocity(d, median_rv_resids), color='tab:purple', marker='s', linestyle='', markersize=3, label='RV Median Residuals', zorder=2)
             ax.set_ylabel(rf"Residuals [{_plot_unit(d, 'rv')}]")
             ax.set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
             ax.axhline(0, color='red', linestyle='--')
@@ -752,11 +831,15 @@ def residuals_plot(results, data, savepath=None):
         if isinstance(d, (GaiaData)):
             fig, ax = plt.subplots()
             map_model = Orbit(**results.canonical_MAP_params())
+            median_model = Orbit(**results.canonical_median_params())
             x_model = map_model.gaia_astrometry(d.t, d.spsi,d.cpsi,d.plx_fac, system=d.system)
+            median_x_model = median_model.gaia_astrometry(d.t, d.spsi,d.cpsi,d.plx_fac, system=d.system)
             x_resids = d.x - x_model
+            median_x_resids = d.x - median_x_model
             dt_obs = _plot_time(d, d.t)
 
-            ax.errorbar(dt_obs, _plot_position(d, x_resids), yerr=_plot_position(d, d.err),color='tab:blue', fmt='o',markersize=4,label=f'Gaia Residuals',zorder=2)
+            ax.errorbar(dt_obs, _plot_position(d, x_resids), yerr=_plot_position(d, d.err),color='tab:blue', fmt='o',markersize=4,label=f'Gaia MAP Residuals',zorder=2)
+            ax.plot(dt_obs, _plot_position(d, median_x_resids), color='tab:purple', marker='s', linestyle='', markersize=3, label='Gaia Median Residuals', zorder=2)
             ax.set_ylabel(rf"Residuals [{_plot_unit(d, 'x')}]")
             ax.set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
             ax.axhline(0, color='red', linestyle='--')

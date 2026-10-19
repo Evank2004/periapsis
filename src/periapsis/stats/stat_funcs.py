@@ -16,8 +16,8 @@ def _json_default(value):
         return value.item()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
-def _latex_credible_interval(label, summary):
-    median = float(summary["median"])
+def _latex_credible_interval(label, summary, median=None):
+    median = float(summary["median"] if median is None else median)
     lower_error = median - float(summary["-1sigma"])
     upper_error = float(summary["+1sigma"]) - median
 
@@ -263,9 +263,22 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
         print(json.dumps(stats, indent=indent, sort_keys=False, default=_json_default))
         print("\n" + "=" * 80 + "\n")
         print(json.dumps(fit_results, indent=indent, sort_keys=False, default=_json_default))
-        print("\nLaTeX 1-sigma credible intervals:")
+        print("\nLaTeX Median values with 1-sigma credible intervals:")
+        reported_medians = fit_results['fit_params']['median_params'] or {}
+        reported_maps = fit_results['fit_params']['MAP_params'] or {}
         for label in sorted(intervals):
-            print(_latex_credible_interval(label, intervals[label]))
+            print(_latex_credible_interval(
+                label,
+                intervals[label],
+                reported_medians.get(label),
+            ))
+        print("\nLaTeX MAP values with 1-sigma credible intervals:")
+        for label in sorted(set(intervals) & set(reported_maps)):
+            print(_latex_credible_interval(
+                rf"{label}_{{\rm MAP}}",
+                intervals[label],
+                reported_maps[label],
+            ))
 
     if savepath is not None:
         with open(savepath/"stats.json", "w") as f:

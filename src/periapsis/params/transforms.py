@@ -245,7 +245,6 @@ def uM02_to_uM0_uM01(uM02):
     return uM0, uM01
 
 def a_sini_n_e_to_K(a, sini, n, e):
-    # TODO: These functions return K in units of length/time that match the units of asini and n. Typically AU/yr. Need to better handle conversion factors.
     K = n*a*sini/np.sqrt(1 - e**2)
     return K
 
@@ -356,16 +355,12 @@ def Ma_fa_to_minMb(Ma, fa):
     return minMb
 
 def parallax_to_distance(parallax):
-    rad = u.Unit("rad")
-    arcsec = u.Unit("arcsec")
-    parallax_arcsec = (np.asarray(parallax) * rad).to_value(arcsec)
-    return 1.0 / parallax_arcsec
+    """Parallax in radians to distance in AU"""
+    return 1.0 / parallax
 
 def distance_to_parallax(distance):
-    rad = u.Unit("rad")
-    arcsec = u.Unit("arcsec")
-    parallax_arcsec = (1.0 / np.asarray(distance)) * arcsec
-    return parallax_arcsec.to_value(rad)
+    """Distance in AU to parallax in radians"""
+    return 1.0 / distance
 
 def sini_cosi_to_i(sini, cosi):
     i = np.arctan2(sini, cosi)

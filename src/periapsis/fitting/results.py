@@ -1,8 +1,4 @@
 import numpy as np
-from astropy import units as u
-from periapsis.utils.solvers import transform_theile
-from periapsis.utils.solvers import solve_mass
-from periapsis.model.orbit import Orbit
 from periapsis.prior import Prior, FixedPrior, Bounds
 from periapsis.params import build_transform_function, covered_parameters, overconstrained_parameters
 
@@ -116,40 +112,40 @@ class FitResults:
             raise ValueError("No priors are available to sample from.")
         return SampledPriors(self.priors, self.param_names, size, random_state)    
 
-    def add_mass_samples(self, data, m1=None):
-        """Derive M2 from canonical posterior orbital samples."""
-        if not data.has_astrometry():
-            return
-        if m1 is None and self.canonical_priors is not None:
-            prior = self.canonical_priors.get("M1")
-            if isinstance(prior, FixedPrior):
-                m1 = prior.value
-        if m1 is None or self.canonical_priors is None:
-            return
+    # def add_mass_samples(self, data, m1=None):
+    #     """Derive M2 from canonical posterior orbital samples."""
+    #     if not data.has_astrometry():
+    #         return
+    #     if m1 is None and self.canonical_priors is not None:
+    #         prior = self.canonical_priors.get("M1")
+    #         if isinstance(prior, FixedPrior):
+    #             m1 = prior.value
+    #     if m1 is None or self.canonical_priors is None:
+    #         return
 
-        fixed = {
-            name: prior.value
-            for name, prior in self.canonical_priors.items()
-            if isinstance(prior, FixedPrior)
-        }
-        masses = []
-        for sample in self.canonical_sample_array():
-            params = dict(zip(self.param_names, sample))
-            params.update(fixed)
-            orbit = Orbit(**params)
-            a1 = float(orbit["a1"])
-            if data.parameter_dimension("a1") == "angle":
-                if "distance" not in orbit:
-                    masses.append(np.nan)
-                    continue
-                a1 = (
-                    a1 * float(orbit["distance"]) * u.rad * u.pc
-                ).to_value(u.AU, equivalencies=u.dimensionless_angles())
-            masses.append(solve_mass(a1, float(orbit["P"]), float(m1)))
+    #     fixed = {
+    #         name: prior.value
+    #         for name, prior in self.canonical_priors.items()
+    #         if isinstance(prior, FixedPrior)
+    #     }
+    #     masses = []
+    #     for sample in self.canonical_sample_array():
+    #         params = dict(zip(self.param_names, sample))
+    #         params.update(fixed)
+    #         orbit = Orbit(**params)
+    #         a1 = float(orbit["a1"])
+    #         if data.parameter_dimension("a1") == "angle":
+    #             if "distance" not in orbit:
+    #                 masses.append(np.nan)
+    #                 continue
+    #             a1 = (
+    #                 a1 * float(orbit["distance"]) * u.rad * u.pc
+    #             ).to_value(u.AU, equivalencies=u.dimensionless_angles())
+    #         masses.append(solve_mass(a1, float(orbit["P"]), float(m1)))
 
-        self.samples["M2"] = np.asarray(masses)
-        self.M2 = self.samples["M2"]
-        return self.M2
+    #     self.samples["M2"] = np.asarray(masses)
+    #     self.M2 = self.samples["M2"]
+    #     return self.M2
         
 
 class SampledPriors:

@@ -21,10 +21,10 @@ class GaiaData(SystemData):
 
         self.spsi = np.atleast_1d(spsi)
         self.cpsi = np.atleast_1d(cpsi)
-        self.t = np.atleast_1d(self.unit_system.convert_to_canonical("t", t))
+        self.t = np.atleast_1d(t)
         self.plx_fac = np.atleast_1d(plx_fac)
-        self.x = np.atleast_1d(self.unit_system.convert_to_canonical("x", x))
-        self.err = np.atleast_1d(self.unit_system.convert_to_canonical("err", err))
+        self.x = np.atleast_1d(x)
+        self.err = np.atleast_1d(err)
         if self.x.shape != self.t.shape:
             raise ValueError("x must have the same shape as t")
         if self.spsi.shape != self.t.shape:
@@ -36,6 +36,10 @@ class GaiaData(SystemData):
         if self.err.shape != self.x.shape:
             self.err = np.broadcast_to(self.err, self.x.shape)
 
+        self.t_canonical = self.unit_system.convert_to_canonical("t", self.t)
+        self.x_canonical = self.unit_system.convert_to_canonical("x", self.x)
+        self.err_canonical = self.unit_system.convert_to_canonical("err", self.err)
+
         self.instrument = "Gaia"
         self.band = band
         
@@ -45,26 +49,26 @@ class GaiaData(SystemData):
         """
         Returns the degrees of freedom of the data.
         """
-        return len(self.t)
+        return len(self.t_canonical)
 
 
     def chi2(self, orbit: Orbit,jitter=None):
-        model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac,system=self.system)
+        model_x = orbit.gaia_astrometry(self.t_canonical,self.spsi,self.cpsi,self.plx_fac,system=self.system)
         if jitter is not None:
-            total_err = np.sqrt(self.err**2 + jitter**2)
+            total_err = np.sqrt(self.err_canonical**2 + jitter**2)
         else:
-            total_err = self.err
-        chi2 = np.sum(((self.x - model_x) / total_err) ** 2)
+            total_err = self.err_canonical
+        chi2 = np.sum(((self.x_canonical - model_x) / total_err) ** 2)
         return chi2
 
     def log_likelihood(self, orbit: Orbit,offset_names=None):
         offset_names = set() if offset_names is None else set(offset_names)
-        model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac,system=self.system)
+        model_x = orbit.gaia_astrometry(self.t_canonical,self.spsi,self.cpsi,self.plx_fac,system=self.system)
         if f"astro_{self.instrument}_offset" in offset_names:
             x_offset = _orbit_value(orbit, f"astro_{self.instrument}_offset", default=0.0)
             model_x += x_offset
 
-        residuals = self.x - model_x
+        residuals = self.x_canonical - model_x
 
         for jitter_name in ('astro_jitter',f'astro_Gaia_jitter'):
             if jitter_name in orbit.params:
@@ -75,7 +79,7 @@ class GaiaData(SystemData):
             jitter = None
             
 
-        ln_like = _gaussian_log_likelihood(residuals,self.err,jitter)
+        ln_like = _gaussian_log_likelihood(residuals, self.err_canonical, jitter)
         return ln_like
 
     def has_astrometry(self) -> bool:
@@ -84,10 +88,6 @@ class GaiaData(SystemData):
     def has_radial_velocity(self) -> bool:
         return False
 
-    def t_series(self):
-        """Return the observation timestamps."""
-        return self.t
-
     def _radial_velocity(self, orbit: Orbit):
         """Gaia 1D astrometry dataset has no radial velocity data."""
         return None
@@ -95,10 +95,10 @@ class GaiaData(SystemData):
     def _astrometry(self, orbit: Orbit):
         system = getattr(self, 'system', None)
         params = orbit.derived_params
-        model_x = orbit.gaia_astrometry(self.t,self.spsi,self.cpsi,self.plx_fac,self.system)
+        model_x = orbit.gaia_astrometry(self.t_canonical,self.spsi,self.cpsi,self.plx_fac,self.system)
 
         #smooth orbit for plotting
-        t_smooth = np.linspace(np.min(self.t),np.max(self.t),1000)
+        t_smooth = np.linspace(np.min(self.t_canonical),np.max(self.t_canonical),1000)
 
         Msmooth = 2 * np.pi / params['P'] * (t_smooth - params['Tp'])
         Esmooth = solve_kepler(Msmooth, params['e'])
@@ -109,7 +109,7 @@ class GaiaData(SystemData):
         dec_orb = params[f'A{system}']*Xsmooth + params[f'F{system}']*Ysmooth
 
         #--------position decomposition ---------
-        res_1d = self.x - model_x
+        res_1d = self.x_canonical - model_x
 
         ra_obs = res_1d * self.spsi
         dec_obs = res_1d * self.cpsi
@@ -121,8 +121,8 @@ class GaiaData(SystemData):
 
         #--------linear motion ---------
 
-        plx_ra_smooth = np.interp(t_smooth,self.t,self.plx_fac*self.spsi)
-        plx_dec_smooth = np.interp(t_smooth,self.t,self.plx_fac*self.cpsi)
+        plx_ra_smooth = np.interp(t_smooth,self.t_canonical,self.plx_fac*self.spsi)
+        plx_dec_smooth = np.interp(t_smooth,self.t_canonical,self.plx_fac*self.cpsi)
 
         ra_lin = params['dalpha'] + params['mu_alpha']*t_smooth + plx_ra_smooth*params['parallax']
         dec_lin = params['ddelta'] + params['mu_delta']*t_smooth + plx_dec_smooth*params['parallax']
@@ -136,7 +136,7 @@ class GaiaData(SystemData):
 
         #--------orbital data points for plotting ---------
         
-        M_data = 2 * np.pi / params['P'] * (self.t - params['Tp'])
+        M_data = 2 * np.pi / params['P'] * (self.t_canonical - params['Tp'])
         E_data = solve_kepler(M_data, params['e'])
         X_data = np.cos(E_data) - params['e']
         Y_data = np.sqrt(1-params['e']**2)*np.sin(E_data)
@@ -146,8 +146,8 @@ class GaiaData(SystemData):
         ra_orb_obs = ra_data_orb + ra_obs
         dec_orb_obs = dec_data_orb + dec_obs
 
-        ra_sky_model_data = params['dalpha'] + params['mu_alpha']*self.t + params['parallax']*self.plx_fac*self.spsi + ra_data_orb
-        dec_sky_model_data = params['ddelta'] + params['mu_delta']*self.t + params['parallax']*self.plx_fac*self.cpsi + dec_data_orb
+        ra_sky_model_data = params['dalpha'] + params['mu_alpha']*self.t_canonical + params['parallax']*self.plx_fac*self.spsi + ra_data_orb
+        dec_sky_model_data = params['ddelta'] + params['mu_delta']*self.t_canonical + params['parallax']*self.plx_fac*self.cpsi + dec_data_orb
         #---------- projected sky data points for plotting ---------
         ra_sky_data = ra_sky_model_data + ra_obs
         dec_sky_data = dec_sky_model_data + dec_obs

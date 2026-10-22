@@ -14,9 +14,10 @@ all_parameters = {
 }
 
 ang_parameters = {
-    'a', 'b', 'p', 'r_a', 'r_p', 'A', 'B', 'C', 'F', 'G', 'H',
-    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'A1', 'B1', 'C1', 'F1', 'G1', 'H1',
-    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'A2', 'B2', 'C2', 'F2', 'G2', 'H2',
+    'a', 'b', 'p', 'r_a', 'r_p', 'A', 'B', 'F', 'G',
+    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'A1', 'B1', 'F1', 'G1',
+    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'A2', 'B2', 'F2', 'G2',
+    'dalpha', 'ddelta', 'mu_alpha', 'mu_delta', 'dmu_alpha', 'dmu_delta',
 }
 
 wrapped_parameters = {
@@ -38,8 +39,14 @@ a: Literal["a"] = "a"
 a1: Literal["a1"] = "a1"
 """Semi-major axis of body 1's orbit ellipse (the orbit of body 1 with the barycenter at the focus of the ellipse)"""
 
+a1sini: Literal["a1sini"] = "a1sini"
+"""a1 * sin(i)"""
+
 a2: Literal["a2"] = "a2"
 """Semi-major axis of body 2's orbit ellipse (the orbit of body 2 with the barycenter at the focus of the ellipse)"""
+
+a2sini: Literal["a2sini"] = "a2sini"
+"""a2 * sin(i)"""
 
 b = "b"
 """Semi-minor axis of relative orbit ellipse"""
@@ -264,6 +271,12 @@ minM2 = "minM2"
 
 Msini = "Msini"
 """Mtot * sini"""
+
+M1sini = "M1sini"
+"""M1 * sini"""
+
+M2sini = "M2sini"
+"""M2 * sini"""
 
 mu = "mu"
 """Mtot * G, where G is the gravitational constant."""
@@ -511,6 +524,18 @@ def ang(param):
     if param not in ang_parameters:
         raise ValueError(f"Parameter {param} does not have an angular version.")
     return f"{param}_ang"
+
+
+def system(param, system):
+    """
+    Get the version of a parameter for a specific system (1 or 2). For example, system(a, 1) is the semi-major axis of body 1's orbit.
+    """
+    if param not in all_parameters:
+        raise ValueError(f"Parameter {param} is not a valid parameter.")
+    const = f"{param}{system}"
+    if const not in all_parameters:
+        raise ValueError(f"Parameter {param} does not have a system-specific version for system {system if system != "" else 'relative'}.")
+    return const
 
 
 _display_dict = {

@@ -3,7 +3,7 @@ import numpy as np
 from .data import Data
 from periapsis.model.orbit import Orbit
 from .gaia import GaiaData
-from .common import SystemData, AstrometryData, RadialVelocityData
+from .common import _AstrometryDataBase, SystemData, AstrometryData, PhysicalAstrometryData, RadialVelocityData
 
 
 class JointData(Data):
@@ -23,7 +23,7 @@ class JointData(Data):
 
         names = []
         for data_type, coordinate_names in (
-            ((AstrometryData, GaiaData), None),
+            ((AstrometryData, PhysicalAstrometryData, GaiaData), None),
             (RadialVelocityData, ("rv",)),
         ):
             components = [
@@ -81,10 +81,12 @@ class JointData(Data):
         return names
 
     def check_joint_units(self):
-        """Check that all corresponding datas in joint
-        are provided with same units. Raises ValueError if not."""
+        """
+        Check that all corresponding datas in joint
+        are provided with same units. Raises ValueError if not.
+        """
 
-        if not self.datas or not all(hasattr(data, "unit_system") for data in self.datas):
+        if not self.datas or not all(hasattr(data, "unit_system") for data in self.datas) or len(self.datas) < 2:
             return
 
         ref_t = self.datas[0].unit_system.units['t']
@@ -192,18 +194,22 @@ class JointData(Data):
     def as_astrometry_data(self):
         ''' Returns AstrometryData object containing all astrometry data of simialar system in Joint Data. 
         '''
-        astrometry_datas = [data for data in self.datas if isinstance(data, AstrometryData)]
+        astrometry_datas = [data for data in self.datas if isinstance(data, _AstrometryDataBase)]
         if not astrometry_datas:
             raise ValueError("No astrometry data found in the joint data.")
+
+        ref_type = type(astrometry_datas[0])
+        if not all(isinstance(data, ref_type) for data in astrometry_datas):
+            raise ValueError("All astrometry data in the joint data must be of the same type (physical or angular units).")
 
         has_parallax = any(data.parallax for data in astrometry_datas)
         for system in set(data.system for data in astrometry_datas):
             system_datas = [data for data in astrometry_datas if data.system == system]
-            t = np.concatenate([data.t for data in system_datas])
-            x = np.concatenate([data.x for data in system_datas])
-            y = np.concatenate([data.y for data in system_datas])
-            x_err = np.concatenate([data.x_err for data in system_datas])
-            y_err = np.concatenate([data.y_err for data in system_datas])
+            t = np.concatenate([data.t_canonical for data in system_datas])
+            x = np.concatenate([data.x_canonical for data in system_datas])
+            y = np.concatenate([data.y_canonical for data in system_datas])
+            x_err = np.concatenate([data.x_err_canonical for data in system_datas])
+            y_err = np.concatenate([data.y_err_canonical for data in system_datas])
             if has_parallax:
                 plxf_x = np.concatenate([data.plxf_x 
                         if data.parallax 
@@ -238,10 +244,10 @@ class JointData(Data):
             system_datas = [data for data in gaia_datas if data.system == system]
             spsi = np.concatenate([data.spsi for data in system_datas])
             cpsi = np.concatenate([data.cpsi for data in system_datas])
-            t = np.concatenate([data.t for data in system_datas])
+            t = np.concatenate([data.t_canonical for data in system_datas])
             plx_fac = np.concatenate([data.plx_fac for data in system_datas])
-            x = np.concatenate([data.x for data in system_datas])
-            err = np.concatenate([data.err for data in system_datas])
+            x = np.concatenate([data.x_canonical for data in system_datas])
+            err = np.concatenate([data.err_canonical for data in system_datas])
 
             source = system_datas[0]
             canonical_units = source.unit_system.canonical_units
@@ -259,9 +265,9 @@ class JointData(Data):
             raise ValueError("No radial velocity data found in the joint data.")
         for system in set(data.system for data in rv_datas):
             system_datas = [data for data in rv_datas if data.system == system]
-            t = np.concatenate([data.t for data in system_datas])
-            rv = np.concatenate([data.rv for data in system_datas])
-            rv_err = np.concatenate([data.rv_err for data in system_datas])
+            t = np.concatenate([data.t_canonical for data in system_datas])
+            rv = np.concatenate([data.rv_canonical for data in system_datas])
+            rv_err = np.concatenate([data.rv_err_canonical for data in system_datas])
 
             source = system_datas[0]
             canonical_units = source.unit_system.canonical_units
@@ -271,28 +277,36 @@ class JointData(Data):
             return RadialVelocityData(t, rv, rv_err, system=system,units=units)
 
 
-    def _concat_obs(self):
+    def _concat_obs_canonical(self):
         """Returns the combined observations for all data."""
         observations = []
+        if len(list(filter(lambda d: isinstance(d, AstrometryData), self.datas))) > 0 and len(list(filter(lambda d: isinstance(d, PhysicalAstrometryData), self.datas))) > 0:
+            raise ValueError("Cannot combine astrometry data of different types (physical vs angular units) in JointData.")
         for data in self.datas:
             if isinstance(data, AstrometryData):
-                observations += ([data.x, data.y])
+                observations += ([data.x_ang_canonical, data.y_ang_canonical])
+            elif isinstance(data, PhysicalAstrometryData):
+                observations += ([data.x_canonical, data.y_canonical])
             elif isinstance(data, RadialVelocityData):
-                observations.append(data.rv)
+                observations.append(data.rv_canonical)
             elif isinstance(data, GaiaData):
-                observations.append(data.x)
+                observations.append(data.x_canonical)
         return np.concatenate(observations)
 
-    def _err(self):
+    def _err_canonical(self):
         """Returns the combined error array for all data."""
         errors = []
+        if len(list(filter(lambda d: isinstance(d, AstrometryData), self.datas))) > 0 and len(list(filter(lambda d: isinstance(d, PhysicalAstrometryData), self.datas))) > 0:
+            raise ValueError("Cannot combine astrometry data of different types (physical vs angular units) in JointData.")    
         for data in self.datas:
             if isinstance(data, AstrometryData):
-                errors+=([data.x_err, data.y_err])
+                errors+=([data.x_err_ang_canonical, data.y_err_ang_canonical])
+            elif isinstance(data, PhysicalAstrometryData):
+                errors+=([data.x_err_canonical, data.y_err_canonical])
             elif isinstance(data, RadialVelocityData):
-                errors.append(data.rv_err)
+                errors.append(data.rv_err_canonical)
             elif isinstance(data, GaiaData):
-                errors.append(data.err)
+                errors.append(data.err_canonical)
         return np.concatenate(errors)
 
 
@@ -328,15 +342,6 @@ class JointData(Data):
         if not rvs:
             raise ValueError("No radial velocity data found in the joint data.")
         return np.concatenate(rvs)
-    
-
-
-    def t_series(self):
-        ts = []
-        for data in self.datas:
-            t = data.t_series()
-            ts.append(t)
-        return np.concatenate(ts)
 
 
     def has_astrometry(self) -> bool:

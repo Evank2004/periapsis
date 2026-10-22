@@ -242,7 +242,7 @@ def gaia_single_motion(spsi,cpsi,t,plx_fac,x,err):
 
 def _orbit_coords_nu(P,e,Tp,t):
     '''
-    Returns the true anomaly and spatail coordinates of the orbit at time t given P,e,Tp
+    Returns the true anomaly and spatial coordinates of the orbit at time t given P,e,Tp
     '''
     ti = t - Tp
     M = 2*np.pi * ti/P

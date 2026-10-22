@@ -1,5 +1,6 @@
 from periapsis.data import AstrometryData, RadialVelocityData, GaiaData, JointData
 from periapsis.prior import Bounds, FixedPrior
+from periapsis.prior.prior import Prior
 
 from .fitter import Fitter
 from periapsis.model.orbit import Orbit
@@ -10,11 +11,12 @@ from periapsis.params.units import CanonicalUnits
 
 import numpy as np
 import ultranest
+from typing import Optional
 
 reject_logl = -1e300
 
 class UltranestFitter(Fitter):
-    def __init__(self, output_params, ref_epoch=None, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
+    def __init__(self, output_params, ref_epoch=None, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, quiet=False, **priors):
         super().__init__(ref_epoch,**priors)
         self.output_params = frozenset(output_params)
         self.output_param_order = tuple(output_params)
@@ -28,6 +30,7 @@ class UltranestFitter(Fitter):
         self.Lepsilon = Lepsilon
         self.max_iters = max_iters
         self.max_ncalls = max_ncalls
+        self.quiet = quiet
 
         self.prior_params = set(self.priors.keys())
         self.prior_order = tuple(self.priors.keys())
@@ -51,9 +54,7 @@ class UltranestFitter(Fitter):
         
         self.prior_to_sampled_transform = build_transform_functions(self.non_bound_prior_params, output_params)
 
-    def fit(self, data: Data, quiet=False) -> FitResults:
-        canonical_priors = self._canonical_priors(data)
-        canonical_ref_epoch = canonical_priors['Tepoch'].value
+    def _fit(self, data: Data, canonical_priors: dict[str, Prior], canonical_ref_epoch: Optional[float], rng: np.random.RandomState) -> dict:
         param_order = self.sample_order
         full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
         likelihood_transform = build_transform_functions([*full_param_order, *self.fixed_prior_params], self.bound_params)
@@ -87,12 +88,6 @@ class UltranestFitter(Fitter):
                 return reject_logl
             return log_likelihood
 
-                
-
-        null_hypothesis_canonical = self._null_hypothesis_fit(
-            data, ref_epoch=canonical_ref_epoch
-        )
-
         sampler = ultranest.ReactiveNestedSampler(
             param_names=tuple(param_order),
             loglike=log_likelihood, 
@@ -109,8 +104,8 @@ class UltranestFitter(Fitter):
             Lepsilon=self.Lepsilon,
             max_iters=self.max_iters,
             max_ncalls=self.max_ncalls,
-            show_status=not quiet,
-            viz_callback=False if quiet else 'auto',
+            show_status=not self.quiet,
+            viz_callback=False if self.quiet else 'auto',
         )
         samples = np.array(results['samples'])
         logl = np.array(results['weighted_samples']['logl'])
@@ -122,39 +117,18 @@ class UltranestFitter(Fitter):
             best_params[prior] = canonical_priors[prior].value
             median_params[prior] = canonical_priors[prior].value
 
-        if null_hypothesis_canonical is None:
-            raise RuntimeError("Null-hypothesis fitting returned no result.")
-
-        def from_canonical(name, value):
-            unit = data.parameter_unit(name)
-            dimension = data.parameter_dimension(name)
-            if unit is None or dimension is None:
-                raise ValueError(f"Could not resolve units for parameter '{name}'.")
-            return np.asarray(value) / unit.to(CanonicalUnits[dimension])
 
         reported_samples = np.column_stack([
-            from_canonical(name, samples[:, i])
+            samples[:, i]
             for i, name in enumerate(full_param_order)
         ])
         reported_best_params = {
-            name: from_canonical(name, value)
+            name: value
             for name, value in best_params.items()
         }
         reported_median_params = {
-            name: from_canonical(name, value)
+            name: value
             for name, value in median_params.items()
-        }
-        null_hypothesis = dict(null_hypothesis_canonical)
-        null_hypothesis['params'] = {
-            name: from_canonical(name, value)
-            for name, value in null_hypothesis_canonical['params'].items()
-        }
-        known_output_names = set(full_param_order) | set(canonical_priors)
-        parameter_factors = {
-            name: data.parameter_unit(name).to(
-                CanonicalUnits[data.parameter_dimension(name)]
-            )
-            for name in known_output_names
         }
 
         results_dict = {}
@@ -171,17 +145,10 @@ class UltranestFitter(Fitter):
         results_dict['raw_sampler'] = sampler
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params
-        results_dict['null_hypothesis'] = null_hypothesis
         results_dict['logl'] = logl
         results_dict['samples'] = reported_samples
-        results_dict['ref_epoch'] = self._reported_ref_epoch(data)
         results_dict['backend'] = 'ultranest'
-        results_dict['fit_method'] = 'Campbell'
-        results_dict['priors'] = self.priors
-        results_dict['canonical_priors'] = canonical_priors
-        results_dict['parameter_factors'] = parameter_factors
+        results_dict['fit_method'] = 'full'
 
-        
-        fit_results = FitResults(**results_dict)
-        return fit_results
+        return results_dict
 

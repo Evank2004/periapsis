@@ -459,16 +459,16 @@ def test_eccentric_anomaly_recovers_mean_and_true_anomalies():
 
 
 def test_parallax_and_distance_are_reciprocals():
-    parallax = np.deg2rad(1.0 / 40.0 / 3600.0)
+    parallax = 1.0 / 40.0
     distance = transform({"parallax"}, "distance", parallax=parallax)
     parallax = transform({"distance"}, "parallax", distance=distance)
 
     assert distance == pytest.approx(40.0)
-    assert parallax == pytest.approx(np.deg2rad(1.0 / 40.0 / 3600.0))
+    assert parallax == pytest.approx(1.0 / 40.0)
 
 
-def test_parallax_distance_transform_uses_radians_and_parsecs():
-    parallax = np.deg2rad(1.0 / 1000.0 / 3600.0)
+def test_parallax_distance_transform_uses_radians_and_au():
+    parallax = 1.0 / 1000.0 # radians
 
     distance = transform({"parallax"}, "distance", parallax=parallax)
 

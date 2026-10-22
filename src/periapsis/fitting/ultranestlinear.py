@@ -1,9 +1,12 @@
+from typing import Optional
+
 from periapsis.params.transforms import build_transform_functions, overconstrained_parameters, covered_parameters, wrapped_parameters
 from periapsis.model import Orbit
+from periapsis.prior.prior import Prior
 from .fitter import Fitter
-from periapsis.data import Data, AstrometryData, RadialVelocityData, JointData,GaiaData
+from periapsis.data import Data, AstrometryData, PhysicalAstrometryData, RadialVelocityData, JointData,GaiaData
 from periapsis.fitting.results import FitResults
-from periapsis.utils.helpers import _matrix_builder,_matrix_filler, _lsq_helper, _sigma
+import periapsis.utils.helpers as helpers
 from periapsis.prior import FixedPrior, Bounds
 from periapsis.params.units import CanonicalUnits
 import periapsis.params as par
@@ -12,7 +15,7 @@ import ultranest
 
 
 class UltranestLinearFitter(Fitter):
-    def __init__(self, output_params=(par.P, par.e, par.Tp,),linear_params=(),ref_epoch=None,min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, **priors):
+    def __init__(self, output_params=(par.P, par.e, par.Tp,),linear_params=(),ref_epoch=None,min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, quiet=False, **priors):
         super().__init__(ref_epoch, **priors)
         self.min_num_live_points = min_num_live_points
         self.min_ess = min_ess
@@ -22,6 +25,8 @@ class UltranestLinearFitter(Fitter):
         self.Lepsilon = Lepsilon
         self.max_iters = max_iters
         self.max_ncalls = max_ncalls
+        self.quiet = quiet
+
         self.linear_params = frozenset(linear_params)
         self.output_params = frozenset(output_params)
         self.output_param_order = tuple(output_params)
@@ -50,13 +55,11 @@ class UltranestLinearFitter(Fitter):
         self.prior_to_sampled_transform = build_transform_functions(self.non_bound_prior_params, output_params)
         
 
-    def fit(self, data: Data, quiet = False) -> FitResults:
-        if not isinstance(data, (AstrometryData, RadialVelocityData, JointData, GaiaData)):
-            raise ValueError("UltranestLinearFitter supports AstrometryData, RadialVelocityData, JointData, and GaiaData.")
+    def _fit(self, data: Data, canonical_priors: dict[str, Prior], canonical_ref_epoch: Optional[float], rng: np.random.RandomState) -> dict:
+        if not isinstance(data, (AstrometryData, PhysicalAstrometryData, RadialVelocityData, JointData, GaiaData)):
+            raise ValueError("UltranestLinearFitter supports AstrometryData, PhysicalAstrometryData, RadialVelocityData, JointData, and GaiaData.")
 
-        canonical_priors = self._canonical_priors(data)
-        canonical_ref_epoch = canonical_priors['Tepoch'].value
-        self.M, self.cols = _matrix_builder(
+        self.M, self.cols = helpers._matrix_builder(
             data, canonical_ref_epoch, linear_params=self.linear_params
         )
         param_order = self.sample_order
@@ -75,20 +78,20 @@ class UltranestLinearFitter(Fitter):
     
         # Matrix method cached variables
         if isinstance(data, AstrometryData):
-            mm_eta = np.concatenate((data.x, data.y))
-            mm_sigma = np.concatenate((data.x_err, data.y_err))
-            
+            mm_eta = np.concatenate((data.x_ang_canonical, data.y_ang_canonical))
+            mm_sigma = np.concatenate((data.x_err_ang_canonical, data.y_err_ang_canonical))
+        elif isinstance(data, PhysicalAstrometryData):
+            mm_eta = np.concatenate((data.x_canonical, data.y_canonical))
+            mm_sigma = np.concatenate((data.x_err_canonical, data.y_err_canonical))
         elif isinstance(data, RadialVelocityData):
-            mm_eta = data.rv
-            mm_sigma = data.rv_err
-            
+            mm_eta = data.rv_canonical
+            mm_sigma = data.rv_err_canonical
         elif isinstance(data,JointData):
-            mm_eta = data._concat_obs()
-            mm_sigma = data._err()
-
+            mm_eta = data._concat_obs_canonical()
+            mm_sigma = data._err_canonical()
         elif isinstance(data,GaiaData):
-            mm_eta = data.x
-            mm_sigma = data.err
+            mm_eta = data.x_canonical
+            mm_sigma = data.err_canonical
 
            
         def prior_transform(cube):
@@ -108,9 +111,9 @@ class UltranestLinearFitter(Fitter):
         
         def matrix_method(params_dict):
 
-            _matrix_filler(self.M,self.cols,params_dict,data)
-            sigma = _sigma(data,params_dict,mm_sigma)
-            mu,chi2 = _lsq_helper(self.M,mm_eta,sigma)
+            helpers._matrix_filler(self.M,self.cols,params_dict,data)
+            sigma = helpers.sigma(data,params_dict,mm_sigma)
+            mu,chi2 = helpers._lsq_helper(self.M,mm_eta,sigma)
                 
             return mu, chi2,sigma
         
@@ -143,10 +146,6 @@ class UltranestLinearFitter(Fitter):
 
             return ln_like  
 
-        null_hypothesis_canonical = self._null_hypothesis_fit(
-            data, ref_epoch=canonical_ref_epoch
-        )
-
         sampler = ultranest.ReactiveNestedSampler(
             param_names=tuple(param_order),
             loglike=log_likelihood, 
@@ -164,8 +163,8 @@ class UltranestLinearFitter(Fitter):
             Lepsilon=self.Lepsilon,
             max_iters=self.max_iters,
             max_ncalls=self.max_ncalls,
-            show_status=not quiet,
-            viz_callback=False if quiet else 'auto',
+            show_status=not self.quiet,
+            viz_callback=False if self.quiet else 'auto',
         )
 
         ultranest_samples = np.array(results['samples'])
@@ -210,38 +209,17 @@ class UltranestLinearFitter(Fitter):
             best_params[prior] = canonical_priors[prior].value
             median_params[prior] = canonical_priors[prior].value
 
-        if null_hypothesis_canonical is None:
-            raise RuntimeError("Null-hypothesis fitting returned no result.")
-
-        def from_canonical(name, value):
-            unit = data.parameter_unit(name)
-            dimension = data.parameter_dimension(name)
-            if unit is None or dimension is None:
-                raise ValueError(f"Could not resolve units for parameter '{name}'.")
-            return np.asarray(value) / unit.to(CanonicalUnits[dimension])
-
         reported_posterior = np.column_stack([
-            from_canonical(name, full_posterior_arr[:, i])
+            full_posterior_arr[:, i]
             for i, name in enumerate(post_labels)
         ])
         reported_best_params = {
-            name: from_canonical(name, value)
+            name: value
             for name, value in best_params.items()
         }
         reported_median_params = {
-            name: from_canonical(name, value)
+            name: value
             for name, value in median_params.items()
-        }
-        null_hypothesis = dict(null_hypothesis_canonical)
-        null_hypothesis['params'] = {
-            name: from_canonical(name, value)
-            for name, value in null_hypothesis_canonical['params'].items()
-        }
-        parameter_factors = {
-            name: data.parameter_unit(name).to(
-                CanonicalUnits[data.parameter_dimension(name)]
-            )
-            for name in set(post_labels) | set(canonical_priors)
         }
 
         columns = {label: [] for label in post_labels}
@@ -257,22 +235,15 @@ class UltranestLinearFitter(Fitter):
         results_dict['param_names'] = post_labels
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params
-        results_dict['null_hypothesis'] = null_hypothesis
         results_dict['logl'] = logl
         results_dict['samples'] = reported_posterior
         results_dict['n_samples_raw'] = int(len(ultranest_samples))
         results_dict['n_samples_valid'] = int(len(full_posterior_arr))
-        results_dict['ref_epoch'] = self._reported_ref_epoch(data)
-
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'ultranest'
         results_dict['fit_method'] = 'linear'
-        results_dict['priors'] = self.priors
-        results_dict['canonical_priors'] = canonical_priors
-        results_dict['parameter_factors'] = parameter_factors
 
-        fit_results = FitResults(**results_dict)
-        return fit_results
+        return results_dict
 
 
         

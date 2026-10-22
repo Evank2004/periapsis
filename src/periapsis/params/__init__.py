@@ -5,6 +5,7 @@ from .params import Mtot, M1, M2, minM1, minM2, Msini, mu, Tepoch, Tp, t0, M0, L
 from .params import dalpha, ddelta, mu_alpha, mu_delta,dmu_alpha,dmu_delta, gamma,dgamma, f1, f2, parallax, distance
 from .params import flux_parameter
 from .params import log, ang, display
+from .units import UnitSystem, get_canonical_unit_scale
 
 __all__ = [
     "covered_parameters", "uncovered_parameters", "shortest_path", "build_transform_function", "build_transform_functions", "overconstrained_parameters", "wrapped_parameters",
@@ -13,5 +14,6 @@ __all__ = [
     "Mtot", "M1", "M2", "minM1", "minM2", "Msini", "mu", "Tepoch", "Tp", "t0", "M0", "L0", "E0", "nu0", "l0", "l01", "l02", "uM0", "uM01", "uM02", "u0", "u01", "u02", "K", "K1", "K2", "q",
     "dalpha", "ddelta", "mu_alpha", "mu_delta", "dmu_alpha","dmu_delta" ,"gamma","dgamma", "f1", "f2", "parallax", "distance",
     "flux_parameter",
-    "log", "ang", "display"
+    "log", "ang", "display",
+    "UnitSystem", "get_canonical_unit_scale",
 ]

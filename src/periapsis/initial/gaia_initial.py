@@ -1,5 +1,5 @@
 import numpy as np
-from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler, _null_matrix_builder, _fill_periodogram_periodic, _sigma
+import periapsis.utils.helpers as helpers
 from periapsis.data.gaia import GaiaData
 from periapsis.params.transforms import build_transform_functions
 from periapsis.prior import Bounds, FixedPrior
@@ -12,7 +12,7 @@ class GaiaInitialGuess(InitialGuess):
     """Class for obtaining initial guess for Gaia data"""
     def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
-        self.M_base, self.cols = _matrix_builder(
+        self.M_base, self.cols = helpers._matrix_builder(
             data, ref_epoch, linear_params=linear_params
         )
         
@@ -24,10 +24,10 @@ class GaiaInitialGuess(InitialGuess):
         p_min = prior_p.min if prior_p is not None else 0.001
         p_max = prior_p.max if prior_p is not None else 100 
 
-        M_null,_ = _null_matrix_builder(self.data,self.ref_epoch)
+        M_null,_ = helpers.null_matrix_builder(self.data,self.ref_epoch)
 
 
-        _,chi2H = _lsq_helper(M_null,self.data.x,self.data.err)
+        _,chi2H = helpers._lsq_helper(M_null,self.data.x_canonical,self.data.err_canonical)
 
         min_freq = 1/p_max
         max_freq = 1/p_min
@@ -39,9 +39,9 @@ class GaiaInitialGuess(InitialGuess):
         for i, nu in enumerate(frequencies):
             phase = 2 * np.pi * nu 
             M = self.M_base.copy()
-            _fill_periodogram_periodic(M, self.cols,self.ref_epoch,self.data,phase)
+            helpers._fill_periodogram_periodic(M, self.cols,self.ref_epoch,self.data,phase)
 
-            _,chi2K = _lsq_helper(M,self.data.x,self.data.err)
+            _,chi2K = helpers._lsq_helper(M,self.data.x_canonical,self.data.err_canonical)
 
             z_GLS = (chi2H - chi2K) / chi2H
 
@@ -68,9 +68,9 @@ class GaiaInitialGuess(InitialGuess):
         params_dict.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
         params_dict.update(self.PeTp_transform(**params_dict))
 
-        _matrix_filler(self.M_base, self.cols, params_dict, data)
-        sigma = _sigma(data, params_dict, data.err)
-        _, chi2 = _lsq_helper(self.M_base, data.x, sigma)
+        helpers._matrix_filler(self.M_base, self.cols, params_dict, data)
+        sigma = helpers.sigma(data, params_dict, data.err_canonical)
+        _, chi2 = helpers._lsq_helper(self.M_base, data.x_canonical, sigma)
 
         ln_prior = 0.0
         for name in param_in:

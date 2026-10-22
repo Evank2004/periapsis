@@ -79,14 +79,6 @@ class Data(ABC):
         Returns rv_obs"""
         pass
 
-
-    @abstractmethod
-    def t_series(self):
-        """
-        Returns the time series of the data.
-        """
-        pass
-
     @property
     @abstractmethod
     def dof(self)-> int:

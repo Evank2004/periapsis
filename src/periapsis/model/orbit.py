@@ -1,3 +1,4 @@
+import periapsis.params.params as par
 from periapsis.params import covered_parameters, build_transform_functions
 from periapsis.utils.solvers import solve_kepler,_orbit_coords_nu
 from periapsis.params.transforms import q_f_to_photocenter_factor
@@ -5,43 +6,49 @@ import numpy as np
 from types import MappingProxyType
 
 _astrometry_param_names = {
-    "": {'P', 'e', 'Tp', 'Tepoch', 'A', 'B', 'F', 'G'}, # Relative astrometry
-    "1": {'P', 'e', 'Tp', 'Tepoch', 'A1', 'B1', 'F1', 'G1'}, # Primary astrometry
-    "2": {'P', 'e', 'Tp', 'Tepoch', 'A2', 'B2', 'F2', 'G2'}, # Secondary astrometry
+    "": {par.P, par.e, par.Tp, par.Tepoch, par.A, par.B, par.F, par.G}, # Relative astrometry
+    "1": {par.P, par.e, par.Tp, par.Tepoch, par.A1, par.B1, par.F1, par.G1}, # Primary astrometry
+    "2": {par.P, par.e, par.Tp, par.Tepoch, par.A2, par.B2, par.F2, par.G2}, # Secondary astrometry
+}
+
+_astrometry_ang_param_names = {
+    "": {par.P, par.e, par.Tp, par.Tepoch, par.ang(par.A), par.ang(par.B), par.ang(par.F), par.ang(par.G)}, # Relative astrometry
+    "1": {par.P, par.e, par.Tp, par.Tepoch, par.ang(par.A1), par.ang(par.B1), par.ang(par.F1), par.ang(par.G1)}, # Primary astrometry
+    "2": {par.P, par.e, par.Tp, par.Tepoch, par.ang(par.A2), par.ang(par.B2), par.ang(par.F2), par.ang(par.G2)}, # Secondary astrometry
 }
 
 _astrometry_linear_param_names = {
-    "": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta', 'dmu_alpha','dmu_delta'},
-    "1": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta', 'dmu_alpha','dmu_delta'},
-    "2": {'dalpha', 'ddelta','parallax', 'mu_alpha', 'mu_delta', 'dmu_alpha','dmu_delta'},
+    "":  {par.dalpha, par.ddelta, par.parallax, par.mu_alpha, par.mu_delta, par.dmu_alpha,par.dmu_delta},
+    "1": {par.dalpha, par.ddelta, par.parallax, par.mu_alpha, par.mu_delta, par.dmu_alpha,par.dmu_delta},
+    "2": {par.dalpha, par.ddelta, par.parallax, par.mu_alpha, par.mu_delta, par.dmu_alpha,par.dmu_delta},
 }
 _rv_param_names = {
-    "": {'K', 'e', 'Tp', 'Tepoch', 'P', 'omega'}, # Relative RVs
-    "1": {'K1', 'e', 'Tp', 'Tepoch', 'P', 'omega1'}, # Primary RVs
-    "2": {'K2', 'e', 'Tp', 'Tepoch', 'P', 'omega2'} # Secondary RVs
+    "": {par.K, par.e, par.Tp, par.Tepoch, par.P, par.omega}, # Relative RVs
+    "1": {par.K1, par.e, par.Tp, par.Tepoch, par.P, par.omega1}, # Primary RVs
+    "2": {par.K2, par.e, par.Tp, par.Tepoch, par.P, par.omega2} # Secondary RVs
 }
 
 _rv_linear_param_names = {
-    "": {'gamma','dgamma'},
-    "1": {'gamma','dgamma'},
-    "2": {'gamma','dgamma'}
+    "": {par.gamma, par.dgamma},
+    "1": {par.gamma, par.dgamma},
+    "2": {par.gamma, par.dgamma}
 }
 
 _xyz_param_names = {
-    "": {"P", "e", "a", "Tp", "Tepoch", "omega", "Omega", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Relative 3D position
-    "1": {"P", "e", "a1", "Tp", "Tepoch", "omega1", "Omega1", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Primary 3D position
-    "2": {"P", "e", "a2", "Tp", "Tepoch", "omega2", "Omega2", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'} # Secondary 3D position
+    "": {par.P, par.e, par.a, par.Tp, par.Tepoch, par.omega, par.Omega, par.i, par.dalpha, par.ddelta, par.distance, par.mu_alpha, par.mu_delta, par.gamma}, # Relative 3D position
+    "1": {par.P, par.e, par.a1, par.Tp, par.Tepoch, par.omega1, par.Omega1, par.i, par.dalpha, par.ddelta, par.distance, par.mu_alpha, par.mu_delta, par.gamma}, # Primary 3D position
+    "2": {par.P, par.e, par.a2, par.Tp, par.Tepoch, par.omega2, par.Omega2, par.i, par.dalpha, par.ddelta, par.distance, par.mu_alpha, par.mu_delta, par.gamma}, # Secondary 3D position
 }
 _vxyz_param_names = {
-    "": {"P", "e", "a", "Tp", "Tepoch", "omega", "Omega", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Relative 3D velocity
-    "1": {"P", "e", "a1", "Tp", "Tepoch", "omega1", "Omega1", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'}, # Primary 3D velocity
-    "2": {"P", "e", "a2", "Tp", "Tepoch", "omega2", "Omega2", "i", 'dalpha', 'ddelta', 'distance', 'mu_alpha', 'mu_delta', 'gamma'} # Secondary 3D velocity
+    "": {par.P, par.e, par.a, par.Tp, par.Tepoch, par.omega, par.Omega, par.i, par.dalpha, par.ddelta, par.distance, par.mu_alpha, par.mu_delta, par.gamma}, # Relative 3D velocity
+    "1": {par.P, par.e, par.a1, par.Tp, par.Tepoch, par.omega1, par.Omega1, par.i, par.dalpha, par.ddelta, par.distance, par.mu_alpha, par.mu_delta, par.gamma}, # Primary 3D velocity
+    "2": {par.P, par.e, par.a2, par.Tp, par.Tepoch, par.omega2, par.Omega2, par.i, par.dalpha, par.ddelta, par.distance, par.mu_alpha, par.mu_delta, par.gamma} # Secondary 3D velocity
 }
 
 _gaia_param_names = {
-    "": {"P", "e", "Tp",  "A", "B", "F", "G", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Relative Gaia astrometry
-    "1": {"P", "e", "Tp", "A1", "B1", "F1", "G1", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"}, # Primary Gaia astrometry
-    "2": {"P", "e", "Tp", "A2", "B2", "F2", "G2", "parallax", "dalpha", "ddelta", "mu_alpha", "mu_delta"} # Secondary Gaia astrometry
+    "": {par.P, par.e, par.Tp,  par.A, par.B, par.F, par.G, par.parallax, par.dalpha, par.ddelta, par.mu_alpha, par.mu_delta}, # Relative Gaia astrometry
+    "1": {par.P, par.e, par.Tp, par.A1, par.B1, par.F1, par.G1, par.parallax, par.dalpha, par.ddelta, par.mu_alpha, par.mu_delta}, # Primary Gaia astrometry
+    "2": {par.P, par.e, par.Tp, par.A2, par.B2, par.F2, par.G2, par.parallax, par.dalpha, par.ddelta, par.mu_alpha, par.mu_delta} # Secondary Gaia astrometry
 }
 
 class Orbit():
@@ -134,8 +141,8 @@ class Orbit():
         alpha, delta = self.pure_orbit(t, system=system)
 
         if flux_ratio is not None:
-            self._ensure_derived_params({'q'})
-            factor = q_f_to_photocenter_factor(self.derived_params['q'], flux_ratio, system)
+            self._ensure_derived_params({par.q})
+            factor = q_f_to_photocenter_factor(self.derived_params[par.q], flux_ratio, system)
             alpha = factor * alpha
             delta = factor * delta
 
@@ -145,29 +152,79 @@ class Orbit():
             
         return alpha, delta
 
+    def astrometry_ang(self, t, plxf_x, plxf_y, system=None, flux_ratio=None):
+        """
+        Computes the astrometric position of the orbit at time(s) t in angular units. 
+        
+        Returns the position as a tuple (alpha, delta) in the plane of the sky where alpha and delta are floats or an array of floats matching the shape of t.
+        """
+        if system is None or str(system) not in {'1', '2', 'relative'}:
+            raise ValueError(f"`system` must be provided for astrometry_ang. It can be either '1', '2', or 'relative'.")
+        system = "" if system == "relative" else str(system)
+
+        alpha, delta = self.pure_orbit_ang(t, system=system)
+
+        if flux_ratio is not None:
+            self._ensure_derived_params({par.q})
+            factor = q_f_to_photocenter_factor(self.derived_params[par.q], flux_ratio, system)
+            alpha = factor * alpha
+            delta = factor * delta
+
+        t = np.asarray(t)
+        dt = t - self.derived_params[par.Tepoch]
+        alpha, delta = self._add_astrometry_linear_params_ang(alpha, delta, dt, plxf_x, plxf_y, system)
+            
+        return alpha, delta
+
     def _add_astrometry_linear_params(self,alpha,delta,dt,plxf_x,plxf_y,system):
         values = self.derived_params
-        if 'dalpha' in values:
-            alpha += values['dalpha'] 
-        if 'ddelta' in values:
-            delta += values['ddelta']
-        if 'mu_alpha' in values:
-            alpha += values['mu_alpha'] * dt
-        if 'mu_delta' in values:
-            delta += values['mu_delta'] * dt
+        if par.dalpha in values:
+            alpha += values[par.dalpha] 
+        if par.ddelta in values:
+            delta += values[par.ddelta]
+        if par.mu_alpha in values:
+            alpha += values[par.mu_alpha] * dt
+        if par.mu_delta in values:
+            delta += values[par.mu_delta] * dt
 
         if (
-            'parallax' in values and
+            par.parallax in values and
             plxf_x is not None and plxf_y is not None
         ):
-            alpha += values['parallax'] * plxf_x
-            delta += values['parallax'] * plxf_y
+            alpha += values[par.parallax] * plxf_x
+            delta += values[par.parallax] * plxf_y
 
-        if 'dmu_alpha' in values:
-            alpha += 0.5*values['dmu_alpha'] * dt**2
+        if par.dmu_alpha in values:
+            alpha += 0.5*values[par.dmu_alpha] * dt**2
 
-        if 'dmu_delta' in values:
-            delta += 0.5*values['dmu_delta'] * dt**2
+        if par.dmu_delta in values:
+            delta += 0.5*values[par.dmu_delta] * dt**2
+
+        return alpha, delta
+
+    def _add_astrometry_linear_params_ang(self,alpha,delta,dt,plxf_x,plxf_y,system):
+        values = self.derived_params
+        if par.ang(par.dalpha) in values:
+            alpha += values[par.ang(par.dalpha)]
+        if par.ang(par.ddelta) in values:
+            delta += values[par.ang(par.ddelta)]
+        if par.ang(par.mu_alpha) in values:
+            alpha += values[par.ang(par.mu_alpha)] * dt
+        if par.ang(par.mu_delta) in values:
+            delta += values[par.ang(par.mu_delta)] * dt
+
+        if (
+            par.parallax in values and
+            plxf_x is not None and plxf_y is not None
+        ):
+            alpha += values[par.parallax] * plxf_x
+            delta += values[par.parallax] * plxf_y
+
+        if par.ang(par.dmu_alpha) in values:
+            alpha += 0.5*values[par.ang(par.dmu_alpha)] * dt**2
+
+        if par.ang(par.dmu_delta) in values:
+            delta += 0.5*values[par.ang(par.dmu_delta)] * dt**2
 
         return alpha, delta
     
@@ -182,14 +239,36 @@ class Orbit():
         self._ensure_derived_params(_astrometry_param_names[system])
 
         t = np.asarray(t)
-        P = self.derived_params['P']
-        e = self.derived_params['e']
-        Tp = self.derived_params['Tp']
+        P = self.derived_params[par.P]
+        e = self.derived_params[par.e]
+        Tp = self.derived_params[par.Tp]
 
         X,Y,_ = _orbit_coords_nu(P,e,Tp,t)
 
-        alpha = self.derived_params[f'B{system}'] * X + self.derived_params[f'G{system}'] * Y
-        delta = self.derived_params[f'A{system}'] * X + self.derived_params[f'F{system}'] * Y
+        alpha = self.derived_params[par.system(par.B, system)] * X + self.derived_params[par.system(par.G, system)] * Y
+        delta = self.derived_params[par.system(par.A, system)] * X + self.derived_params[par.system(par.F, system)] * Y
+
+        return alpha, delta
+
+    def pure_orbit_ang(self,t,system=None):
+        '''
+        Computes the astrometric position of the orbit at time(s) t in angular units without any linear motion or parallax.
+        '''
+        if system is None or str(system) not in {'1', '2', 'relative',""}:
+                raise ValueError(f"`system` must be provided for astrometry. It can be either '1', '2', or 'relative'.")
+        system = "" if system == "relative" else str(system)
+    
+        self._ensure_derived_params(_astrometry_ang_param_names[system])
+
+        t = np.asarray(t)
+        P = self.derived_params[par.P]
+        e = self.derived_params[par.e]
+        Tp = self.derived_params[par.Tp]
+
+        X,Y,_ = _orbit_coords_nu(P,e,Tp,t)
+
+        alpha = self.derived_params[par.ang(par.system(par.B, system))] * X + self.derived_params[par.ang(par.system(par.G, system))] * Y
+        delta = self.derived_params[par.ang(par.system(par.A, system))] * X + self.derived_params[par.ang(par.system(par.F, system))] * Y
 
         return alpha, delta
 
@@ -207,13 +286,13 @@ class Orbit():
         self._ensure_derived_params(_gaia_param_names[system])
 
         t = np.asarray(t)
-        X,Y,_ = _orbit_coords_nu(self.derived_params['P'],self.derived_params['e'],self.derived_params['Tp'],t)
+        X,Y,_ = _orbit_coords_nu(self.derived_params[par.P],self.derived_params[par.e],self.derived_params[par.Tp],t)
 
         
         wss = self._wss(t, spsi, cpsi, par_factor, system)
 
-        wk = ((self.derived_params[f'B{system}']*X + self.derived_params[f'G{system}']*Y)*spsi
-              + (self.derived_params[f'A{system}']*X + self.derived_params[f'F{system}']*Y)*cpsi)
+        wk = ((self.derived_params[par.system(par.B, system)]*X + self.derived_params[par.system(par.G, system)]*Y)*spsi
+              + (self.derived_params[par.system(par.A, system)]*X + self.derived_params[par.system(par.F, system)]*Y)*cpsi)
 
         return wss + wk
 
@@ -257,21 +336,21 @@ class Orbit():
         
         t = np.asarray(t)
 
-        _, _, true_anomaly = _orbit_coords_nu(self.derived_params['P'], self.derived_params['e'], self.derived_params['Tp'], t)
-        rv = self.derived_params[f'K{system}'] * (np.cos(true_anomaly + self.derived_params[f'omega{system}']) + self.derived_params[f'e'] * np.cos(self.derived_params[f'omega{system}']))
+        _, _, true_anomaly = _orbit_coords_nu(self.derived_params[par.P], self.derived_params[par.e], self.derived_params[par.Tp], t)
+        rv = self.derived_params[par.system(par.K, system)] * (np.cos(true_anomaly + self.derived_params[par.system(par.omega, system)]) + self.derived_params[par.e] * np.cos(self.derived_params[par.system(par.omega, system)]))
         rv *= self.velocity_ratio if self.velocity_ratio is not None else 1.0
         # if self.velocity_ratio is None:
             # print("Warning: velocity_ratio is not set. Radial velocity will be returned in units of (time/distance).")
-        dt = t - self.derived_params['Tepoch']
+        dt = t - self.derived_params[par.Tepoch]
         rv = self._add_rv_linear_params(rv, dt,system)
         return rv
 
     def _add_rv_linear_params(self, rv, dt,system):
         values = self.derived_params
-        if 'gamma' in values and system != "":
-            rv += values['gamma']
-        if 'dgamma' in values:
-            rv += values['dgamma'] * dt
+        if par.gamma in values and system != "":
+            rv += values[par.gamma]
+        if par.dgamma in values:
+            rv += values[par.dgamma] * dt
         return rv
     
     def xyz(self, t, system=None):

@@ -1,10 +1,12 @@
+from periapsis.params.units import get_canonical_unit_scale
+
 from .prior import Prior
 import numpy as np
 from scipy.special import ndtri
 
 
 class LogNormalPrior(Prior):
-    def __init__(self, mean: float, std: float):
+    def __init__(self, mean: float, std: float, unit = None):
         if std <= 0:
             raise ValueError("Standard deviation must be positive for a LogNormalPrior.")
         if mean <= 0:
@@ -17,12 +19,28 @@ class LogNormalPrior(Prior):
 
         self.constants = -0.5*np.log(2*np.pi*self.std**2)
 
-    def scale(self, factor):
-        if factor <= 0:
-            raise ValueError("Prior scale factor must be positive.")
-        self.mean += np.log10(factor)
-        self.min = 10**(self.mean - 10*self.std)
-        self.max = 10**(self.mean + 10*self.std)
+        if unit is None:
+            self.unit = None
+            self._canonical = self
+        else:
+            self.set_unit(unit)
+
+    def __repr__(self):
+        return f"LogNormalPrior(mean={self.mean}, std={self.std}, unit={self.unit if self.unit is not None else 'canonical'})"
+
+    @property
+    def canonical(self) -> LogNormalPrior:
+        return self._canonical
+    
+    def set_unit(self, unit):
+        """Overrides the unit of the prior, discarding the current unit"""
+        self.unit = unit
+        if unit is None:
+            self._canonical = self
+        else:
+            factor = get_canonical_unit_scale(unit)
+            self._canonical = LogNormalPrior(self.mean + np.log10(factor), self.std + np.log10(factor), unit=None)
+
 
     def sample(self, random_state, size=1):
         return 10**random_state.normal(loc=self.mean, scale=self.std, size=size)

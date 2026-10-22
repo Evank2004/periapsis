@@ -5,9 +5,9 @@ from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks
 from periapsis.params.transforms import build_transform_functions
 from periapsis.prior import FixedPrior, Bounds
-from periapsis.utils.solvers import solve_kepler
-from periapsis.utils.helpers import _matrix_builder,_lsq_helper,_matrix_filler,_sigma
+import periapsis.utils.helpers as helpers
 import periapsis.params as params
+from periapsis.data import AstrometryData, PhysicalAstrometryData
 
 from .initial import InitialGuess
 
@@ -30,8 +30,15 @@ class AstrometryInitialGuess(InitialGuess):
         f_max = 1/p_min
         
         frequency = np.logspace(np.log10(f_min),np.log10(f_max),100000)
-        p1 = LombScargle(self.data.t,self.data.x,self.data.x_err)
-        p2 = LombScargle(self.data.t,self.data.y,self.data.y_err)
+
+        if isinstance(self.data, PhysicalAstrometryData):
+            p1 = LombScargle(self.data.t_canonical,self.data.x_canonical,self.data.x_err_canonical)
+            p2 = LombScargle(self.data.t_canonical,self.data.y_canonical,self.data.y_err_canonical)
+        elif isinstance(self.data, AstrometryData):
+            p1 = LombScargle(self.data.t_canonical,self.data.x_ang_canonical,self.data.x_err_ang_canonical)
+            p2 = LombScargle(self.data.t_canonical,self.data.y_ang_canonical,self.data.y_err_ang_canonical)
+        else:
+            raise ValueError("Data must be an instance of AstrometryData or PhysicalAstrometryData.")
         
 
         power1 = p1.power(frequency)
@@ -171,11 +178,17 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
         super().__init__(data, rng, ref_epoch, **priors)
         self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
         self.ref_epoch = ref_epoch
-        self.M, self.cols = _matrix_builder(
+        self.M, self.cols = helpers._matrix_builder(
             data, self.ref_epoch, linear_params=linear_params
         )
-        self.eta = np.concatenate((data.x, data.y))
-        self.err = np.concatenate((data.x_err, data.y_err))
+        if isinstance(data, PhysicalAstrometryData):
+            self.eta = np.concatenate((data.x_canonical, data.y_canonical))
+            self.err = np.concatenate((data.x_err_canonical, data.y_err_canonical))
+        elif isinstance(data, AstrometryData):
+            self.eta = np.concatenate((data.x_ang_canonical, data.y_ang_canonical))
+            self.err = np.concatenate((data.x_err_ang_canonical, data.y_err_ang_canonical))
+        else:
+            raise ValueError("Data must be an instance of AstrometryData or PhysicalAstrometryData.")
         
     def neg_lnlike(self,params,data,priors,param_in):
         params_dict = dict(zip(param_in,params))
@@ -260,8 +273,8 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
 
 def matrix_method(self,params_dict,data):
 
-    _matrix_filler(self.M,self.cols,params_dict,data)
-    sigma = _sigma(data,params_dict,self.err)
-    mu,chi2 = _lsq_helper(self.M,self.eta,sigma)
+    helpers._matrix_filler(self.M,self.cols,params_dict,data)
+    sigma = helpers.sigma(data,params_dict,self.err)
+    mu,chi2 = helpers._lsq_helper(self.M,self.eta,sigma)
     
     return mu, chi2    

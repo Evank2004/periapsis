@@ -1,5 +1,5 @@
 from .initial import InitialGuess
-from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler,_null_matrix_builder,_fill_periodogram_periodic,_sigma
+import periapsis.utils.helpers as helpers
 from .astrometry_initial import AstrometryInitialGuess
 from .rv_initial import RVInitialGuess
 from .gaia_initial import GaiaInitialGuess
@@ -14,15 +14,15 @@ class JointInitialGuess(InitialGuess):
     def __init__(self, data: JointData, rng: np.random.RandomState, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
         self.data = data
-        self.eta = data._concat_obs()
-        self.sigma = data._err()
+        self.eta = data._concat_obs_canonical()
+        self.sigma = data._err_canonical()
         self.w = 1/self.sigma
         self.m_eta_w = self.eta * self.w
 
         self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
         
         #pre allocate large matrix
-        self.M_base, self.cols = _matrix_builder(
+        self.M_base, self.cols = helpers._matrix_builder(
             data, ref_epoch, linear_params=linear_params
         )
 
@@ -35,10 +35,10 @@ class JointInitialGuess(InitialGuess):
         p_max = getattr(prior_p, 'max', 100)
 
        
-        M_null,_ = _null_matrix_builder(self.data,self.ref_epoch)
+        M_null,_ = helpers.null_matrix_builder(self.data,self.ref_epoch)
         
 
-        _,chi2H = _lsq_helper(M_null,self.eta,self.sigma)
+        _,chi2H = helpers._lsq_helper(M_null,self.eta,self.sigma)
 
         min_freq = 1/p_max
         max_freq = 1/p_min
@@ -51,9 +51,9 @@ class JointInitialGuess(InitialGuess):
             omega = 2*np.pi*nu
 
             M = self.M_base.copy()
-            _fill_periodogram_periodic(M, self.cols,self.ref_epoch,self.data,omega)
+            helpers._fill_periodogram_periodic(M, self.cols,self.ref_epoch,self.data,omega)
 
-            _,chi2K = _lsq_helper(M,self.eta,self.sigma)
+            _,chi2K = helpers._lsq_helper(M,self.eta,self.sigma)
 
             z_GLS = (chi2H-chi2K)/chi2H
             power[i] = z_GLS
@@ -75,10 +75,10 @@ class JointInitialGuess(InitialGuess):
 
     def _matrix_helper(self,params_dict):
 
-        _matrix_filler(self.M_base,self.cols,params_dict,self.data)
+        helpers._matrix_filler(self.M_base,self.cols,params_dict,self.data)
 
-        sigma = _sigma(self.data,params_dict,self.sigma)
-        _,chi2 = _lsq_helper(self.M_base,self.eta,sigma)
+        sigma = helpers.sigma(self.data,params_dict,self.sigma)
+        _,chi2 = helpers._lsq_helper(self.M_base,self.eta,sigma)
 
         return chi2
 

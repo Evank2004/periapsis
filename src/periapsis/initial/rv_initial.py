@@ -1,10 +1,11 @@
 import numpy as np
 from periapsis.data.common import RadialVelocityData
 from periapsis.model.orbit import Orbit
-from scipy.optimize import minimize,differential_evolution
+from scipy.optimize import minimize, differential_evolution, NonlinearConstraint
 from periapsis.params.transforms import covered_parameters, build_transform_functions
 from periapsis.prior import Prior, Bounds
 from periapsis.prior.fixed_prior import FixedPrior
+from periapsis.utils.helpers import _matrix_builder, _matrix_filler, _lsq_helper, _sigma
 
 from .initial import InitialGuess
 
@@ -148,5 +149,119 @@ class RVInitialGuess(InitialGuess):
             poss.append(guess[name] + self.rng.normal(0, 1e-4, size=nwalkers))
         pos = np.column_stack(poss)
         return pos
-             
 
+
+class RVLinearInitialGuess(RVInitialGuess):
+    def __init__(self, data, rng, ref_epoch=0.0, **priors):
+        super().__init__(data, rng, ref_epoch, **priors)
+        self.PeTp_transform = build_transform_functions(
+            self.priors.keys(), ("P", "e", "Tp")
+        )
+        self.M, self.cols = _matrix_builder(data, self.ref_epoch)
+        self.eta = data.rv
+        self.err = data.rv_err
+
+    def ln_prior(self, params_dict, priors):
+        lp = 0
+        for name, value in params_dict.items():
+            prior = priors.get(name)
+            if prior is not None:
+                if isinstance(prior, FixedPrior):
+                    continue
+                lp += prior.logpdf(value)
+                if np.isinf(lp):
+                    return -np.inf
+            else:
+                raise ValueError(f"Missing prior for parameter: {name}")
+        return lp
+
+    def neg_lnlike(self, params, data, priors, param_in):
+        params_dict = dict(zip(param_in, params))
+        params_dict.update({
+            name: prior.value
+            for name, prior in priors.items()
+            if isinstance(prior, FixedPrior)
+        })
+        lp = self.ln_prior(params_dict, priors)
+        if np.isinf(lp):
+            return -np.inf
+
+        PeTp_params = self.PeTp_transform(**params_dict)
+        _, chi2 = matrix_method(self, PeTp_params, data)
+        return 0.5 * chi2 - lp
+
+    def get_initial_guess(self, param_order, nwalkers):
+        param_in = []
+        p_guess = self.Zucker_pdc()
+        initial_points = []
+        for name, prior in self.priors.items():
+            if isinstance(prior, (Bounds, FixedPrior)):
+                continue
+            param_in.append(name)
+            if name == "P":
+                initial_points.append(p_guess)
+            else:
+                initial_points.append(prior.sample(self.rng, size=1)[0])
+
+        bounds = self.Bounds(param_in)
+        lower = np.array([bound[0] for bound in bounds], dtype=float)
+        upper = np.array([bound[1] for bound in bounds], dtype=float)
+        initial_points = np.clip(np.asarray(initial_points), lower, upper)
+
+        def bounds_transform_fn(bound):
+            transform = build_transform_functions(
+                [*param_in, *self.fixed_prior_params], [bound]
+            )
+            return lambda values: transform(
+                **dict(zip(param_in, values)),
+                **{
+                    name: prior.value
+                    for name, prior in self.fixed_prior_params.items()
+                },
+            )[bound]
+
+        constraints = [
+            NonlinearConstraint(bounds_transform_fn(name), bound.lower, bound.upper)
+            for name, bound in self.priors.items()
+            if isinstance(bound, Bounds)
+        ]
+
+        result = differential_evolution(
+            self.neg_lnlike,
+            bounds=bounds,
+            args=(self.data, self.priors, param_in),
+            maxiter=2000,
+            polish=False,
+            x0=initial_points,
+        )
+        orbit = minimize(
+            self.neg_lnlike,
+            x0=result.x,
+            method="SLSQP",
+            args=(self.data, self.priors, param_in),
+            bounds=bounds,
+            constraints=constraints,
+            options={"maxiter": 2000},
+        )
+
+        best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
+        best_prior_values.update({
+            name: prior.value
+            for name, prior in self.fixed_prior_params.items()
+        })
+        transform = build_transform_functions(
+            [*param_in, *self.fixed_prior_params], param_order
+        )
+        best_values = transform(**best_prior_values)
+        positions = [
+            best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers)
+            for name in param_order
+        ]
+        return np.column_stack(positions)
+
+
+def matrix_method(self, params_dict, data):
+    _matrix_filler(self.M, self.cols, params_dict, data)
+    sigma = _sigma(data, params_dict, self.err)
+    _, chi2 = _lsq_helper(self.M, self.eta, sigma)
+    return _, chi2

@@ -112,6 +112,7 @@ def test_initial_package_exports_all_initial_guess_classes():
         "AstrometryInitialGuess",
         "AstrometryLinearInitialGuess",
         "RVInitialGuess",
+        "RVLinearInitialGuess",
         "GaiaInitialGuess",
         "JointInitialGuess",
     ]
@@ -706,7 +707,6 @@ def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
 
     assert result.shape == (2, 3)
     assert rng.normal_calls
-
 
 
 

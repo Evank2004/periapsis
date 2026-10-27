@@ -5,7 +5,7 @@ from scipy.optimize import minimize, differential_evolution, NonlinearConstraint
 from periapsis.params.transforms import covered_parameters, build_transform_functions
 from periapsis.prior import Prior, Bounds
 from periapsis.prior.fixed_prior import FixedPrior
-from periapsis.utils.helpers import _matrix_builder, _matrix_filler, _lsq_helper, _sigma
+from periapsis.utils.helpers import _matrix_builder, _matrix_filler, _lsq_helper, sigma as sig
 
 from .initial import InitialGuess
 
@@ -262,6 +262,6 @@ class RVLinearInitialGuess(RVInitialGuess):
 
 def matrix_method(self, params_dict, data):
     _matrix_filler(self.M, self.cols, params_dict, data)
-    sigma = _sigma(data, params_dict, self.err)
+    sigma = sig(data, params_dict, self.err)
     _, chi2 = _lsq_helper(self.M, self.eta, sigma)
     return _, chi2

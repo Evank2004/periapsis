@@ -226,9 +226,21 @@ class MCMCLinearFitter(Fitter):
 
         best_i = np.argmax(lnprobs)
         best_params = dict(zip(post_labels, full_posterior[best_i]))
-        median_params = dict(zip(self.param_order, np.median(samples, axis=0)))
         for prior in self.fixed_prior_params:
             best_params[prior] = canonical_priors[prior].value
+
+        median_sampled_params = dict(zip(
+            param_order,
+            np.median(full_posterior, axis=0)[:len(param_order)],
+        ))
+        median_sampled_params.update({
+            name: canonical_priors[name].value
+            for name in self.fixed_prior_params
+        })
+        median_sampled_params.update(param_transforms(**median_sampled_params))
+        median_mu, _, _ = matrix_method(median_sampled_params)
+        median_params = dict(median_sampled_params)
+        median_params.update({name: median_mu[self.cols[name]] for name in self.cols})
 
         full_posterior_array = np.asarray(full_posterior, dtype=float)
         reported_posterior = np.column_stack([

@@ -666,8 +666,8 @@ def astrometry_phase_plot(results, data, savepath=None):
 
             alpha_resids.append(_plot_position(d, alpha_data))
             delta_resids.append(_plot_position(d, delta_data))
-            alpha_errs.append(_plot_position(d, d.x_err))
-            delta_errs.append(_plot_position(d, d.y_err))
+            alpha_errs.append(_plot_position(d, alpha_err))
+            delta_errs.append(_plot_position(d, delta_err))
             phases.append(phase)
 
         alpha_resids = np.concatenate(alpha_resids)

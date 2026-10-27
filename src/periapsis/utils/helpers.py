@@ -1,4 +1,5 @@
-from astropy.time import Time
+from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_EVEN
+
 import numpy as np
 
 from periapsis.data.common import AstrometryData, PhysicalAstrometryData, RadialVelocityData
@@ -429,6 +430,16 @@ def _fill_periodogram_periodic(M,cols,ref_epoch,data,phase):
             dt = d.t_canonical - ref_epoch
             cos_phase = np.cos(phase*dt)
             sin_phase = np.sin(phase*dt)
+            M[row_idx:row_idx+n_obs, cols[f'B{system}_ang']] = cos_phase
+            M[row_idx:row_idx+n_obs, cols[f'G{system}_ang']] = sin_phase
+            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'A{system}_ang']] = cos_phase
+            M[row_idx+n_obs:row_idx+2*n_obs, cols[f'F{system}_ang']] = sin_phase
+            row_idx += 2 * n_obs
+        elif isinstance(d, PhysicalAstrometryData):
+            n_obs = len(d.t_canonical)
+            dt = d.t_canonical - ref_epoch
+            cos_phase = np.cos(phase*dt)
+            sin_phase = np.sin(phase*dt)
             M[row_idx:row_idx+n_obs, cols[f'B{system}']] = cos_phase
             M[row_idx:row_idx+n_obs, cols[f'G{system}']] = sin_phase
             M[row_idx+n_obs:row_idx+2*n_obs, cols[f'A{system}']] = cos_phase
@@ -584,3 +595,71 @@ def _photocenter_factor(data,params):
         params.update(transform(**params))
 
     return q_f_to_photocenter_factor(params['q'],params[flux_name],data.system)
+
+
+def error_sigfig_latex_string(value, err_plus, err_minus):
+    """
+    Format a value and asymmetric uncertainties using the PDG significant-figure convention.
+    """
+
+    try:
+        value, err_plus, err_minus = (Decimal(str(x)) for x in (value, err_plus, err_minus))
+    except Exception as exc:
+        raise ValueError("value and uncertainties must be finite real numbers") from exc
+
+    if not all(x.is_finite() for x in (value, err_plus, err_minus)):
+        raise ValueError("value and uncertainties must be finite real numbers")
+    if err_plus <= 0 or err_minus <= 0:
+        raise ValueError("uncertainties must be positive")
+
+    def order_of_magnitude(number):
+        return number.copy_abs().adjusted()
+
+    def rounding_place_for_error(error):
+        """Return the decimal exponent at which an uncertainty is rounded."""
+        order = order_of_magnitude(error)
+        leading_three = int(error.copy_abs().scaleb(2 - order).to_integral_value(rounding=ROUND_FLOOR))
+        # PDG retains two figures for 100-354
+        if 100 <= leading_three <= 354:
+            return order - 1
+        return order
+
+    error_orders = [order_of_magnitude(err_plus), order_of_magnitude(err_minus)]
+    rounding_place = min(rounding_place_for_error(error) for error in (err_plus, err_minus))
+
+    value_order = order_of_magnitude(value) if value else rounding_place
+    largest_error_order = max(error_orders)
+    exponent = value_order
+    use_exponent = abs(value_order) >= 4
+    if largest_error_order > value_order and (largest_error_order >= 2 or value_order <= -4):
+        exponent = largest_error_order + (1 if value_order <= -4 else 0)
+        use_exponent = True
+
+    def rounded(number, place, rounding=ROUND_HALF_EVEN):
+        result = number.quantize(Decimal(1).scaleb(place), rounding=rounding)
+        return result.copy_abs() if result == 0 else result
+
+    if use_exponent:
+        scale = Decimal(1).scaleb(exponent)
+        decimals = max(0, exponent - rounding_place)
+        value_rounded = rounded(value / scale, -decimals)
+        plus_rounded = rounded(err_plus / scale, -decimals)
+        minus_rounded = rounded(err_minus / scale, -decimals)
+
+        # Keep things consistent when rounding turns 9.9... into 10
+        if value_rounded.copy_abs() >= 10:
+            value_rounded /= Decimal(10)
+            exponent += 1
+
+        return (
+            f"{value_rounded:.{decimals}f}"
+            f"^{{+{plus_rounded:.{decimals}f}}}"
+            f"_{{-{minus_rounded:.{decimals}f}}} \\times 10^{{{exponent}}}"
+        )
+
+    decimals = max(0, -rounding_place)
+    return (
+        f"{rounded(value, rounding_place):.{decimals}f}"
+        f"^{{+{rounded(err_plus, rounding_place):.{decimals}f}}}"
+        f"_{{-{rounded(err_minus, rounding_place):.{decimals}f}}}"
+    )

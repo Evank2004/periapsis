@@ -12,10 +12,8 @@ from typing import Callable
 # TODO add eclipsing binary/planet params
 # TODO add Delaunay variables
 # TODO add quaternion params
-# TODO add flux of source 1/2 (and scale stuff in orbit by that - add photocenter option in addition to 1,2,relative). Flux ratio
-# Photocenter scaling factor from Eq. 3 of Lam+2026
 
-constG = 4*np.pi**2 # TODO: units
+constG = 4*np.pi**2
 
 def A_B_F_G_to_a_cosi_omega_Omega(A, B, F, G):
     popovic_k = (A*A + B*B + F*F + G*G) / 2.0
@@ -51,19 +49,16 @@ def a_sini_omega_to_C_H(a, sini, omega):
     return C, H
 
 def P_a_to_Mtot(P, a):
-    # TODO units
     return a**3 / P**2
 
 def Mtot_a_to_P(Mtot, a):
-    # TODO units
     return np.sqrt(a**3 / Mtot)
 
 def Mtot_P_to_a(Mtot, P):
-    # TODO units
     return np.cbrt(Mtot * P**2)
 
 def Ma_aa_P_to_Mb(Ma, aa, P):
-    # a_1**3 / P**2 = M2**3 / (M1 + M2)**2 (ignoring units...)
+    # a_1**3 / P**2 = M2**3 / (M1 + M2)**2 (in canonical units)
     Mb = solve_mass(aa, P, Ma) # TODO: migrate solver to this file and make private?
     return Mb
 
@@ -274,7 +269,6 @@ def n_K_e_to_asini(n, K, e):
     return asini
 
 def asini_n_e_to_K(asini, n, e):
-    # TODO: These functions return K in units of length/time that match the units of asini and n. Typically AU/yr. Need to better handle conversion factors.
     K = n * asini / np.sqrt(1-e**2)
     return K
 
@@ -546,19 +540,19 @@ _transform_graph = [
     (('uM0',), ('uM01', 'uM02'), uM0_to_uM01_uM02),
     (('uM01',), ('uM0', 'uM02'), uM01_to_uM0_uM02),
     (('uM02',), ('uM0', 'uM01'), uM02_to_uM0_uM01),
-    (('a', 'sini', 'n', 'e'), ('K',), a_sini_n_e_to_K), # FIXME Technically this may actually have a mass ratio dependence due to a being relative.
+    (('a', 'sini', 'n', 'e'), ('K',), a_sini_n_e_to_K), 
     (('a1', 'sini', 'n', 'e'), ('K1',), a_sini_n_e_to_K),
     (('a2', 'sini', 'n', 'e'), ('K2',), a_sini_n_e_to_K),
-    (('K', 'n', 'e', 'a'), ('sini',), K_n_e_a_to_sini), # FIXME Technically this may actually have a mass ratio dependence due to a being relative.
+    (('K', 'n', 'e', 'a'), ('sini',), K_n_e_a_to_sini), 
     (('K1', 'n', 'e', 'a1'), ('sini',), K_n_e_a_to_sini),
     (('K2', 'n', 'e', 'a2'), ('sini',), K_n_e_a_to_sini),
-    (('K', 'e', 'a', 'sini'), ('n',), K_e_a_sini_to_n), # FIXME Technically this may actually have a mass ratio dependence due to a being relative.
+    (('K', 'e', 'a', 'sini'), ('n',), K_e_a_sini_to_n), 
     (('K1', 'e', 'a1', 'sini'), ('n',), K_e_a_sini_to_n),
     (('K2', 'e', 'a2', 'sini'), ('n',), K_e_a_sini_to_n),
-    (('K', 'a', 'sini', 'n'), ('e',), K_a_sini_n_to_e), # FIXME Technically this may actually have a mass ratio dependence due to a being relative.
+    (('K', 'a', 'sini', 'n'), ('e',), K_a_sini_n_to_e), 
     (('K1', 'a1', 'sini', 'n'), ('e',), K_a_sini_n_to_e),
     (('K2', 'a2', 'sini', 'n'), ('e',), K_a_sini_n_to_e),
-    (('K', 'sini', 'n', 'e'), ('a',), K_sini_n_e_to_a), # FIXME Technically this may actually have a mass ratio dependence due to a being relative.
+    (('K', 'sini', 'n', 'e'), ('a',), K_sini_n_e_to_a), 
     (('K1', 'sini', 'n', 'e'), ('a1',), K_sini_n_e_to_a),
     (('K2', 'sini', 'n', 'e'), ('a2',), K_sini_n_e_to_a),
     (('M2', 'M1',), ('q',), div_ab),

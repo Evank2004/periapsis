@@ -2,6 +2,7 @@ from astropy import units as u
 from typing import Any, Dict, Mapping, Optional
 import numpy as np
 from periapsis.params import params as par
+import warnings
 
 #Define Canonical Units
 CanonicalUnits = {
@@ -13,6 +14,7 @@ CanonicalUnits = {
     "angular_velocity": u.rad / u.yr,
     "acceleration": u.AU / u.yr**2,
     "angular_acceleration": u.rad / u.yr**2,
+    "gravitational_parameter": u.AU**3 / u.yr**2,
     "dimensionless": u.dimensionless_unscaled,
 }
 
@@ -88,7 +90,6 @@ velocity_aliases = {
 
 aliases = {**angle_aliases, **linear_aliases, **time_aliases, **mass_aliases, **velocity_aliases}
 
-
 def normalize_unit(value: Any) -> u.Unit:
     """
     Convert a string representation of a unit to an astropy Unit object.
@@ -103,13 +104,13 @@ def normalize_unit(value: Any) -> u.Unit:
         # Check for aliases
         if value in aliases:
             return aliases[value]
-        
         try:
             return u.Unit(value)
         except ValueError as e:
             raise ValueError(f"Invalid unit string: {value}") from e
 
     raise ValueError(f"Invalid unit value: {value!r}")
+
 
 def is_quantity(value: Any) -> bool:
     """
@@ -130,6 +131,7 @@ def parse_units(unit_dict: Optional[Mapping[str, Any]]) -> Dict[str, u.Unit]:
         parsed_units[key] = normalize_unit(value)
 
     return parsed_units
+
 
 def validate_units(units:Dict[str,u.Unit]) -> None:
 
@@ -156,26 +158,33 @@ def validate_units(units:Dict[str,u.Unit]) -> None:
                     f"All of {list(present_units.keys())} must be dimensionally compatible."
                 )
 
-_PARAMETER_DIMENSIONS = {
+    for name, unit in units.items():
+        if name in _PARAMETER_DIMENSIONS:
+            expected_dimension = _PARAMETER_DIMENSIONS[name]
+            actual_dimension = get_unit_type(unit)
+            if expected_dimension != actual_dimension:
+                if name in par.ang_parameters and (
+                    (expected_dimension == "length" and actual_dimension == "angle") or
+                    (expected_dimension == "velocity" and actual_dimension == "angular_velocity") or
+                    (expected_dimension == "acceleration" and actual_dimension == "angular_acceleration")
+                ):
+                    raise ValueError(
+                        f"Unit for '{name}' has dimension '{actual_dimension}', "
+                        f"but expected '{expected_dimension}'. "
+                        f"You probably want to use '{name}_ang', which is the version of this parameter in angular rather than physical units."
+                    )
+                raise ValueError(
+                    f"Unit for '{name}' has dimension '{actual_dimension}', "
+                    f"but expected '{expected_dimension}'."
+                )
+
+
+_DATA_DIMENSIONS = {
     "t": "time",
     "parallax_factor": "dimensionless",
 }
 
-# _PROJECTED_POSITION_PARAMETERS = {
-#     "a", "b", "p", "r_a", "r_p",
-#     "a1", "b1", "p1", "r_a1", "r_p1",
-#     "a2", "b2", "p2", "r_a2", "r_p2",
-#     "A", "B", "F", "G",
-#     "A1", "B1", "F1", "G1",
-#     "A2", "B2", "F2", "G2",
-#     "dalpha", "ddelta",
-# }
-
-_PROPER_MOTION_PARAMETERS = {"mu_alpha", "mu_delta"}
-
-_ASTROMETRIC_ACCELERATION_PARAMETERS = {"dmu_alpha", "dmu_delta"}
-
-_DEFAULT_DIMENSIONS = {
+_PARAMETER_DIMENSIONS = {
     par.a: "length",
     par.a1: "length",
     par.a1sini: "length",
@@ -237,7 +246,7 @@ _DEFAULT_DIMENSIONS = {
     par.Msini: "mass",
     par.M1sini: "mass",
     par.M2sini: "mass",
-    par.mu: "mass", # FIXME
+    par.mu: "gravitational_parameter",
     par.mu_alpha: "velocity",
     par.mu_delta: "velocity",
     par.n: "angular_velocity",
@@ -275,31 +284,30 @@ _DEFAULT_DIMENSIONS = {
     par.uM02: "angle",
 }
 for param in par.ang_parameters:
-    current_dim = _DEFAULT_DIMENSIONS[param]
+    current_dim = _PARAMETER_DIMENSIONS[param]
     if current_dim == "length":
-        _DEFAULT_DIMENSIONS[par.ang(param)] = "angle"
+        _PARAMETER_DIMENSIONS[par.ang(param)] = "angle"
     elif current_dim == "velocity":
-        _DEFAULT_DIMENSIONS[par.ang(param)] = "angular_velocity"
+        _PARAMETER_DIMENSIONS[par.ang(param)] = "angular_velocity"
     elif current_dim == "acceleration":
-        _DEFAULT_DIMENSIONS[par.ang(param)] = "angular_acceleration"
-for param in list(_DEFAULT_DIMENSIONS.keys()):
-    _DEFAULT_DIMENSIONS[par.log(param)] = _DEFAULT_DIMENSIONS[param]
+        _PARAMETER_DIMENSIONS[par.ang(param)] = "angular_acceleration"
+for param in list(_PARAMETER_DIMENSIONS.keys()):
+    _PARAMETER_DIMENSIONS[par.log(param)] = _PARAMETER_DIMENSIONS[param]
 
 
 def get_default_dimension(param_name):
     """
     Get the default dimension for a model parameter.
     """
-    if param_name not in _DEFAULT_DIMENSIONS:
+    if param_name not in _PARAMETER_DIMENSIONS:
         raise KeyError(f"No default dimension defined for parameter '{param_name}'.")
-    return _DEFAULT_DIMENSIONS[param_name]
+    return _PARAMETER_DIMENSIONS[param_name]
 
 def get_unit_type(unit):
     """Determine the physical dimension represented by an Astropy unit."""
     unit = normalize_unit(unit)
 
-    # Check angle before dimensionless because radians are dimensionless in SI.
-    if unit.is_equivalent(u.rad):
+    if unit.is_equivalent(u.rad): # Angle check before dimensionless, since radians are also dimensionless
         return "angle"
     if unit.is_equivalent(u.m / u.s):
         return "velocity"
@@ -311,6 +319,12 @@ def get_unit_type(unit):
         return "length"
     if unit.is_equivalent(u.kg):
         return "mass"
+    if unit.is_equivalent(u.AU**3 / u.yr**2):
+        return "gravitational_parameter"
+    if unit.is_equivalent(u.m / u.s**2):
+        return "acceleration"
+    if unit.is_equivalent(u.rad / u.s**2):
+        return "angular_acceleration"
     if unit.is_equivalent(u.dimensionless_unscaled):
         return "dimensionless"
 
@@ -343,61 +357,61 @@ class UnitSystem:
             )
 
         self.astrometry_dimension = astrometry_dimension
-        self.dimensionality = {
+        self._dimensionality = {
             name: self._infer_dimension(name, unit)
             for name, unit in self.units.items()
         }
-        self.canonical_units = {
+        self._canonical_units = {
             name: CanonicalUnits[dimension]
-            for name, dimension in self.dimensionality.items()
+            for name, dimension in self._dimensionality.items()
         }
-        self.conversion_factors = {
-            name: unit.to(self.canonical_units[name])
+        self._conversion_factors = {
+            name: unit.to(self._canonical_units[name])
             for name, unit in self.units.items()
         }
 
+    def __repr__(self):
+        return f"UnitSystem(units={self.units}, astrometry_dimension={self.astrometry_dimension})"
+
+    def merge(self, other: UnitSystem) -> UnitSystem:
+        """Merge another UnitSystem into this one, returning a new UnitSystem."""
+        if self.astrometry_dimension is not None and other.astrometry_dimension is not None and self.astrometry_dimension != other.astrometry_dimension:
+            raise ValueError(
+                "Cannot merge UnitSystems with conflicting astrometry dimensions."
+            )
+
+        # Emit warning if there are conflicting units for the same parameter
+        for name in set(self.units.keys()).intersection(other.units.keys()):
+            if self.units[name] != other.units[name]:
+                warnings.warn(
+                    f"Conflicting units for parameter '{name}': "
+                    f"{self.units[name]} vs {other.units[name]}. "
+                    f"Using {self.units[name]} from the first UnitSystem."
+                )
+        merged_astrometry_dimension = self.astrometry_dimension if self.astrometry_dimension is not None else other.astrometry_dimension
+        merged_units = {**other.units, **self.units}
+        return UnitSystem(merged_units, astrometry_dimension=merged_astrometry_dimension)
+
     def _infer_dimension(self, name, unit):
-        if name in par.ang_parameters:
-            if self.astrometry_dimension == "length":
-                return _DEFAULT_DIMENSIONS[name]
-            else:
-                return _DEFAULT_DIMENSIONS[par.ang(name)]
+        # if name in par.ang_parameters: FIXME
+        #     if self.astrometry_dimension == "length":
+        #         return _PARAMETER_DIMENSIONS[name]
+        #     else:
+        #         return _PARAMETER_DIMENSIONS[par.ang(name)]
 
-        if name in _PROPER_MOTION_PARAMETERS:
-            if self.astrometry_dimension == "length":
-                return "velocity"
-            return "angular_velocity"
-
-        if name in _ASTROMETRIC_ACCELERATION_PARAMETERS:
-            if self.astrometry_dimension == "length":
-                return "acceleration"
-            return "angular_acceleration"
-
-        return _PARAMETER_DIMENSIONS.get(name, get_unit_type(unit))
+        return _DATA_DIMENSIONS.get(name, get_unit_type(unit))
 
     def get_parameter_dimension(self, param_name):
-        if param_name in self.dimensionality:
-            return self.dimensionality[param_name]
+        if param_name in self._dimensionality:
+            return self._dimensionality[param_name]
         if param_name.startswith("log"):
             return "dimensionless"
-        if param_name in par.ang_parameters:
-            return self.astrometry_dimension or "length"
-        if param_name in _PROPER_MOTION_PARAMETERS:
-            return (
-                "velocity"
-                if self.astrometry_dimension == "length"
-                else "angular_velocity"
-            )
-        if param_name in _ASTROMETRIC_ACCELERATION_PARAMETERS:
-            return (
-                "acceleration"
-                if self.astrometry_dimension == "length"
-                else "angular_acceleration"
-            )
+        # if param_name in par.ang_parameters:
+        #     return self.astrometry_dimension or "length"
+        if param_name in _DATA_DIMENSIONS:
+            return _DATA_DIMENSIONS[param_name]
         if param_name in _PARAMETER_DIMENSIONS:
             return _PARAMETER_DIMENSIONS[param_name]
-        if param_name in _DEFAULT_DIMENSIONS:
-            return _DEFAULT_DIMENSIONS[param_name]
         raise KeyError(f"No dimension known for '{param_name}'.")
 
     def get_parameter_unit(self, param_name) -> u.UnitBase:
@@ -408,47 +422,44 @@ class UnitSystem:
         dimension = self.get_parameter_dimension(param_name)
         if dimension == "time":
             return self.units["t"]
-        if dimension in {"angle", "length"}:
-            uses_astrometry_unit = (
-                param_name in par.ang_parameters
-                or param_name == "parallax"
-            )
-            if uses_astrometry_unit and self.astrometry_dimension == dimension and "x" in self.units:
-                return self.units["x"]
-            return CanonicalUnits[dimension]
-        if dimension in {"angular_velocity", "velocity"}:
-            if "x" not in self.units or "t" not in self.units:
-                return CanonicalUnits[dimension]
+        if dimension == "angle" and self.astrometry_dimension == "angle" and "x" in self.units and "_ang" in param_name:
+            return self.units["x"]
+        if dimension == "length" and self.astrometry_dimension == "length" and "x" in self.units:
+            return self.units["x"]
+        if dimension == "velocity":
+            if "rv" in self.units:
+                return self.units["rv"]
+            elif "x" in self.units and "t" in self.units and self.astrometry_dimension == "length":
+                return self.units["x"] / self.units["t"]
+        if dimension == "angular_velocity" and "x" in self.units and "t" in self.units and self.astrometry_dimension == "angle":
             return self.units["x"] / self.units["t"]
-        if dimension == "velocity" and "rv" in self.units:
-            return self.units["rv"]
-
-        if param_name == 'dgamma':
+        if dimension == "acceleration":
             if "rv" in self.units and "t" in self.units:
                 return self.units["rv"] / self.units["t"]
-            return CanonicalUnits["acceleration"]  
-
-        if param_name in _ASTROMETRIC_ACCELERATION_PARAMETERS:
-            if "x" in self.units and "t" in self.units:
+            if "x" in self.units and "t" in self.units and self.astrometry_dimension == "length":
                 return self.units["x"] / (self.units["t"] ** 2)
-            return CanonicalUnits["acceleration"] if self.astrometry_dimension == "length" else CanonicalUnits["angular_acceleration"]
-        
+        if dimension == "angular_acceleration" and "x" in self.units and "t" in self.units and self.astrometry_dimension == "angle":
+            return self.units["x"] / (self.units["t"] ** 2)
+        if dimension == "gravitational_parameter":
+            if "x" in self.units and "t" in self.units and self.astrometry_dimension == "length":
+                return self.units["x"] ** 3 / (self.units["t"] ** 2)
+        return CanonicalUnits[dimension]
+
+    def get_parameter_canonical_unit(self, param_name) -> u.UnitBase:
+        """Return the canonical unit associated with a model parameter."""
+        dimension = self.get_parameter_dimension(param_name)
         return CanonicalUnits[dimension]
 
     def convert_to_canonical(self, param_name, value):
-        if param_name not in self.conversion_factors:
-            raise KeyError(f"No input unit was supplied for '{param_name}'.")
-        return np.asarray(value) * self.conversion_factors[param_name]
+        if param_name not in self._conversion_factors:
+            self._conversion_factors[param_name] = self.get_parameter_unit(param_name).to(CanonicalUnits[self.get_parameter_dimension(param_name)])
+        return value * self._conversion_factors[param_name]
 
-    def convert_from_canonical(self, param_name, value):
-        if param_name not in self.conversion_factors:
-            raise KeyError(f"No input unit was supplied for '{param_name}'.")
-        return np.asarray(value) / self.conversion_factors[param_name]
-
-    def convert_prior_to_canonical(self, param_name, value):
-        unit = self.get_parameter_unit(param_name)
-        return np.asarray(value) * unit.to(CanonicalUnits[self.get_parameter_dimension(param_name)])
-
-    def convert_prior_from_canonical(self, param_name, value):
-        unit = self.get_parameter_unit(param_name)
-        return np.asarray(value) / unit.to(CanonicalUnits[self.get_parameter_dimension(param_name)])
+    def convert_from_canonical(self, param_name, value, unit=None):
+        # Use provided unit if given, otherwise use the default unit from the unit system
+        if unit is not None:
+            conversion_factor = normalize_unit(unit).to(CanonicalUnits[self.get_parameter_dimension(param_name)])
+            return value / conversion_factor
+        if param_name not in self._conversion_factors:
+            self._conversion_factors[param_name] = self.get_parameter_unit(param_name).to(CanonicalUnits[self.get_parameter_dimension(param_name)])
+        return value / self._conversion_factors[param_name]

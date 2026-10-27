@@ -1,6 +1,10 @@
 import numpy as np
+from periapsis.data.common import SystemData
+from periapsis.data import JointData
+from periapsis.params.units import UnitSystem
 from periapsis.prior import Prior, FixedPrior, Bounds
-from periapsis.params import build_transform_function, covered_parameters, overconstrained_parameters
+from periapsis.params import build_transform_function, covered_parameters, overconstrained_parameters, display_latex
+from periapsis.utils.helpers import error_sigfig_latex_string
 
 
 class FitResults:
@@ -14,15 +18,20 @@ class FitResults:
         self.param_names = samples.pop('param_names', None)
         self.sampled_param_names = samples.pop('sampled_param_names', None)
         self.sampler = self.backend
-        self.m1 = samples.pop('m1', None)
         self.mass_function = samples.pop('mass_function', None)
         self.priors = samples.pop('priors', dict())
         self.canonical_priors = samples.pop('canonical_priors', None)
-        self.parameter_factors = samples.pop('parameter_factors', {})
         self.Ess = samples.pop('Ess', None)
         self.tau = samples.pop('tau', None)
         self.mean_acceptance_fraction = samples.pop('mean_acceptance_fraction', None)
         self.lnprob = samples.pop('lnprob', None)
+        self.data = samples.pop('data', None)
+        if isinstance(self.data, JointData):
+            self.unit_system: UnitSystem = self.data.merged_unit_system
+        elif isinstance(self.data, SystemData):
+            self.unit_system: UnitSystem = self.data.unit_system
+        else:
+            self.unit_system: UnitSystem = samples.pop('unit_system', None)
 
         self.samples = samples
         if self.param_names is not None:
@@ -42,61 +51,89 @@ class FitResults:
         self.covered_params = covered_parameters(self.known_params)
 
 
+    def _repr_markdown_(self):
+        """Returns a pretty markdown representation of the fit results."""
+        median_param_values = {name: self.unit_system.convert_from_canonical(name, value) for name, value in self.median_params.items()}
+        median_param_16th_84th = {name: np.percentile(self[name, self.unit_system.get_parameter_unit(name)], [16, 84]) for name in self.median_params.keys()}
+        median_params_latexs = []
+        for name in self.median_params.keys():
+            sampled = name in self.sampled_param_names
+            median_value = median_param_values[name]
+            lower_error = median_value - median_param_16th_84th[name][0]
+            upper_error = median_param_16th_84th[name][1] - median_value
+            if lower_error <= 0 or upper_error <= 0:
+                error_string = f"{median_value}"
+            else:
+                error_string = error_sigfig_latex_string(median_value, upper_error, lower_error)
+            unit_string = self.unit_system.get_parameter_unit(name).to_string("latex_inline")
+            median_params_latexs.append(f"- ${display_latex(name)} = {error_string}$ {unit_string} {'(sampled)' if sampled else ''}")
+        median_params_latex = "\n".join(median_params_latexs)
+
+        return fr"""
+### Fit Results ({self.backend} - {self.fit_method})
+
+#### Median Parameters (1-sigma uncertainties)
+{median_params_latex}
+
+Other available parameters: {', '.join([f'${display_latex(name)}$' for name in self.covered_params if not name.startswith("log") and name not in self.median_params])}
+        """
+
+
+    def __repr__(self):
+        return "\n".join((
+            f"FitResults(",
+            f"  backend={self.backend},",
+            f"  fit_method={self.fit_method},",
+            f"  MAP_params={self.MAP_params},",
+            f"  median_params={self.median_params},",
+            f")"
+        ))
+
+
     def __getitem__(self, key):
+        if isinstance(key, tuple):
+            key, unit = key
+            should_transform_prior = True
+        elif self.unit_system is None:
+            unit = None
+            should_transform_prior = False
+        else:
+            unit = self.unit_system.get_parameter_unit(key)
+            should_transform_prior = False
+        
+
         if key in self.samples:
-            return self.samples[key]
-        if self.param_names is not None and key in self.param_names:
-            return self.samples[key]
+            if unit is None:
+                return self.samples[key]
+            return self.unit_system.convert_from_canonical(key, self.samples[key], unit=unit)
         
         if self.priors is not None and key in self.priors:
             if isinstance(self.priors[key], FixedPrior):
-                return self.priors[key].value
+                prior_unit = self.priors[key].unit
+                if prior_unit and not should_transform_prior:
+                    return self.priors[key].value
+                if prior_unit and should_transform_prior:
+                    return self.unit_system.convert_from_canonical(key, self.canonical_priors[key].value, unit=unit)
+                if not prior_unit:
+                    if unit is None:
+                        return self.priors[key].value
+                    return self.unit_system.convert_from_canonical(key, self.canonical_priors[key].value, unit=unit)
             
         known_params = []
         known_param_values = {}
         if self.param_names is not None:
             known_params.extend(self.param_names)
             known_param_values.update({name: self.samples[name] for name in self.param_names if name in self.samples})
-        if self.priors is not None:
-            known_params.extend([name for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)])
-            known_param_values.update({name: self.priors[name].value for name in self.priors.keys() if isinstance(self.priors[name], FixedPrior)})
+        if self.canonical_priors is not None:
+            known_params.extend([name for name in self.canonical_priors.keys() if isinstance(self.canonical_priors[name], FixedPrior)])
+            known_param_values.update({name: self.canonical_priors[name].value for name in self.canonical_priors.keys() if isinstance(self.canonical_priors[name], FixedPrior)})
 
         if known_params:
-            canonical_values = {
-                name: value * self.parameter_factors.get(name, 1.0)
-                for name, value in known_param_values.items()
-            }
             transform = build_transform_function(known_params, key)
-            value = transform(**canonical_values)
-            return value / self.parameter_factors.get(key, 1.0)
-
-    def canonical_MAP_params(self):
-        """Return the MAP parameter dictionary in canonical units."""
-        if self.MAP_params is None:
-            return None
-        return {
-            name: value * self.parameter_factors.get(name, 1.0)
-            for name, value in self.MAP_params.items()
-        }
-
-    def canonical_median_params(self):
-        """Return the median parameter dictionary in canonical units."""
-        if self.median_params is None:
-            return None
-        return {
-            name: value * self.parameter_factors.get(name, 1.0)
-            for name, value in self.median_params.items()
-        }
-
-    def canonical_sample_array(self):
-        """Return the stored sampled parameters in canonical units."""
-        if self.param_names is None:
-            raise ValueError("Parameter names are required for canonical samples.")
-        return np.column_stack([
-            np.asarray(self.samples[name]) * self.parameter_factors.get(name, 1.0)
-            for name in self.param_names
-        ])
-
+            value = transform(**known_param_values)
+            if unit is None:
+                return value
+            return self.unit_system.convert_from_canonical(key, value, unit=unit)
 
     def __contains__(self, key):
         if self.known_params is not None and key in self.known_params:
@@ -107,45 +144,11 @@ class FitResults:
 
         return False
         
-    def sample_priors(self, random_state, size=1) -> 'SampledPriors':
-        if len(self.priors) == 0:
+    def sample_priors(self, random_state, size=1) -> SampledPriors:
+        """Returns a SampledPriors object that can be used to sample from the canonical prior distributions."""
+        if self.canonical_priors is None or len(self.canonical_priors) == 0:
             raise ValueError("No priors are available to sample from.")
-        return SampledPriors(self.priors, self.param_names, size, random_state)    
-
-    # def add_mass_samples(self, data, m1=None):
-    #     """Derive M2 from canonical posterior orbital samples."""
-    #     if not data.has_astrometry():
-    #         return
-    #     if m1 is None and self.canonical_priors is not None:
-    #         prior = self.canonical_priors.get("M1")
-    #         if isinstance(prior, FixedPrior):
-    #             m1 = prior.value
-    #     if m1 is None or self.canonical_priors is None:
-    #         return
-
-    #     fixed = {
-    #         name: prior.value
-    #         for name, prior in self.canonical_priors.items()
-    #         if isinstance(prior, FixedPrior)
-    #     }
-    #     masses = []
-    #     for sample in self.canonical_sample_array():
-    #         params = dict(zip(self.param_names, sample))
-    #         params.update(fixed)
-    #         orbit = Orbit(**params)
-    #         a1 = float(orbit["a1"])
-    #         if data.parameter_dimension("a1") == "angle":
-    #             if "distance" not in orbit:
-    #                 masses.append(np.nan)
-    #                 continue
-    #             a1 = (
-    #                 a1 * float(orbit["distance"]) * u.rad * u.pc
-    #             ).to_value(u.AU, equivalencies=u.dimensionless_angles())
-    #         masses.append(solve_mass(a1, float(orbit["P"]), float(m1)))
-
-    #     self.samples["M2"] = np.asarray(masses)
-    #     self.M2 = self.samples["M2"]
-    #     return self.M2
+        return SampledPriors(self.canonical_priors, self.param_names, size, random_state)    
         
 
 class SampledPriors:

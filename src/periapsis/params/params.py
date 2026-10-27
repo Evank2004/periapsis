@@ -561,6 +561,41 @@ _display_dict = {
     'gamma': 'γ',
 }
 
+_latex_display_dict = {
+    'r_a': r'r_a',
+    'r_p': r'r_p',
+    'omega': r'\omega',
+    'Omega': r'\Omega',
+    'piomega': r'\varpi',
+    'mu': r'\mu',
+    'Tp': r'T_p',
+    't0': r't_0',
+    'M0': r'M_0',
+    'L0': r'L_0',
+    'E0': r'E_0',
+    'nu0': r'\nu_0',
+    'l0': r'l_0',
+    'uM0': r'u_{M_0}',
+    'u0': r'u_0',
+    'dalpha': r'\Delta \alpha',
+    'ddelta': r'\Delta \delta',
+    'mu_alpha': r'\mu_\alpha',
+    'mu_delta': r'\mu_\delta',
+    'gamma': r'\gamma',
+    "distance": r'\mathrm{distance}',
+    "parallax": r'\mathrm{parallax}',
+    "Tepoch": r'T_\mathrm{epoch}',
+    "cosi": r'\cos i',
+    "sini": r'\sin i',
+    "a1sini": r'a_1 \sin i',
+    "a2sini": r'a_2 \sin i',
+    "Mtot": r'M_\mathrm{tot}',
+    "M1sini": r'M_1 \sin i',
+    "M2sini": r'M_2 \sin i',
+    "minM1": r'\min M_{1}',
+    "minM2": r'\min M_{2}',
+}
+
 
 def display(param):
     """
@@ -577,6 +612,22 @@ def display(param):
         return f"{display(param[:-1])}₂"
     else:
         return _display_dict[param] if param in _display_dict else param
+
+def display_latex(param):
+    """
+    Get a display-friendly version of a parameter name in LaTeX format.
+    """
+    if param.startswith("log"):
+        return fr"$\log_{{10}}({display_latex(param[3:])})$"
+    elif param.endswith("_ang"):
+        return fr"{{{display_latex(param[:-4])}}}_{{\mathrm{{ang}}}}"
+
+    if param.endswith("1"):
+        return f"{{{display_latex(param[:-1])}}}_{{1}}"
+    elif param.endswith("2"):
+        return f"{{{display_latex(param[:-1])}}}_{{2}}"
+    else:
+        return _latex_display_dict[param] if param in _latex_display_dict else param
 
 
 

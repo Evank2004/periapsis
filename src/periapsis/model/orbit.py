@@ -339,8 +339,6 @@ class Orbit():
         _, _, true_anomaly = _orbit_coords_nu(self.derived_params[par.P], self.derived_params[par.e], self.derived_params[par.Tp], t)
         rv = self.derived_params[par.system(par.K, system)] * (np.cos(true_anomaly + self.derived_params[par.system(par.omega, system)]) + self.derived_params[par.e] * np.cos(self.derived_params[par.system(par.omega, system)]))
         rv *= self.velocity_ratio if self.velocity_ratio is not None else 1.0
-        # if self.velocity_ratio is None:
-            # print("Warning: velocity_ratio is not set. Radial velocity will be returned in units of (time/distance).")
         dt = t - self.derived_params[par.Tepoch]
         rv = self._add_rv_linear_params(rv, dt,system)
         return rv
@@ -385,9 +383,6 @@ class Orbit():
 
         self._ensure_derived_params(_vxyz_param_names[system])
         # raise ValueError(f"Insufficient orbital parameters provided to compute 3D velocity. Unable to calculate parameters for system {system}: {_vxyz_param_names[system] - self.covered_params}")
-
-        if self.velocity_ratio is None:
-            print("Warning: velocity_ratio is not set. Velocities will be returned in units of (time/distance).")
 
         raise NotImplementedError("The vxyz method is not implemented yet.")
         vx=float('nan')

@@ -53,6 +53,8 @@ class Fitter(ABC):
         fit_results_dict['canonical_priors'] = canonical_priors
         fit_results_dict['null_hypothesis'] = null_hypothesis_canonical
 
+        fit_results_dict['data'] = data
+
         # FIXME
         # parameter_factors = {}
         # known_output_names = set(self.param_order) | set(canonical_priors)
@@ -153,7 +155,7 @@ class Fitter(ABC):
                     raise ValueError(f"Cannot determine unit for parameter '{name}'.")
                 # If unit is not dimensionless, warn the user that we are assuming the prior is in the same units as the data!
                 if not unit.is_equivalent(dimensionless_unscaled):
-                    warnings.warn(f"ASSUMPTION: Assuming prior on '{name}' is in units of {unit}. To suppress this warning, explicitly set the unit on the prior.")
+                    print(f"ASSUMPTION: Assuming prior on '{name}' is in units of {unit}. To suppress this warning, explicitly set the unit on the prior.")
                 canonical_priors[name].set_unit(unit)
 
         return canonical_priors

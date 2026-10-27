@@ -25,7 +25,7 @@ model1 = p.Orbit(
     mu_delta=0.0, # AU/yr
 )
 
-def test_astrometry_ang():
+def test_astrometry_ang(capsys):
     t = np.linspace(0, 2, 101) # yr
     x_ang, y_ang = model1.astrometry_ang(t, 0, 0, system=1)
     x_ang *= 1000 * 3600 * 180 / np.pi # convert rad to mas
@@ -52,18 +52,19 @@ def test_astrometry_ang():
     )
 
     # Check that the proper warnings are emitted when prior units are not explicitly set for dimensionful parameters
-    with pytest.warns(UserWarning) as warnings:
-        result = fitter.fit(data, rng=np.random.default_rng(42))
+    result = fitter.fit(data, rng=np.random.default_rng(42))
+    stdout = capsys.readouterr().out
+    warnings = [line for line in stdout.splitlines() if "ASSUMPTION:" in line]
     assert len(warnings) == 2
-    assert warnings[0].message.args[0].startswith("ASSUMPTION: Assuming prior on 'P' is in units of yr")
-    assert warnings[1].message.args[0].startswith("ASSUMPTION: Assuming prior on 'M0' is in units of rad")
+    assert warnings[0].startswith("ASSUMPTION: Assuming prior on 'P' is in units of yr")
+    assert warnings[1].startswith("ASSUMPTION: Assuming prior on 'M0' is in units of rad")
 
     
     for name, param in sorted(result.median_params.items()):
         assert param == pytest.approx(model1[name], rel=0.05, abs=1e-3), f"Parameter {name} does not match expected value. Expected {model1[name]}, got {param}."
 
 
-def test_astrometry_physical():
+def test_astrometry_physical(capsys):
     t = np.linspace(0, 2, 101) # yr
     x_len, y_len = model1.astrometry(t, 0, 0, system=1)
     x_err = 0.01 * np.max(x_len) * np.ones_like(x_len)
@@ -89,18 +90,19 @@ def test_astrometry_physical():
     )
 
     # Check that the proper warnings are emitted when prior units are not explicitly set for dimensionful parameters
-    with pytest.warns(UserWarning) as warnings:
-        result = fitter.fit(data, rng=np.random.default_rng(42))
+    result = fitter.fit(data, rng=np.random.default_rng(42))
+    stdout = capsys.readouterr().out
+    warnings = [line for line in stdout.splitlines() if "ASSUMPTION:" in line]
     assert len(warnings) == 2
-    assert warnings[0].message.args[0].startswith("ASSUMPTION: Assuming prior on 'P' is in units of yr")
-    assert warnings[1].message.args[0].startswith("ASSUMPTION: Assuming prior on 'M0' is in units of rad")
+    assert warnings[0].startswith("ASSUMPTION: Assuming prior on 'P' is in units of yr")
+    assert warnings[1].startswith("ASSUMPTION: Assuming prior on 'M0' is in units of rad")
 
     
     for name, param in sorted(result.median_params.items()):
         assert param == pytest.approx(model1[name], rel=0.05, abs=1e-3), f"Parameter {name} does not match expected value. Expected {model1[name]}, got {param}."
 
 
-def test_astrometry_ang_concise_data_units():
+def test_astrometry_ang_concise_data_units(capsys):
     t = np.linspace(0, 2, 101) # yr
     x_ang, y_ang = model1.astrometry_ang(t, 0, 0, system=1)
     x_ang *= 1000 * 3600 * 180 / np.pi # convert rad to mas
@@ -119,11 +121,12 @@ def test_astrometry_ang_concise_data_units():
     )
 
     # Check that the proper warnings are emitted when prior units are not explicitly set for dimensionful parameters
-    with pytest.warns(UserWarning) as warnings:
-        result = fitter.fit(data, rng=np.random.default_rng(42))
+    result = fitter.fit(data, rng=np.random.default_rng(42))
+    stdout = capsys.readouterr().out
+    warnings = [line for line in stdout.splitlines() if "ASSUMPTION:" in line]
     assert len(warnings) == 2
-    assert warnings[0].message.args[0].startswith("ASSUMPTION: Assuming prior on 'P' is in units of yr")
-    assert warnings[1].message.args[0].startswith("ASSUMPTION: Assuming prior on 'M0' is in units of rad")
+    assert warnings[0].startswith("ASSUMPTION: Assuming prior on 'P' is in units of yr")
+    assert warnings[1].startswith("ASSUMPTION: Assuming prior on 'M0' is in units of rad")
 
     
     for name, param in sorted(result.median_params.items()):

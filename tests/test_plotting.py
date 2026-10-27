@@ -16,7 +16,8 @@ from periapsis.plotting.plots import (
     rv_fit_plot,
 )
 
-ASTRO_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
+ASTRO_ANG_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
+ASTRO_UNITS = {"t": u.yr, "x": u.AU, "y": u.AU, "x_err": u.AU, "y_err": u.AU}
 RV_UNITS = {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr}
 GAIA_UNITS = {"t": u.yr, "x": u.rad, "err": u.rad}
 

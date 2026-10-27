@@ -6,7 +6,7 @@ from .data import AstrometryData, GaiaData, RadialVelocityData, JointData
 from .fitting import MCMCFitter, UltranestFitter, MCMCLinearFitter, UltranestLinearFitter, FitResults
 from .initial import InitialGuess, AstrometryInitialGuess, AstrometryLinearInitialGuess, RVInitialGuess, GaiaInitialGuess, GaiaLinearInitialGuess, JointLinearInitialGuess
 from .model import Orbit
-from .plotting import all_plots, mcmc_autocorrelation_plot, corner_plot, ess_distribution_plot, prior_dist_plot, prior_histogram_2d, prior_conditional_histogram_2d, posterior_over_prior, orbit_plot, sky_motion_plot, multi_orbit_plot, distribution, mass_distribution
+from .plotting import all_plots, mcmc_autocorrelation_plot, corner_plot, ess_distribution_plot, prior_dist_plot, prior_histogram_2d, prior_conditional_histogram_2d, posterior_over_prior, orbit_plot, sky_motion_plot, multi_orbit_plot, distribution, mass_distribution, astrometry_phase_plot, residuals_plot
 from .prior import Prior, FixedPrior, Bounds, LogUniformPrior, LogNormalPrior, NormalPrior, UniformPrior
 from .stats import red_chi2, delta_chi2, credible_intervals, all_stats
 from .params import a, a1, a2, b, b1, b2, p, p1, p2, r_a, r_a1, r_a2, r_p, r_p1, r_p2, e, i, cosi, sini, omega, omega1, omega2, Omega, Omega1, Omega2
@@ -31,7 +31,7 @@ __all__ = [
     "Orbit",
 
     # Plotting
-    "all_plots", "mcmc_autocorrelation_plot", "corner_plot", "ess_distribution_plot", "prior_dist_plot", "prior_histogram_2d", "prior_conditional_histogram_2d", "posterior_over_prior", "orbit_plot", "sky_motion_plot", "multi_orbit_plot", "distribution", "mass_distribution",
+    "all_plots", "mcmc_autocorrelation_plot", "corner_plot", "ess_distribution_plot", "prior_dist_plot", "prior_histogram_2d", "prior_conditional_histogram_2d", "posterior_over_prior", "orbit_plot", "sky_motion_plot", "multi_orbit_plot", "distribution", "mass_distribution", "astrometry_phase_plot", "residuals_plot",
 
     # Priors
     "Prior", "FixedPrior", "Bounds", "LogUniformPrior", "LogNormalPrior", "NormalPrior", "UniformPrior",

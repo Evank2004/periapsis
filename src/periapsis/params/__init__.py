@@ -4,7 +4,7 @@ from .params import piomega, piomega1, piomega2, P, n, A, A1, A2, B, B1, B2, C, 
 from .params import Mtot, M1, M2, minM1, minM2, Msini, mu, Tepoch, Tp, t0, M0, L0, E0, nu0, l0, l01, l02, uM0, uM01, uM02, u0, u01, u02, K, K1, K2, q
 from .params import dalpha, ddelta, mu_alpha, mu_delta,dmu_alpha,dmu_delta, gamma,dgamma, f1, f2, parallax, distance
 from .params import flux_parameter
-from .params import log, ang, display
+from .params import log, ang, display, display_latex
 from .units import UnitSystem, get_canonical_unit_scale
 
 __all__ = [

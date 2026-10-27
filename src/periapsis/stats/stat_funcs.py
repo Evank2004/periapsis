@@ -7,6 +7,8 @@ from periapsis.utils.helpers import _flatten_and_join
 from periapsis.model.orbit import Orbit
 from periapsis.prior import FixedPrior
 from scipy.stats import chi2
+from periapsis.utils.helpers import error_sigfig_latex_string
+from periapsis.params import display_latex
 
 
 def _json_default(value):
@@ -21,11 +23,7 @@ def _latex_credible_interval(label, summary, median=None):
     lower_error = median - float(summary["-1sigma"])
     upper_error = float(summary["+1sigma"]) - median
 
-    return (
-        rf"${label} = {median:.2f}"
-        rf"^{{+{upper_error:.2f}}}"
-        rf"_{{-{lower_error:.2f}}}$"
-    )
+    return f"${display_latex(label)} = {error_sigfig_latex_string(median, upper_error, lower_error)}$"
 
 def _credible_interval_summary(samples):
     m2sig, m1sig, med,p1sig, p2sig = np.percentile(samples, [2.275, 15.865,50, 84.135, 97.725])

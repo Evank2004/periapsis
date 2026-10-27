@@ -133,7 +133,7 @@ class MCMCFitter(Fitter):
             elif name in reachable:
                 derived_prior_items.append((name, prior))
             else:
-                warnings.warn(f"Prior for parameter {name} is not reachable from sampled parameters or fixed parameters. It will be ignored in the posterior evaluation.")
+                print(f"WARNING: Prior for parameter {name} is not reachable from sampled parameters or fixed parameters. It will be ignored in the posterior evaluation.")
         # Bounds are the cheapest rejection checks, so retain stable prior order
         # within each group while evaluating Bounds first.
         direct_prior_items.sort(

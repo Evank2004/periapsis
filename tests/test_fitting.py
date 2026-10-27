@@ -853,11 +853,7 @@ def test_null_hypothesis_fit_recovers_weighted_linear_motion():
     [(0, 10), (-1, 10), (4, 0), (4, -1)],
 )
 def test_mcmc_rejects_nonpositive_sampler_sizes(nwalkers, niter):
-    """Highlight missing validation for unusable walker and iteration counts.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:17-18`` stores both values
-    without first requiring them to be positive.
-    """
+    """Highlight missing validation for unusable walker and iteration counts."""
     with pytest.raises(ValueError):
         MCMCFitter(
             nwalkers=nwalkers,
@@ -911,11 +907,7 @@ def test_mcmc_rejects_fixed_sampled_parameter():
 
 
 def test_mcmc_rejects_nonfixed_prior_that_cannot_enter_posterior():
-    """Highlight nonfixed priors that would otherwise be silently ignored.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:163-171`` only records
-    reachable priors and silently drops every other nonfixed prior.
-    """
+    """Highlight nonfixed priors that would otherwise be silently ignored."""
     with pytest.warns(UserWarning, match="e"):
         MCMCFitter(
             nwalkers=4,
@@ -927,11 +919,7 @@ def test_mcmc_rejects_nonfixed_prior_that_cannot_enter_posterior():
 
 
 def test_mcmc_linear_rejects_duplicate_sampled_parameters():
-    """Highlight duplicate linear-MCMC dimensions and ambiguous output columns.
-
-    Bug location: ``src/periapsis/fitting/mcmclinear.py:27-28`` collapses the
-    names into a frozenset without checking whether the input had duplicates.
-    """
+    """Highlight duplicate linear-MCMC dimensions and ambiguous output columns."""
     with pytest.raises(ValueError, match="Duplicate"):
         MCMCLinearFitter(
             nwalkers=8,
@@ -944,11 +932,7 @@ def test_mcmc_linear_rejects_duplicate_sampled_parameters():
 
 
 def test_ultranest_rejects_duplicate_output_parameters():
-    """Ensure duplicate nested outputs cannot be hidden by set conversion.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:18-19`` stores both a
-    deduplicated set and the original tuple without rejecting duplicates.
-    """
+    """Ensure duplicate nested outputs cannot be hidden by set conversion."""
     with pytest.raises(ValueError, match="Duplicate"):
         UltranestFitter(
             output_params=("P", "P"),
@@ -1033,11 +1017,7 @@ def test_mcmc_log_posterior_evaluates_prior_on_derived_parameter():
 def test_mcmc_fit_integrates_initialization_sampler_and_results(
     monkeypatch,
 ):
-    """Exercise the full MCMC flow and expose dropped sampler/result metadata.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:258`` explicitly stores
-    ``None`` as ``raw_sampler`` instead of preserving the completed sampler.
-    """
+    """Exercise the full MCMC flow and expose dropped sampler/result metadata."""
     data, truth, priors, sampled = make_exact_rv_problem()
     initial_class, initial_calls = deterministic_initial(truth)
     FastEmceeSampler.instances = []
@@ -1088,11 +1068,7 @@ def test_mcmc_fit_integrates_initialization_sampler_and_results(
 def test_mcmc_fit_recovers_when_autocorrelation_time_is_not_finite(
     monkeypatch,
 ):
-    """Highlight crashes when autocorrelation estimation returns only NaNs.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:227-232`` converts the
-    extrema of an all-NaN autocorrelation estimate directly to integers.
-    """
+    """Highlight crashes when autocorrelation estimation returns only NaNs."""
     data, truth, priors, sampled = make_exact_rv_problem()
     initial_class, _calls = deterministic_initial(truth)
     monkeypatch.setattr(
@@ -1175,11 +1151,7 @@ def test_mcmc_astrometry_fit_carries_null_hypothesis(
 def test_mcmc_linear_passes_caller_parameter_order_to_initialization(
     monkeypatch,
 ):
-    """Ensure set iteration cannot reorder initializer and sampler columns.
-
-    Bug locations: ``src/periapsis/fitting/mcmclinear.py:41`` reconstructs
-    column order from a frozenset, and line 114 repeats that unordered mapping.
-    """
+    """Ensure set iteration cannot reorder initializer and sampler columns."""
     data, truth, priors = make_exact_astrometry_problem()
     requested_order = ("Tp", "q", "P", "e")
     truth_with_extra = {**truth, "q": 0.5}
@@ -1230,11 +1202,7 @@ def test_ultranest_rejects_overconstrained_prior_parameterizations():
 
 
 def test_ultranest_sample_order_follows_prior_insertion_order():
-    """Ensure nested sample columns preserve deterministic prior ordering.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:34-35`` builds
-    ``sample_order`` from a set, discarding the caller's insertion order.
-    """
+    """Ensure nested sample columns preserve deterministic prior ordering."""
     _data, _truth, priors, sampled = make_exact_rv_problem()
 
     fitter = UltranestFitter(
@@ -1253,11 +1221,7 @@ def test_ultranest_likelihood_supports_one_sided_derived_bounds(
     monkeypatch,
     bound,
 ):
-    """Highlight comparisons against None for valid one-sided Bounds priors.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:71`` performs one
-    chained comparison even when either bound endpoint is ``None``.
-    """
+    """Highlight comparisons against None for valid one-sided Bounds priors."""
     data, _truth, priors, sampled = make_exact_rv_problem()
     ProbeNestedSampler.value = None
     monkeypatch.setattr(
@@ -1281,11 +1245,7 @@ def test_ultranest_likelihood_supports_one_sided_derived_bounds(
 def test_ultranest_fit_integrates_transform_likelihood_and_results(
     monkeypatch,
 ):
-    """Exercise nested transforms through results and expose lost diagnostics.
-
-    Bug locations: ``src/periapsis/fitting/ultranest.py:133`` writes ``ESS``,
-    while ``src/periapsis/fitting/results.py:22`` only consumes ``Ess``.
-    """
+    """Exercise nested transforms through results and expose lost diagnostics."""
     data, _truth, priors, sampled = make_exact_rv_problem()
     FastNestedSampler.instances = []
     monkeypatch.setattr(
@@ -1342,11 +1302,7 @@ def test_ultranest_fit_integrates_transform_likelihood_and_results(
 def test_ultranest_results_persist_requested_derived_outputs(
     monkeypatch,
 ):
-    """Ensure requested derived outputs are stored as named result columns.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:123-136`` assembles
-    result mappings from sampled names only, omitting derived output columns.
-    """
+    """Ensure requested derived outputs are stored as named result columns."""
     data, truth, _priors, _sampled = make_exact_rv_problem()
     priors = {
         "n": UniformPrior(1.0, 2.0, "rad/yr"),
@@ -1380,11 +1336,7 @@ def test_ultranest_results_persist_requested_derived_outputs(
 def test_ultranest_linear_likelihood_respects_nonzero_reference_epoch(
     monkeypatch,
 ):
-    """Highlight double subtraction of reference epoch in linear likelihoods.
-
-    Bug location: ``src/periapsis/fitting/ultranestlinear.py:112-115``
-    subtracts ``ref_epoch`` from data times before subtracting absolute ``Tp``.
-    """
+    """Highlight double subtraction of reference epoch in linear likelihoods."""
     data, truth, priors = make_exact_astrometry_problem(
         ref_epoch=10.0,
         periastron_time=11.3,
@@ -1420,11 +1372,7 @@ def test_ultranest_linear_likelihood_respects_nonzero_reference_epoch(
 def test_ultranest_linear_fit_reports_sampler_ess_and_valid_counts(
     monkeypatch,
 ):
-    """Ensure linear nested results retain ESS and posterior filtering counts.
-
-    Bug locations: ``src/periapsis/fitting/ultranestlinear.py:220`` writes
-    ``ESS``, while ``src/periapsis/fitting/results.py:22`` expects ``Ess``.
-    """
+    """Ensure linear nested results retain ESS and posterior filtering counts."""
     data, _truth, priors = make_exact_astrometry_problem()
     monkeypatch.setattr(
         ultranest_linear_module.ultranest,

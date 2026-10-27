@@ -361,3 +361,15 @@ class JointData(Data):
                 if data.has_radial_velocity():
                     return True
             return False
+
+    @property
+    def merged_unit_system(self):
+        """
+        Returns a merged UnitSystem for all data in the JointData.
+        """
+        unit_system = self.datas[0].unit_system
+        if len(self.datas) == 1:
+            return unit_system
+        for data in self.datas[1:]:
+            unit_system = unit_system.merge(data.unit_system)
+        return unit_system

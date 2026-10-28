@@ -61,7 +61,7 @@ class FitResults:
         median_param_16th_84th = {name: np.percentile(self[name, self.unit_system.get_parameter_unit(name)], [15.865, 84.135]) for name in self.median_params.keys()}
         map_param_values = {name: self.unit_system.convert_from_canonical(name, value) for name, value in self.MAP_params.items()} if self.MAP_params is not None else dict()
 
-        table_rows = ["| Parameter | Median (1-$\sigma$) | MAP | Unit |", "| :--- | :--- | :--- | :--- |"]
+        table_rows = [r"| Parameter | Median (1-$\sigma$) | MAP | Unit |", "| :--- | :--- | :--- | :--- |"]
         for name in self.median_params.keys():
             sampled = name in self.sampled_param_names
             median_value = median_param_values[name]

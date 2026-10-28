@@ -324,8 +324,8 @@ def _pericenter_coords(model, system, ang: bool = False):
     if system == 'relative':
         system = ''
     params = model.derived_params
-    alpha_peri = params[f'B{system}{'_ang' if ang else ''}'] * (1 - params['e'])
-    delta_peri = params[f'A{system}{'_ang' if ang else ''}'] * (1 - params['e'])
+    alpha_peri = params[f"B{system}{'_ang' if ang else ''}"] * (1 - params['e'])
+    delta_peri = params[f"A{system}{'_ang' if ang else ''}"] * (1 - params['e'])
     return alpha_peri, delta_peri
 
 def orbit_plot(results, data, savepath=None):
@@ -626,12 +626,12 @@ def astrometry_phase_plot(results, data, savepath=None):
         ax[0].plot(
             phase_fold[sort_map],
             _plot_position(system_datas[0], alpha_model)[sort_map],
-            label=f'MAP Fit ({system})', color='red', linestyle='-', linewidth=2,
+            label=f"MAP Fit ({system})", color='red', linestyle='-', linewidth=2,
         )
         ax[1].plot(
             phase_fold[sort_map],
             _plot_position(system_datas[0], delta_model)[sort_map],
-            label=f'MAP Fit ({system})', color='red', linestyle='-', linewidth=2,
+            label=f"MAP Fit ({system})", color='red', linestyle='-', linewidth=2,
         )
 
         alpha_resids = []
@@ -1008,7 +1008,7 @@ def distribution(results, param, scale='linear', unit=None, savepath=None):
 
         ax.set_xlim(par_m2sig*0.8, par_p2sig*1.2)
         ax.set_xscale('log')
-        ax.set_xlabel(f"{param} [{unit.to_string("latex_inline")}]")
+        ax.set_xlabel(f"{param} [{unit.to_string('latex_inline')}]")
         ax.set_ylabel("Probability Density")
         ax.legend(loc='upper right')
 

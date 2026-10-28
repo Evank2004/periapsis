@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from .data import Data
 from periapsis.model.orbit import Orbit
 from periapsis.params.units import UnitSystem, is_quantity

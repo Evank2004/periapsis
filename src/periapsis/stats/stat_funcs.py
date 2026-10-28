@@ -25,8 +25,8 @@ def _latex_credible_interval(label, summary, median=None, label_suffix="", unit_
     median = float(summary["median"] if median is None else median)
     lower_error = median - float(summary["-1sigma"])
     upper_error = float(summary["+1sigma"]) - median
-
-    return f"${{{display_latex(label)}}}{label_suffix} = {error_sigfig_latex_string(median, upper_error, lower_error)}{f"~{unit_latex.strip('$')}" if unit_latex else ''}$"
+    ul = unit_latex.strip("$") if unit_latex else ""
+    return f"${{{display_latex(label)}}}{label_suffix} = {error_sigfig_latex_string(median, upper_error, lower_error)}{f'~{ul}' if unit_latex else ''}$"
 
 def _credible_interval_summary(samples, unit, map_index):
     m2sig, m1sig, med,p1sig, p2sig = np.percentile(samples, [2.275, 15.865,50, 84.135, 97.725])

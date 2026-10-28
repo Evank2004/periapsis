@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from astropy import units as u
 from typing import Any, Dict, Mapping, Optional
 import numpy as np

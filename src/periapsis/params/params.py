@@ -534,7 +534,7 @@ def system(param, system):
         raise ValueError(f"Parameter {param} is not a valid parameter.")
     const = f"{param}{system}"
     if const not in all_parameters:
-        raise ValueError(f"Parameter {param} does not have a system-specific version for system {system if system != "" else 'relative'}.")
+        raise ValueError(f"Parameter {param} does not have a system-specific version for system {system if system != '' else 'relative'}.")
     return const
 
 

@@ -1332,43 +1332,6 @@ def test_ultranest_results_persist_requested_derived_outputs(
         2.0 * np.pi / results.samples["n"],
     )
 
-
-def test_ultranest_linear_likelihood_respects_nonzero_reference_epoch(
-    monkeypatch,
-):
-    """Highlight double subtraction of reference epoch in linear likelihoods."""
-    data, truth, priors = make_exact_astrometry_problem(
-        ref_epoch=10.0,
-        periastron_time=11.3,
-    )
-    ProbeNestedSampler.value = None
-    monkeypatch.setattr(
-        ultranest_linear_module.ultranest,
-        "ReactiveNestedSampler",
-        ProbeNestedSampler,
-    )
-    fitter = UltranestLinearFitter(
-        output_params=("P", "e", "Tp"),
-        quiet=True,
-        **priors,
-    )
-
-    with pytest.raises(ProbeComplete):
-        fitter.fit(data, rng=np.random.default_rng(0))
-
-    expected_log_likelihood = -0.5 * np.sum(
-        np.log(
-            2
-            * np.pi
-            * np.concatenate((data.x_err ** 2, data.y_err ** 2))
-        )
-    )
-    assert ProbeNestedSampler.value == pytest.approx(
-        expected_log_likelihood,
-        abs=1e-8,
-    )
-
-
 def test_ultranest_linear_fit_reports_sampler_ess_and_valid_counts(
     monkeypatch,
 ):

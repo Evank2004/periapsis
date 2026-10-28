@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from periapsis.params.units import get_canonical_unit_scale
 
 from .prior import Prior

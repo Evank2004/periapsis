@@ -77,6 +77,8 @@ def _matrix_builder(data,ref_epoch,linear_params=()):
 
     for d in data_components:
         system = getattr(d, 'system', None)
+        if system == 'relative':
+            system = ''
         if isinstance(d, PhysicalAstrometryData):
             key_create(f'dalpha')
             key_create(f'mu_alpha')
@@ -227,6 +229,8 @@ def _matrix_filler(M,cols,params,data):
     row_idx = 0
     for d in data_components:
         system = getattr(d, 'system', None)
+        if system == 'relative':
+            system = ''
         if isinstance(d, PhysicalAstrometryData):
             n_obs = len(d.t_canonical)
             P = params['P']
@@ -425,6 +429,8 @@ def _fill_periodogram_periodic(M,cols,ref_epoch,data,phase):
     row_idx = 0
     for d in data_components:
         system = getattr(d, 'system', None)
+        if system == 'relative':
+            system = ''
         if isinstance(d, AstrometryData):
             n_obs = len(d.t_canonical)
             dt = d.t_canonical - ref_epoch
@@ -597,7 +603,26 @@ def _photocenter_factor(data,params):
     return q_f_to_photocenter_factor(params['q'],params[flux_name],data.system)
 
 
-def error_sigfig_latex_string(value, err_plus, err_minus):
+def float_to_scientific_latex_string(value, precision=None):
+    """
+    Format a float as a LaTeX string in scientific notation.
+    If precision is specified, it will round the value to that many decimal places.
+    """
+    if precision is not None:
+        value = f"{value:.{precision}e}"
+    else:
+        value = str(value)
+
+    if 'e' in value:
+        base, exponent = value.split('e')
+        exponent = int(exponent)
+        return f"{base} \\times 10^{{{exponent}}}"
+    else:
+        return value
+
+
+
+def error_sigfig_latex_string(value, err_plus, err_minus, show_errors=True):
     """
     Format a value and asymmetric uncertainties using the PDG significant-figure convention.
     """
@@ -651,6 +676,8 @@ def error_sigfig_latex_string(value, err_plus, err_minus):
             value_rounded /= Decimal(10)
             exponent += 1
 
+        if not show_errors:
+            return f"{value_rounded:.{decimals}f} \\times 10^{{{exponent}}}"
         return (
             f"{value_rounded:.{decimals}f}"
             f"^{{+{plus_rounded:.{decimals}f}}}"
@@ -658,6 +685,8 @@ def error_sigfig_latex_string(value, err_plus, err_minus):
         )
 
     decimals = max(0, -rounding_place)
+    if not show_errors:
+        return f"{rounded(value, rounding_place):.{decimals}f}"
     return (
         f"{rounded(value, rounding_place):.{decimals}f}"
         f"^{{+{rounded(err_plus, rounding_place):.{decimals}f}}}"

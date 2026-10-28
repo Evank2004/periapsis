@@ -321,6 +321,8 @@ def posterior_over_prior(results: FitResults, params=None, savepath=None, random
 #---------------Orbit Visualization Plots ---------------------------------
 
 def _pericenter_coords(model, system, ang: bool = False):
+    if system == 'relative':
+        system = ''
     params = model.derived_params
     alpha_peri = params[f'B{system}{'_ang' if ang else ''}'] * (1 - params['e'])
     delta_peri = params[f'A{system}{'_ang' if ang else ''}'] * (1 - params['e'])

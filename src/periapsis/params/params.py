@@ -590,10 +590,10 @@ _latex_display_dict = {
     "a1sini": r'a_1 \sin i',
     "a2sini": r'a_2 \sin i',
     "Mtot": r'M_\mathrm{tot}',
+    "Msini": r'M\sin i',
     "M1sini": r'M_1 \sin i',
     "M2sini": r'M_2 \sin i',
-    "minM1": r'\min M_{1}',
-    "minM2": r'\min M_{2}',
+    "minM": r'\min M',
 }
 
 
@@ -618,7 +618,7 @@ def display_latex(param):
     Get a display-friendly version of a parameter name in LaTeX format.
     """
     if param.startswith("log"):
-        return fr"$\log_{{10}}({display_latex(param[3:])})$"
+        return fr"\log_{{10}}({display_latex(param[3:])})"
     elif param.endswith("_ang"):
         return fr"{{{display_latex(param[:-4])}}}_{{\mathrm{{ang}}}}"
 

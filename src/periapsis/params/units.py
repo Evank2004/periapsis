@@ -116,7 +116,7 @@ def is_quantity(value: Any) -> bool:
     """
     Check if the value is an astropy Quantity.
     """
-    return isinstance(value, u.Quantity)
+    return hasattr(value, 'unit') and hasattr(value, 'value')
 
 
 def parse_units(unit_dict: Optional[Mapping[str, Any]]) -> Dict[str, u.Unit]:
@@ -406,6 +406,13 @@ class UnitSystem:
             return self._dimensionality[param_name]
         if param_name.startswith("log"):
             return "dimensionless"
+        if "rv" in param_name and "jitter" in param_name:
+            return "velocity"
+        if "astro" in param_name and "jitter" in param_name:
+            if self.astrometry_dimension == "length":
+                return "length"
+            elif self.astrometry_dimension == "angle":
+                return "angle"
         # if param_name in par.ang_parameters:
         #     return self.astrometry_dimension or "length"
         if param_name in _DATA_DIMENSIONS:

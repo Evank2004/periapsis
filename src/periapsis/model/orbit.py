@@ -1,4 +1,4 @@
-import periapsis.params.params as par
+from periapsis.params import params as par
 from periapsis.params import covered_parameters, build_transform_functions
 from periapsis.utils.solvers import solve_kepler,_orbit_coords_nu
 from periapsis.params.transforms import q_f_to_photocenter_factor

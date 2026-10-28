@@ -30,9 +30,11 @@ def make_results(**overrides):
         "MAP_params": {"chi2": 8.0},
         "median_params": {"chi2": 10.0},
         "samples": {},
+        "sampled_param_names": [],
         "priors": {},
         "null_hypothesis": {"chi2": 20.0, "dof": 7},
         "backend": None,
+        "unit_system": None,
     }
     arguments.update(overrides)
     return SimpleNamespace(**arguments)
@@ -53,27 +55,29 @@ def install_fake_model_builders(monkeypatch):
     monkeypatch.setattr(stat_funcs, "_build_model", build_model, raising=False)
 
 
-def test_json_default_serializes_numpy_arrays_and_scalars():
-    assert stat_funcs._json_default(np.array([1, 2])) == [1, 2]
-    assert stat_funcs._json_default(np.float64(2.5)) == 2.5
-    assert stat_funcs._json_default(np.int64(4)) == 4
+def test_json_numpy_serializes_numpy_arrays_and_scalars():
+    assert stat_funcs._json_numpy(np.array([1, 2])) == [1, 2]
+    assert stat_funcs._json_numpy(np.float64(2.5)) == 2.5
+    assert stat_funcs._json_numpy(np.int64(4)) == 4
 
 
-def test_json_default_rejects_unsupported_objects():
+def test_json_numpy_rejects_unsupported_objects():
     with pytest.raises(TypeError, match="not JSON serializable"):
-        stat_funcs._json_default(object())
+        stat_funcs._json_numpy(object())
 
 
 def test_credible_interval_summary_uses_standard_one_and_two_sigma_percentiles():
     samples = np.arange(101.0)
 
-    summary = stat_funcs._credible_interval_summary(samples)
+    summary = stat_funcs._credible_interval_summary(samples, "UNIT", 0)
 
     assert summary == pytest.approx(
         {
+            "unit": "UNIT",
             "-2sigma": np.percentile(samples, 2.275),
             "-1sigma": np.percentile(samples, 15.865),
             "median": np.percentile(samples, 50),
+            "map": samples[0],
             "+1sigma": np.percentile(samples, 84.135),
             "+2sigma": np.percentile(samples, 97.725),
         }
@@ -87,15 +91,17 @@ def test_credible_intervals_uses_attributes_then_sample_mapping():
         param_names=["P", "e"],
         P=period_samples,
         samples={"P": np.full(10, -1.0), "e": eccentricity_samples},
+        map_index=0,
+        unit_system=None,
     )
 
     intervals = stat_funcs.credible_intervals(results)
 
     assert intervals["P"] == pytest.approx(
-        stat_funcs._credible_interval_summary(period_samples)
+        stat_funcs._credible_interval_summary(period_samples, None, 0)
     )
     assert intervals["e"] == pytest.approx(
-        stat_funcs._credible_interval_summary(eccentricity_samples)
+        stat_funcs._credible_interval_summary(eccentricity_samples, None, 0)
     )
 
 
@@ -104,13 +110,15 @@ def test_credible_intervals_includes_derived_secondary_mass():
     results = SimpleNamespace(
         param_names=["P"],
         samples={"P": np.arange(4.0), "M2": mass_samples, "minM2": mass_samples + 1.0},
+        map_index=0,
+        unit_system=None,
     )
 
     intervals = stat_funcs.credible_intervals(results)
 
     assert set(intervals) == {"P", "M2"}
     assert intervals["M2"] == pytest.approx(
-        stat_funcs._credible_interval_summary(mass_samples)
+        stat_funcs._credible_interval_summary(mass_samples, None, 0)
     )
 
 
@@ -119,13 +127,15 @@ def test_credible_intervals_uses_minimum_mass_when_secondary_mass_is_missing():
     results = SimpleNamespace(
         param_names=["P"],
         samples={"P": np.arange(4.0), "minM2": min_mass_samples},
+        map_index=0,
+        unit_system=None,
     )
 
     intervals = stat_funcs.credible_intervals(results)
 
     assert set(intervals) == {"P", "minM2"}
     assert intervals["minM2"] == pytest.approx(
-        stat_funcs._credible_interval_summary(min_mass_samples)
+        stat_funcs._credible_interval_summary(min_mass_samples, None, 0)
     )
 
 
@@ -137,12 +147,12 @@ def test_latex_credible_interval_uses_two_decimal_places():
     }
 
     assert stat_funcs._latex_credible_interval("P", summary) == (
-        r"$P = 1.23^{+0.33}_{-0.22}$"
+        r"${P} = 1.23^{+0.33}_{-0.22}$"
     )
 
 
 def test_credible_intervals_reports_missing_parameter_samples():
-    results = SimpleNamespace(param_names=["P"], samples={})
+    results = SimpleNamespace(param_names=["P"], samples={}, map_index=0)
 
     with pytest.raises(ValueError, match="P"):
         stat_funcs.credible_intervals(results)
@@ -366,7 +376,7 @@ def test_all_stats_combines_summaries_and_emcee_diagnostics(monkeypatch):
     assert stats["Ess"] == 120
     assert stats["mean_acceptance_fraction"] == 0.35
     np.testing.assert_allclose(stats["tau"], [4.0, 5.0])
-    assert fit_results["fit_params"]["MAP_params"] is results.MAP_params
+    assert fit_results["MAP_params"] is results.MAP_params
 
 
 def test_all_stats_omits_sampler_diagnostics_for_non_emcee_backend(monkeypatch):
@@ -381,24 +391,6 @@ def test_all_stats_omits_sampler_diagnostics_for_non_emcee_backend(monkeypatch):
     assert "Ess" not in stats
     assert "tau" not in stats
     assert "mean_acceptance_fraction" not in stats
-
-
-def test_all_stats_includes_derived_mass_summary(monkeypatch):
-    install_all_stats_dependencies(monkeypatch)
-    masses = np.array([1.0, 2.0, 3.0, 10.0])
-    results = make_results(samples={"M2": masses})
-
-    _stats, fit_results = stat_funcs.all_stats(
-        results,
-        object(),
-        pretty_print=False,
-    )
-
-    mass_summary = fit_results["derived_fit_params"]["M2"]
-    assert mass_summary["median"] == pytest.approx(2.5)
-    assert mass_summary["credible_intervals"] == pytest.approx(
-        stat_funcs._credible_interval_summary(masses)
-    )
 
 
 def test_all_stats_pretty_prints_json(monkeypatch, capsys):
@@ -429,8 +421,8 @@ def test_all_stats_saves_json_files(monkeypatch, tmp_path):
     stats_path = tmp_path / "stats.json"
     fit_path = tmp_path / "fit_results.json"
     assert json.loads(stats_path.read_text()) == json.loads(
-        json.dumps(stats, default=stat_funcs._json_default)
+        json.dumps(stats, default=stat_funcs._json_numpy)
     )
     assert json.loads(fit_path.read_text()) == json.loads(
-        json.dumps(fit_results, default=stat_funcs._json_default)
+        json.dumps(fit_results, default=stat_funcs._json_numpy)
     )

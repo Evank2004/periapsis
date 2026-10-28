@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from periapsis.fitting.results import FitResults, SampledPriors
+from periapsis.fitting.results import FitResults, SampledPriors, ParameterSamples
 from periapsis.prior import Bounds, FixedPrior, UniformPrior
 
 
@@ -90,7 +90,7 @@ def test_fit_results_tracks_sampled_fixed_and_covered_parameters():
 def test_fit_results_getitem_returns_sampled_parameter_array():
     results = make_results()
 
-    assert results["P"] is results.samples["P"]
+    assert results["P"].samples is results.samples["P"]
     np.testing.assert_allclose(results["P"], [2.0, 4.0, 8.0])
 
 
@@ -326,3 +326,8 @@ def test_sampled_priors_getitem_raises_for_unreachable_parameter():
 
     with pytest.raises(KeyError):
         _ = sampled["e"]
+
+def test_parameter_samples_handles_numpy_behaviors():
+    result = ParameterSamples(np.array([1.0, 2.0, 3.0]), name="x", unit="m")
+    assert np.all(result > 0)
+    assert result.shape == (3,)

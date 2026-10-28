@@ -1,10 +1,11 @@
 import numpy as np
 from periapsis.data.common import SystemData
 from periapsis.data import JointData
-from periapsis.params.units import UnitSystem
+from periapsis.params.units import UnitSystem, get_unit_type, normalize_unit
 from periapsis.prior import Prior, FixedPrior, Bounds
 from periapsis.params import build_transform_function, covered_parameters, overconstrained_parameters, display_latex
-from periapsis.utils.helpers import error_sigfig_latex_string
+from periapsis.utils.helpers import error_sigfig_latex_string, float_to_scientific_latex_string
+from periapsis.stats.stat_funcs import red_chi2
 
 
 class FitResults:
@@ -25,6 +26,7 @@ class FitResults:
         self.tau = samples.pop('tau', None)
         self.mean_acceptance_fraction = samples.pop('mean_acceptance_fraction', None)
         self.lnprob = samples.pop('lnprob', None)
+        self.map_index = np.argmax(self.lnprob) if self.lnprob is not None else None
         self.data = samples.pop('data', None)
         if isinstance(self.data, JointData):
             self.unit_system: UnitSystem = self.data.merged_unit_system
@@ -54,29 +56,47 @@ class FitResults:
     def _repr_markdown_(self):
         """Returns a pretty markdown representation of the fit results."""
         median_param_values = {name: self.unit_system.convert_from_canonical(name, value) for name, value in self.median_params.items()}
-        median_param_16th_84th = {name: np.percentile(self[name, self.unit_system.get_parameter_unit(name)], [16, 84]) for name in self.median_params.keys()}
-        median_params_latexs = []
+        median_param_16th_84th = {name: np.percentile(self[name, self.unit_system.get_parameter_unit(name)], [15.865, 84.135]) for name in self.median_params.keys()}
+        map_param_values = {name: self.unit_system.convert_from_canonical(name, value) for name, value in self.MAP_params.items()} if self.MAP_params is not None else dict()
+
+        table_rows = ["| Parameter | Median (1-$\sigma$) | MAP | Unit |", "| :--- | :--- | :--- | :--- |"]
         for name in self.median_params.keys():
             sampled = name in self.sampled_param_names
             median_value = median_param_values[name]
+            map_value = map_param_values.get(name, None)
             lower_error = median_value - median_param_16th_84th[name][0]
             upper_error = median_param_16th_84th[name][1] - median_value
+            
             if lower_error <= 0 or upper_error <= 0:
                 error_string = f"{median_value}"
+                map_value_string = f"{map_value}" if map_value is not None else "N/A"
             else:
                 error_string = error_sigfig_latex_string(median_value, upper_error, lower_error)
+                map_value_string = error_sigfig_latex_string(map_value, upper_error, lower_error, show_errors=False) if map_value is not None else "{\\rm N/A}"
+                
             unit_string = self.unit_system.get_parameter_unit(name).to_string("latex_inline")
-            median_params_latexs.append(f"- ${display_latex(name)} = {error_string}$ {unit_string} {'(sampled)' if sampled else ''}")
-        median_params_latex = "\n".join(median_params_latexs)
+            
+            table_rows.append(f"| ${display_latex(name)}${' (sampled)' if sampled else ''} | ${error_string}$ | ${map_value_string}$ | {unit_string} |")
 
-        return fr"""
-### Fit Results ({self.backend} - {self.fit_method})
+        median_params_latex = "\n".join(table_rows)
+        red_chi2_map, red_chi2_med,uwe_map,uwe_med,orb_dof = red_chi2(self, self.data)
 
-#### Median Parameters (1-sigma uncertainties)
-{median_params_latex}
+        other_params_list = ", ".join([f"${display_latex(name)}$" for name in sorted(self.covered_params) if not name.startswith("log") and name not in self.median_params])
 
-Other available parameters: {', '.join([f'${display_latex(name)}$' for name in self.covered_params if not name.startswith("log") and name not in self.median_params])}
-        """
+        return "\n".join((
+            f"### Fit Results ({self.fit_method} {self.backend} on {type(self.data).__name__})",
+            f"",
+            f"$\\chi^2_{{\\rm red., med}} = {red_chi2_med:.6f}$, $\\chi^2_{{\\rm red., MAP}} = {red_chi2_map:.6f}$",
+            f"",
+            f"({orb_dof} degrees of freedom)",
+            f"",
+            f"#### Parameters and Uncertainties",
+            f"",
+            f"{median_params_latex}",
+            f"",
+            f"#### Other Available Parameters",
+            f"Other available parameters (access with `fit_results['param_name']`): {other_params_list}"
+        ))
 
 
     def __repr__(self):
@@ -84,16 +104,21 @@ Other available parameters: {', '.join([f'${display_latex(name)}$' for name in s
             f"FitResults(",
             f"  backend={self.backend},",
             f"  fit_method={self.fit_method},",
+            f"  data={type(self.data).__name__ if self.data is not None else None},",
             f"  MAP_params={self.MAP_params},",
             f"  median_params={self.median_params},",
             f")"
         ))
 
 
-    def __getitem__(self, key):
+    def __getitem__(self, key) -> ParameterSamples:
         if isinstance(key, tuple):
             key, unit = key
             should_transform_prior = True
+            # Automatically transform length parameters to the angular version if the unit requested is an angle.
+            if self.unit_system is not None and unit is not None:
+                if (get_unit_type(unit) == "angle" or get_unit_type(unit) == "angular_velocity" or get_unit_type(unit) == "angular_acceleration") and not key.endswith("_ang"):
+                    key = f"{key}_ang"
         elif self.unit_system is None:
             unit = None
             should_transform_prior = False
@@ -104,20 +129,24 @@ Other available parameters: {', '.join([f'${display_latex(name)}$' for name in s
 
         if key in self.samples:
             if unit is None:
-                return self.samples[key]
-            return self.unit_system.convert_from_canonical(key, self.samples[key], unit=unit)
+                return ParameterSamples(np.atleast_1d(self.samples[key]), key, None, map_index=self.map_index)
+            return ParameterSamples(np.atleast_1d(self.unit_system.convert_from_canonical(key, self.samples[key], unit=unit)), key, unit, map_index=self.map_index)
         
         if self.priors is not None and key in self.priors:
             if isinstance(self.priors[key], FixedPrior):
                 prior_unit = self.priors[key].unit
                 if prior_unit and not should_transform_prior:
-                    return self.priors[key].value
+                    return ParameterSamples(np.atleast_1d(self.priors[key].value), key, prior_unit)
                 if prior_unit and should_transform_prior:
-                    return self.unit_system.convert_from_canonical(key, self.canonical_priors[key].value, unit=unit)
+                    return ParameterSamples(np.atleast_1d(
+                        self.unit_system.convert_from_canonical(key, self.canonical_priors[key].value, unit=unit)
+                    ), key, unit)
                 if not prior_unit:
                     if unit is None:
-                        return self.priors[key].value
-                    return self.unit_system.convert_from_canonical(key, self.canonical_priors[key].value, unit=unit)
+                        return ParameterSamples(np.atleast_1d(self.priors[key].value), key, None, map_index=self.map_index)
+                    return ParameterSamples(np.atleast_1d(
+                        self.unit_system.convert_from_canonical(key, self.canonical_priors[key].value, unit=unit)
+                    ), key, unit)
             
         known_params = []
         known_param_values = {}
@@ -132,8 +161,8 @@ Other available parameters: {', '.join([f'${display_latex(name)}$' for name in s
             transform = build_transform_function(known_params, key)
             value = transform(**known_param_values)
             if unit is None:
-                return value
-            return self.unit_system.convert_from_canonical(key, value, unit=unit)
+                return ParameterSamples(np.atleast_1d(value), key, None, map_index=self.map_index)
+            return ParameterSamples(np.atleast_1d(self.unit_system.convert_from_canonical(key, value, unit=unit)), key, unit, map_index=self.map_index)
 
     def __contains__(self, key):
         if self.known_params is not None and key in self.known_params:
@@ -149,7 +178,89 @@ Other available parameters: {', '.join([f'${display_latex(name)}$' for name in s
         if self.canonical_priors is None or len(self.canonical_priors) == 0:
             raise ValueError("No priors are available to sample from.")
         return SampledPriors(self.canonical_priors, self.param_names, size, random_state)    
-        
+
+
+class ParameterSamples:
+    """
+    Thin wrapper around a NumPy array of parameter samples, providing convenient access to the samples and their unit.
+    """
+    def __init__(self, samples, name, unit, map_index=None):
+        self.samples = samples
+        self.name = name
+        self.unit = normalize_unit(unit) if unit is not None else None
+        self.map_index = map_index
+
+    def __array__(self):
+        return self.samples
+
+    def __array_interface__(self):
+        return self.samples.__array_interface__
+
+    def _repr_markdown_(self):
+        """Return a markdown representation of the parameter samples."""
+
+        if len(self.samples) == 1:
+            return f"${display_latex(self.name)} = {float_to_scientific_latex_string(self.samples[0])}$ {self.unit.to_string('latex_inline') if self.unit is not None else ''} (fixed)"
+
+        v1sigma = 0.682689492137086 * 100
+        v2sigma = 0.954499736103642 * 100
+        v3sigma = 0.997300203936740 * 100
+        p3sl, p2sl, p1sl, p50, p1su, p2su, p3su = np.percentile(self.samples, [50 - v3sigma / 2, 50 - v2sigma / 2, 50 - v1sigma / 2, 50, 50 + v1sigma / 2, 50 + v2sigma / 2, 50 + v3sigma / 2])
+
+        return "\n".join((
+            f"${display_latex(self.name)}$ Posterior Samples (n={len(self.samples)}):",
+            f"`{np.array2string(self.samples, threshold=5)}` {self.unit.to_string('latex_inline')}" if self.unit is not None else "",
+            f"",
+            f"\nMedian = {p50} {self.unit.to_string('latex_inline') if self.unit is not None else ''}",
+            f"\nMAP    = {self.samples[self.map_index]} {self.unit.to_string('latex_inline') if self.unit is not None else ''}" if self.map_index is not None else "",
+            f"\n1-sigma confidence interval: ${error_sigfig_latex_string(p50, p1su - p50, p50 - p1sl)}$ {self.unit.to_string('latex_inline') if self.unit is not None else ''}",
+            f"\n2-sigma confidence interval: ${error_sigfig_latex_string(p50, p2su - p50, p50 - p2sl)}$ {self.unit.to_string('latex_inline') if self.unit is not None else ''}",
+            f"\n3-sigma confidence interval: ${error_sigfig_latex_string(p50, p3su - p50, p50 - p3sl)}$ {self.unit.to_string('latex_inline') if self.unit is not None else ''}",
+        ))
+
+    def __repr__(self):
+        return f"{self.name}: {self.samples.__repr__()} <{self.unit}>"
+
+    def __gt__(self, other):
+        return self.samples > other
+
+    def __lt__(self, other):
+        return self.samples < other
+
+    def __eq__(self, other):
+        return self.samples == other
+
+    def __hash__(self):
+        return hash((self.samples, self.unit))
+
+    def __ne__(self, other):
+        return self.samples != other
+
+    def __len__(self):
+        return len(self.samples)
+
+    def __iter__(self):
+        return iter(self.samples)
+
+    def __getitem__(self, key):
+        return self.samples[key]
+
+    def __contains__(self, item):
+        return item in self.samples
+
+    def __getattr__(self, name):
+        return getattr(self.samples, name)
+
+    def to_quantity(self):
+        """Returns the samples as an astropy Quantity object."""
+        if self.unit is None:
+            return self.samples
+        return self.samples * self.unit
+
+    def to(self, unit):
+        """Returns the samples converted to the specified unit."""
+        return ParameterSamples(self.unit.to(unit, self.samples), self.name, unit, map_index=self.map_index)
+  
 
 class SampledPriors:
     def __init__(self, priors: dict[str, Prior], param_order, size, rng: np.random.RandomState):

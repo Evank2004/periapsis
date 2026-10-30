@@ -233,6 +233,7 @@ class RVLinearInitialGuess(RVInitialGuess):
             maxiter=2000,
             polish=False,
             x0=initial_points,
+            rng=self.rng
         )
         orbit = minimize(
             self.neg_lnlike,

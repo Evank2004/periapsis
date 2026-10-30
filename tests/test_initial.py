@@ -13,9 +13,9 @@ from periapsis.data import AstrometryData, GaiaData, RadialVelocityData
 from periapsis.initial import (
     AstrometryInitialGuess,
     AstrometryLinearInitialGuess,
-    GaiaInitialGuess,
+    GaiaLinearInitialGuess,
     InitialGuess,
-    JointInitialGuess,
+    JointLinearInitialGuess,
     RVInitialGuess,
 )
 
@@ -113,8 +113,8 @@ def test_initial_package_exports_all_initial_guess_classes():
         "AstrometryLinearInitialGuess",
         "RVInitialGuess",
         "RVLinearInitialGuess",
-        "GaiaInitialGuess",
-        "JointInitialGuess",
+        "GaiaLinearInitialGuess",
+        "JointLinearInitialGuess",
     ]
 
 
@@ -124,8 +124,8 @@ def test_initial_package_exports_all_initial_guess_classes():
         AstrometryInitialGuess,
         AstrometryLinearInitialGuess,
         RVInitialGuess,
-        GaiaInitialGuess,
-        JointInitialGuess,
+        GaiaLinearInitialGuess,
+        JointLinearInitialGuess,
     ],
 )
 def test_concrete_initial_guess_classes_share_the_base_class(guess_class):
@@ -563,7 +563,7 @@ def test_astrometry_linear_objective_includes_fixed_epoch_transform(monkeypatch)
 
 def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
     data = make_gaia_data()
-    guess = GaiaInitialGuess(
+    guess = GaiaLinearInitialGuess(
         data, np.random.RandomState(0), ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
     )
@@ -606,7 +606,7 @@ def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
 
 def test_delisle_periodogram_uses_default_period_range(monkeypatch):
     data = make_gaia_data()
-    guess = GaiaInitialGuess(data, np.random.RandomState(0))
+    guess = GaiaLinearInitialGuess(data, np.random.RandomState(0))
     orbital_calls = 0
 
     def fake_periodogram_helper(matrix, values, errors):
@@ -632,7 +632,7 @@ def test_gaia_initial_guess_uses_periodogram_and_adds_optional_jitter(
 ):
     rng = RecordingRNG()
     jitter_prior = StubPrior(0.001, 0.5, sample_value=0.05)
-    guess = GaiaInitialGuess(
+    guess = GaiaLinearInitialGuess(
         make_gaia_data(), rng, ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
         e=StubPrior(0.1, 0.5),
@@ -666,7 +666,7 @@ def test_gaia_initial_guess_uses_periodogram_and_adds_optional_jitter(
 
 
 def test_gaia_initial_guess_respects_arbitrary_parameter_order(monkeypatch):
-    guess = GaiaInitialGuess(
+    guess = GaiaLinearInitialGuess(
         make_gaia_data(), RecordingRNG(), ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
         e=StubPrior(0.1, 0.5),
@@ -690,7 +690,7 @@ def test_gaia_initial_guess_respects_arbitrary_parameter_order(monkeypatch):
 
 def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
     rng = RecordingRNG()
-    guess = GaiaInitialGuess(
+    guess = GaiaLinearInitialGuess(
         make_gaia_data(), rng, ref_epoch=0.0,
         P=StubPrior(2.0, 8.0),
         e=StubPrior(0.1, 0.5),

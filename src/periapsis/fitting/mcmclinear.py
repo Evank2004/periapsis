@@ -5,7 +5,7 @@ from periapsis.data import Data, AstrometryData, RadialVelocityData, GaiaData, J
 from .fitter import Fitter
 from periapsis.fitting.results import FitResults
 from periapsis.utils.helpers import _matrix_builder, _matrix_filler, _lsq_helper, _sigma
-from periapsis.initial import InitialGuess, AstrometryLinearInitialGuess, RVLinearInitialGuess, GaiaInitialGuess, JointInitialGuess
+from periapsis.initial import InitialGuess, AstrometryLinearInitialGuess, RVLinearInitialGuess, GaiaLinearInitialGuess, JointLinearInitialGuess
 from periapsis.prior import Bounds, FixedPrior
 from periapsis.params.transforms import covered_parameters, build_transform_functions
 from periapsis.params.units import CanonicalUnits
@@ -168,10 +168,10 @@ class MCMCLinearFitter(Fitter):
                 initial = RVLinearInitialGuess
                 initial_kwargs["linear_params"] = self.linear_params
             elif isinstance(data, GaiaData):
-                initial = GaiaInitialGuess
+                initial = GaiaLinearInitialGuess
                 initial_kwargs["linear_params"] = self.linear_params
             elif isinstance(data, JointData):
-                initial = JointInitialGuess
+                initial = JointLinearInitialGuess
                 initial_kwargs["linear_params"] = self.linear_params
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for linearized MCMC initial guess generation.")

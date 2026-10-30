@@ -6,6 +6,7 @@ from periapsis.data import JointData
 from periapsis.params.units import UnitSystem, get_unit_type, normalize_unit
 from periapsis.prior import Prior, FixedPrior, Bounds
 from periapsis.params import build_transform_function, covered_parameters, overconstrained_parameters, display_latex
+from periapsis.params.params import ang_parameters
 from periapsis.utils.helpers import error_sigfig_latex_string, float_to_scientific_latex_string
 from periapsis.stats.stat_funcs import red_chi2
 
@@ -119,7 +120,7 @@ class FitResults:
             should_transform_prior = True
             # Automatically transform length parameters to the angular version if the unit requested is an angle.
             if self.unit_system is not None and unit is not None:
-                if (get_unit_type(unit) == "angle" or get_unit_type(unit) == "angular_velocity" or get_unit_type(unit) == "angular_acceleration") and not key.endswith("_ang"):
+                if (get_unit_type(unit) == "angle" or get_unit_type(unit) == "angular_velocity" or get_unit_type(unit) == "angular_acceleration") and key in ang_parameters and not key.endswith("_ang"):
                     key = f"{key}_ang"
         elif self.unit_system is None:
             unit = None

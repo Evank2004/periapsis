@@ -190,15 +190,7 @@ def credible_intervals(results):
     
     for label in param_names:
         unit = results.unit_system.get_parameter_unit(label) if results.unit_system is not None else None
-        # samples = getattr(results, label, None)
-        samples = results[label, unit]
-        # if samples is None:
-        #     samples = results.samples.get(label, None)
-        # if samples is None:
-            # raise ValueError(f"Samples for parameter '{label}' not found in results.")
-
-        
-        
+        samples = results[label, unit]        
 
         credible_intervals[label] = _credible_interval_summary(samples, unit, map_index)
 

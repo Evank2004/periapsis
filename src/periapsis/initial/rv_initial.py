@@ -34,7 +34,7 @@ class RVInitialGuess(InitialGuess):
         pdc_vals = np.zeros(num_freq)
 
         x = self.data.rv
-        t = self.data.t
+        t = self.data.t_canonical
         #sample distance matrix
         a = np.abs(x[:,np.newaxis] - x)
         A = self._double_center(a)

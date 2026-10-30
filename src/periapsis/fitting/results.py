@@ -29,7 +29,10 @@ class FitResults:
         self.tau = samples.pop('tau', None)
         self.mean_acceptance_fraction = samples.pop('mean_acceptance_fraction', None)
         self.lnprob = samples.pop('lnprob', None)
+        self.logl = samples.pop('logl', None)
         self.map_index = np.argmax(self.lnprob) if self.lnprob is not None else None
+        if self.map_index is None:
+            self.map_index = np.argmax(self.logl) if self.logl is not None else None
         self.data = samples.pop('data', None)
         if isinstance(self.data, JointData):
             self.unit_system: UnitSystem = self.data.merged_unit_system

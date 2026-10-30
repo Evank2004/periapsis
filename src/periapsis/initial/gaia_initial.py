@@ -256,9 +256,9 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
         )
         best_vals.update(self.PeTp_transform(**best_vals))
 
-        _matrix_filler(self.M_base, self.cols, best_vals, self.data)
-        sigma = _sigma(self.data, best_vals, self.data.err)
-        mu,_ = _lsq_helper(self.M_base, self.data.x, sigma)
+        helpers._matrix_filler(self.M_base, self.cols, best_vals, self.data)
+        sigma = helpers.sigma(self.data, best_vals, self.data.err_canonical)
+        mu,_ = helpers._lsq_helper(self.M_base, self.data.x_canonical, sigma)
 
         best_vals.update({
             name:mu[i] for name,i in self.cols.items()

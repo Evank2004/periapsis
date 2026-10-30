@@ -242,6 +242,7 @@ class UltranestLinearFitter(Fitter):
         results_dict['Ess'] = results['ess']
         results_dict['logZ'] = results['logz']
         results_dict['logZerr'] = results['logzerr']
+        results_dict['sampled_param_names'] = standard_param_order
         results_dict['param_names'] = post_labels
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params

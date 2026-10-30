@@ -774,8 +774,7 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
             name: samples[name][idx] for name in param_names
         }
 
-        fixed_prior_values = {p.name: p.value for p in results.canonical_priors if isinstance(p, FixedPrior)}
-
+        fixed_prior_values = {name: p.value for name, p in results.canonical_priors.items() if isinstance(p, FixedPrior)}
         for i in range(len(idx)):
             samp = {name: samps[name][i] for name in param_names}
             model = Orbit(**samp, **fixed_prior_values)

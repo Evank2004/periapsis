@@ -349,21 +349,21 @@ class RadialVelocityData(SystemData):
         return len(self.t)
 
     def chi2(self, orbit: Orbit,jitter=None):
-        vz = orbit.rv(self.t, system=self.system)
+        vz = orbit.rv(self.t_canonical, system=self.system)
         if jitter is not None:
-            total_err = np.sqrt(self.rv_err**2 + jitter**2)
+            total_err = np.sqrt(self.rv_err_canonical**2 + jitter**2)
         else:
-            total_err = self.rv_err
-        chi2_rv = np.sum(((self.rv - vz) / total_err) ** 2)
+            total_err = self.rv_err_canonical
+        chi2_rv = np.sum(((self.rv_canonical - vz) / total_err) ** 2)
         return chi2_rv
 
     def log_likelihood(self, orbit: Orbit,offset_names=None):
-        vz = orbit.rv(self.t, system=self.system)
+        vz = orbit.rv(self.t_canonical, system=self.system)
         offset_names = set() if offset_names is None else set(offset_names)
         if f"rv_{self.instrument}_offset" in offset_names:
             rv_offset = _orbit_value(orbit, f"rv_{self.instrument}_offset", default=0.0)
             vz += rv_offset
-        residuals_rv = self.rv - vz
+        residuals_rv = self.rv_canonical - vz
 
         jitter_name = (
             'rv_jitter'

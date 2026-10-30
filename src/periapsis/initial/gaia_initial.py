@@ -123,8 +123,7 @@ class GaiaLinearInitialGuess(InitialGuess):
             args=(self.data, self.priors, param_in),
             maxiter=2000,
             polish=False,
-            x0=initial_points,
-            rng=self.rng,
+            x0=initial_points
         )
         orbit = minimize(
             self.neg_lnlike,
@@ -239,8 +238,7 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
             args=(self.data, self.priors, param_in),
             maxiter=2000,
             polish=False,
-            x0=initial_values,
-            rng=self.rng,
+            x0=initial_values
         )
 
         orbit = minimize(

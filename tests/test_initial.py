@@ -13,8 +13,10 @@ from periapsis.data import AstrometryData, GaiaData, RadialVelocityData
 from periapsis.initial import (
     AstrometryInitialGuess,
     AstrometryLinearInitialGuess,
+    GaiaInitialGuess,
     GaiaLinearInitialGuess,
     InitialGuess,
+    JointInitialGuess,
     JointLinearInitialGuess,
     RVInitialGuess,
 )
@@ -113,7 +115,9 @@ def test_initial_package_exports_all_initial_guess_classes():
         "AstrometryLinearInitialGuess",
         "RVInitialGuess",
         "RVLinearInitialGuess",
+        "GaiaInitialGuess",
         "GaiaLinearInitialGuess",
+        "JointInitialGuess",
         "JointLinearInitialGuess",
     ]
 
@@ -707,7 +711,6 @@ def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
 
     assert result.shape == (2, 3)
     assert rng.normal_calls
-
 
 
 

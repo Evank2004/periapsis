@@ -135,8 +135,7 @@ class JointLinearInitialGuess(InitialGuess):
             args=(param_in,),
             maxiter=2000,
             polish=False,
-            x0=initial_points,
-            rng=self.rng,
+            x0=initial_points
         )
 
         def bounds_transform_fn(bound):

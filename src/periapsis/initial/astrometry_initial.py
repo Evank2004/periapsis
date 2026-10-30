@@ -114,9 +114,6 @@ class AstrometryInitialGuess(InitialGuess):
             else:
                 initial_points.append(prior.sample(self.rng, size=1)[0])
         
-
-
-
         bounds = self._bounds(param_in)
         lower = np.array([b[0] for b in bounds], dtype=float)
         upper = np.array([b[1] for b in bounds], dtype=float)

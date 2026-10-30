@@ -4,12 +4,13 @@ from periapsis.data.gaia import GaiaData
 from periapsis.params.transforms import build_transform_functions
 from periapsis.prior import Bounds, FixedPrior
 from scipy.optimize import differential_evolution, minimize, NonlinearConstraint
-
+import periapsis.params as params
 from .initial import InitialGuess
+from periapsis.model.orbit import Orbit
 
 
-class GaiaInitialGuess(InitialGuess):
-    """Class for obtaining initial guess for Gaia data"""
+class GaiaLinearInitialGuess(InitialGuess):
+    """Class for obtaining initial guess for Gaia data for MCMCLinearFitter"""
     def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
         self.M_base, self.cols = _matrix_builder(
@@ -79,6 +80,7 @@ class GaiaInitialGuess(InitialGuess):
             return np.inf
         return 0.5 * chi2 - ln_prior
 
+    
     def get_initial_guess(self, param_order, nwalkers):
         """Return walkers around a globally and locally optimized Gaia solution."""
         P_guess, _ = self.Delisle_periodogram()
@@ -121,7 +123,7 @@ class GaiaInitialGuess(InitialGuess):
             args=(self.data, self.priors, param_in),
             maxiter=2000,
             polish=False,
-            x0=initial_points,
+            x0=initial_points
         )
         orbit = minimize(
             self.neg_lnlike,
@@ -149,3 +151,153 @@ class GaiaInitialGuess(InitialGuess):
             poss.append(values)
 
         return np.column_stack(poss)
+
+
+class GaiaInitialGuess(GaiaLinearInitialGuess):
+    """Class for obtaining initial guesses for the full nonlinear MCMC."""
+
+    def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, **priors):
+        super().__init__(data, rng, ref_epoch, **priors)
+        self.PeTp_transform = build_transform_functions(
+            self.priors.keys(), ("P", "e", "Tp")
+        )
+
+    def ln_like(self, params_dict, data):
+        model = Orbit(**params_dict)
+        offset_names = {
+            name
+            for name in params_dict
+            if name.startswith("astro_") and name.endswith("_offset")
+        }
+        return data.log_likelihood(model, offset_names=offset_names)
+
+    def ln_prior(self, params_dict, priors):
+        lp = 0.0
+        for name, value in params_dict.items():
+            prior = priors.get(name)
+            if prior is None:
+                continue
+            if isinstance(prior, FixedPrior):
+                continue
+            contribution = prior.logpdf(value)
+            if not np.isfinite(contribution):
+                return -np.inf
+            lp += contribution
+        return lp
+
+    
+
+    def _linear_seed(self):
+        ''' Function for starting nonlinear fitter with a linear fit for Gaia data'''
+        P_guess, _ = self.Delisle_periodogram()
+        self.PeTp_transform = build_transform_functions(
+            self.priors.keys(), ("P", "e", "Tp")
+        )
+        param_in = []
+        initial_points = []
+
+        for name, prior in self.priors.items():
+            if isinstance(prior, (Bounds, FixedPrior)):
+                continue
+            param_in.append(name)
+            if name == params.P:
+                initial_points.append(P_guess)
+            else:
+                initial_points.append(prior.sample(self.rng, size=1)[0])
+
+        bounds = self._bounds(param_in)
+        lower = np.asarray([bound[0] for bound in bounds], dtype=float)
+        upper = np.asarray([bound[1] for bound in bounds], dtype=float)
+        initial_values = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
+        
+        def bounds_transform_fn(bound):
+            transform = build_transform_functions(
+                [*param_in, *self.fixed_prior_params], [bound]
+            )
+            return lambda values: transform(
+                **dict(zip(param_in, values)),
+                **{
+                    name: prior.value
+                    for name, prior in self.fixed_prior_params.items()
+                },
+            )[bound]
+
+        constraints = [
+                    NonlinearConstraint(
+                        bounds_transform_fn(name), bound.lower, bound.upper
+                    )
+                    for name, bound in self.priors.items()
+                    if isinstance(bound, Bounds)
+                ]
+        
+        linear_neg_lnlike = super().neg_lnlike
+
+        result = differential_evolution(
+            linear_neg_lnlike,
+            bounds=bounds,
+            args=(self.data, self.priors, param_in),
+            maxiter=2000,
+            polish=False,
+            x0=initial_values
+        )
+
+        orbit = minimize(
+            linear_neg_lnlike,
+            x0=result.x,
+            method="SLSQP",
+            args=(self.data, self.priors, param_in),
+            bounds=bounds,
+            constraints=constraints,
+            options={"maxiter": 2000},
+        )
+        best_vals = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
+        best_vals.update(
+            {name: prior.value for name, prior in self.fixed_prior_params.items()}
+        )
+        best_vals.update(self.PeTp_transform(**best_vals))
+
+        _matrix_filler(self.M_base, self.cols, best_vals, self.data)
+        sigma = _sigma(self.data, best_vals, self.data.err)
+        mu,_ = _lsq_helper(self.M_base, self.data.x, sigma)
+
+        best_vals.update({
+            name:mu[i] for name,i in self.cols.items()
+        })
+
+        return best_vals
+        
+
+    def get_initial_guess(self, param_order, nwalkers):
+        """Return walkers around a full nonlinear Gaia solution."""
+
+        best_values = self._linear_seed() # Initialize full parameter Gaia fit with linear solver, as it can provide a more robust initial guess for nonlinear fit
+
+
+        transform = build_transform_functions(
+            best_values.keys(), param_order
+        )
+        best_values.update(transform(**best_values))
+    
+        positions = []
+        for name in param_order:
+            if name not in best_values:
+                raise ValueError(f"Missing initial guess for parameter: {name}")
+
+            prior = self.priors.get(name)
+
+            scale = 1e-4 * abs(best_values[name])
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                scale = max(scale, 1e-4 * (prior.max - prior.min))
+
+            values = best_values[name] + self.rng.normal(
+                0.0,
+                scale,
+                size=nwalkers,
+            )
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                values = np.clip(values, prior.min, prior.max)
+
+            positions.append(values)
+        return np.column_stack(positions)

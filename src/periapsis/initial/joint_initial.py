@@ -2,7 +2,7 @@ from .initial import InitialGuess
 from periapsis.utils.helpers import _lsq_helper, _matrix_builder, _matrix_filler,_null_matrix_builder,_fill_periodogram_periodic,_sigma
 from .astrometry_initial import AstrometryInitialGuess
 from .rv_initial import RVInitialGuess
-from .gaia_initial import GaiaInitialGuess
+from .gaia_initial import GaiaLinearInitialGuess
 from periapsis.prior import Bounds, FixedPrior, LogUniformPrior
 from periapsis.params.transforms import build_transform_functions
 from periapsis.utils.solvers import solve_kepler
@@ -10,7 +10,7 @@ from periapsis.data import Data, JointData, GaiaData, RadialVelocityData, Astrom
 import numpy as np
 from scipy.optimize import differential_evolution,minimize, NonlinearConstraint
 
-class JointInitialGuess(InitialGuess):
+class JointLinearInitialGuess(InitialGuess):
     def __init__(self, data: JointData, rng: np.random.RandomState, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
         self.data = data
@@ -108,12 +108,9 @@ class JointInitialGuess(InitialGuess):
         chi2 = self._matrix_helper(PeTp_params)
         return 0.5 * chi2 - lp
        
+    def _linear_seed(self):
+        """ Returns an initial guess from linearization method to make it easier for small optimizer run to converge"""
 
-
-    def get_initial_guess(self, param_order, nwalkers):
-        """
-        Returns an initial guess for parameters based on Joint Data and priors
-        """
         param_in = []
         P_guess = self.Delisle_joint()
         initial_points = []
@@ -127,8 +124,6 @@ class JointInitialGuess(InitialGuess):
             else:
                 initial_points.append(prior.sample(self.rng, size=1)[0])
 
-        
-
         bounds = self._bounds(param_in)
         lower = np.array([b[0] for b in bounds],dtype=float)
         upper = np.array([b[1] for b in bounds],dtype=float)
@@ -139,7 +134,8 @@ class JointInitialGuess(InitialGuess):
             bounds=bounds,
             args=(param_in,),
             maxiter=2000,
-            polish=False
+            polish=False,
+            x0=initial_points
         )
 
         def bounds_transform_fn(bound):
@@ -163,12 +159,21 @@ class JointInitialGuess(InitialGuess):
             args=(param_in,),
             constraints=constraints,
             options={'maxiter': 2000}
-        )   
-
+        )
         best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
         best_prior_values.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
-        transform = build_transform_functions([*param_in, *self.fixed_prior_params], param_order)
-        best_values = transform(**best_prior_values)
+        
+        best_values = dict(best_prior_values)
+        best_values.update(
+            self.PeTp_transform(**best_prior_values)
+        )
+
+        return best_values
+
+    def _gauss_ball(self,best_values,param_order,nwalkers):
+        """
+        Returns a gaussian ball around the best values for each parameter
+        """
         poss = []
         for name in param_order:
             value = best_values[name]
@@ -179,6 +184,86 @@ class JointInitialGuess(InitialGuess):
                 values = value * 10 ** self.rng.normal(0.0, 0.01, size=nwalkers)
                 poss.append(np.clip(values, prior.min, prior.max))
             else:
-                poss.append(value + self.rng.normal(0, 1e-4, size=nwalkers))
+                if name not in best_values:
+                    raise ValueError(f"Missing initial guess for parameter: {name}")
+                
+                prior = self.priors.get(name)
+    
+                scale = 1e-4 * abs(best_values[name])
+    
+                if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                    scale = max(scale, 1e-4 * (prior.max - prior.min))
+    
+                values = best_values[name] + self.rng.normal(
+                    0.0,
+                    scale,
+                    size=nwalkers,
+                )
+    
+                if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                    values = np.clip(values, prior.min, prior.max)
+    
+                poss.append(values)
+
         pos = np.column_stack(poss)
         return pos
+
+    def get_initial_guess(self, param_order, nwalkers):
+        """
+        Returns an initial guess for parameters based on Joint Data and priors
+        """
+        best_values = self._linear_seed()
+        pos = self._gauss_ball(best_values, param_order, nwalkers)
+        return pos
+
+
+class JointInitialGuess(JointLinearInitialGuess):
+    def __init__(self,data,rng,ref_epoch=0.0, linear_params=(), **priors):
+        super().__init__(data, rng, ref_epoch, linear_params=linear_params, **priors)
+
+    def get_initial_guess(self, param_order, nwalkers):
+        
+        best_values = self._linear_seed()
+
+
+        _matrix_filler(self.M_base, self.cols, best_values, self.data)
+        sigma = _sigma(self.data, best_values, self.sigma)
+        mu,_ = _lsq_helper(self.M_base, self.eta, sigma)
+
+        best_values.update({
+            name:mu[i] for name,i in self.cols.items()
+        })
+        
+                
+
+        transform = build_transform_functions(
+            best_values.keys(), param_order,)
+
+        best_values.update(transform(**best_values))
+
+        positions = []
+        for name in param_order:
+            if name not in best_values:
+                raise ValueError(
+                    f"Missing initial guess for parameter: {name}"
+                    )
+
+            prior = self.priors.get(name)
+
+            scale = 1e-4 * abs(best_values[name])
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                scale = max(scale, 1e-4 * (prior.max - prior.min))
+
+            values = best_values[name] + self.rng.normal(
+                0.0,
+                scale,
+                size=nwalkers,
+            )
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                values = np.clip(values, prior.min, prior.max)
+
+            positions.append(values)
+        return np.column_stack(positions)
+        

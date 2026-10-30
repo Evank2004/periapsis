@@ -107,8 +107,8 @@ class Fitter(ABC):
             x = np.concatenate([data.x_canonical,data.y_canonical])
             err = np.concatenate([data.x_err_canonical,data.y_err_canonical])
         elif isinstance(data, RadialVelocityData):
-            x = data.rv
-            err = data.rv_err
+            x = data.rv_canonical
+            err = data.rv_err_canonical
         elif isinstance(data, JointData):
             x = data._concat_obs_canonical()
             err = data._err_canonical()

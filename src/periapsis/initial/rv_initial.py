@@ -158,8 +158,8 @@ class RVLinearInitialGuess(RVInitialGuess):
             self.priors.keys(), ("P", "e", "Tp")
         )
         self.M, self.cols = _matrix_builder(data, self.ref_epoch)
-        self.eta = data.rv
-        self.err = data.rv_err
+        self.eta = data.rv_canonical
+        self.err = data.rv_err_canonical
 
     def ln_prior(self, params_dict, priors):
         lp = 0

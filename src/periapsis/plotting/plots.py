@@ -431,9 +431,9 @@ def orbit_plot(results, data, savepath=None):
         Map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
         Med_plot_dict = data._astrometry(Orbit(**results.median_params))
 
-        dt_obs = _plot_time(data, data.t)
+        dt_obs = _plot_time(data, data.t_canonical)
 
-        for i, (ri, di, ei, si, ci) in enumerate(zip(Map_plot_dict['ra_orb_obs'], Map_plot_dict['dec_orb_obs'], data.err, data.spsi, data.cpsi)):
+        for i, (ri, di, ei, si, ci) in enumerate(zip(Map_plot_dict['ra_orb_obs'], Map_plot_dict['dec_orb_obs'], data.err_canonical, data.spsi, data.cpsi)):
             x0 = _plot_position(data, ri - ei * si)
             x1 = _plot_position(data, ri + ei * si)
             y0 = _plot_position(data, di - ei * ci)
@@ -454,8 +454,8 @@ def orbit_plot(results, data, savepath=None):
     min_t = []
     max_t = []
     for d in datas:
-        min_t.append(np.min(d.t))
-        max_t.append(np.max(d.t))
+        min_t.append(np.min(d.t_canonical))
+        max_t.append(np.max(d.t_canonical))
     tfold = np.linspace(np.min(min_t), np.max(max_t), 1000)
     for s in systems:
         _plot_model(results,tfold,s)
@@ -514,10 +514,10 @@ def sky_motion_plot(results, data, savepath=None):
             parallax = null_fit['params'].get('parallax', 0.0)
 
         if isinstance(data, GaiaData):
-            tfold = np.linspace(data.t.min(), data.t.max(), 1000)
+            tfold = np.linspace(data.t_canonical.min(), data.t_canonical.max(), 1000)
             dt = tfold - results.canonical_MAP_params().get('Tepoch', 0)
-            plx_alpha = np.interp(tfold,data.t,data.plx_fac*data.spsi)
-            plx_delta = np.interp(tfold,data.t,data.plx_fac*data.cpsi)
+            plx_alpha = np.interp(tfold,data.t_canonical,data.plx_fac*data.spsi)
+            plx_delta = np.interp(tfold,data.t_canonical,data.plx_fac*data.cpsi)
 
             alpha_lin = mu_alpha * dt + dalpha + plx_alpha*parallax
             delta_lin = mu_delta * dt + ddelta + plx_delta*parallax
@@ -774,9 +774,11 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
             name: samples[name][idx] for name in param_names
         }
 
+        fixed_prior_values = {p.name: p.value for p in results.canonical_priors if isinstance(p, FixedPrior)}
+
         for i in range(len(idx)):
             samp = {name: samps[name][i] for name in param_names}
-            model = Orbit(**samp)
+            model = Orbit(**samp, **fixed_prior_values)
             if isinstance(data, AstrometryData):
                 alpha, delta = model.pure_orbit_ang(tfold, system=data.system)
             elif isinstance(data, PhysicalAstrometryData):
@@ -807,8 +809,8 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
     for d in datas:
         if d.system not in systems:
             continue
-        t_min.append(np.min(d.t))
-        t_max.append(np.max(d.t))
+        t_min.append(np.min(d.t_canonical))
+        t_max.append(np.max(d.t_canonical))
     tfold = np.linspace(np.min(t_min), np.max(t_max), 1000)
     for d in datas:
         if not isinstance(d, (AstrometryData, PhysicalAstrometryData, GaiaData)):
@@ -843,8 +845,8 @@ def residuals_plot(results, data, savepath=None):
             map_model = Orbit(**results.MAP_params)
             median_model = Orbit(**results.median_params)
             if isinstance(d, AstrometryData):
-                model_alpha, model_delta = map_model.astrometry_ang(d.t, d.plxf_x, d.plxf_y, system=d.system)
-                median_alpha, median_delta = median_model.astrometry_ang(d.t, d.plxf_x, d.plxf_y, system=d.system)
+                model_alpha, model_delta = map_model.astrometry_ang(d.t_canonical, d.plxf_x, d.plxf_y, system=d.system)
+                median_alpha, median_delta = median_model.astrometry_ang(d.t_canonical, d.plxf_x, d.plxf_y, system=d.system)
                 alpha_resids = d.x_ang_canonical - model_alpha
                 delta_resids = d.y_ang_canonical - model_delta
                 median_alpha_resids = d.x_ang_canonical - median_alpha
@@ -852,8 +854,8 @@ def residuals_plot(results, data, savepath=None):
                 alpha_err = d.x_err_ang_canonical
                 delta_err = d.y_err_ang_canonical
             elif isinstance(d, PhysicalAstrometryData):
-                model_alpha, model_delta = map_model.astrometry(d.t, d.plxf_x, d.plxf_y, system=d.system)
-                median_alpha, median_delta = median_model.astrometry(d.t, d.plxf_x, d.plxf_y, system=d.system)
+                model_alpha, model_delta = map_model.astrometry(d.t_canonical, d.plxf_x, d.plxf_y, system=d.system)
+                median_alpha, median_delta = median_model.astrometry(d.t_canonical, d.plxf_x, d.plxf_y, system=d.system)
                 alpha_resids = d.x_canonical - model_alpha
                 delta_resids = d.y_canonical - model_delta
                 median_alpha_resids = d.x_canonical - median_alpha
@@ -1023,13 +1025,13 @@ def mass_distribution(results,scale='linear',savepath=None):
     '''
     Plots distribution of secondary mass (M2) from posterior samples
     '''
-    if 'M2' in results and isinstance(results['M2'], np.ndarray) and len(results['M2']) > 1:
+    if 'M2' in results and len(results['M2']) > 1 and len(results['M2']) > 1:
         return distribution(results, 'M2', scale=scale, unit=r'Msun', savepath=savepath)
-    elif 'M1' in results and isinstance(results['M1'], np.ndarray) and len(results['M1']) > 1:
+    elif 'M1' in results and len(results['M1']) > 1 and len(results['M1']) > 1:
         return distribution(results, 'M1', scale=scale, unit=r'Msun', savepath=savepath)
-    elif 'minM2' in results and isinstance(results['minM2'], np.ndarray) and len(results['minM2']) > 1:
+    elif 'minM2' in results and len(results['minM2']) > 1 and len(results['minM2']) > 1:
         return distribution(results, 'minM2', scale=scale, unit=r'Msun', savepath=savepath)
-    elif 'minM1' in results and isinstance(results['minM1'], np.ndarray) and len(results['minM1']) > 1:
+    elif 'minM1' in results and len(results['minM1']) > 1 and len(results['minM1']) > 1:
         return distribution(results, 'minM1', scale=scale, unit=r'Msun', savepath=savepath)
     else:
         print('No mass samples found in results.')
@@ -1057,7 +1059,7 @@ def rv_fit_plot(results, data, savepath=None):
 
         ax.plot(_plot_time(data, tfold), _plot_velocity(data, Map_fit.rv(tfold,system)), label='MAP Fit', color='red', linestyle='-')
         ax.plot(_plot_time(data, tfold), _plot_velocity(data, med_fit.rv(tfold,system)), label='Median Fit',color='purple', linestyle='--',alpha=0.7)
-        ax.errorbar(_plot_time(data, data.t), _plot_velocity(data, data.rv_canonical), yerr=_plot_velocity(data, data.rv_err_canonical), fmt='o', color='k', markersize=4)
+        ax.errorbar(_plot_time(data, data.t_canonical), _plot_velocity(data, data.rv_canonical), yerr=_plot_velocity(data, data.rv_err_canonical), fmt='o', color='k', markersize=4)
         
 
     systems = {d.system for d in datas}

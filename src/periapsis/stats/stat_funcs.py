@@ -21,12 +21,12 @@ def _json_numpy(value):
         return value.to_string()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
-def _latex_credible_interval(label, summary, median=None, label_suffix="", unit_latex=""):
-    median = float(summary["median"] if median is None else median)
+def _latex_credible_interval(label, summary, map_value=None, label_suffix="", unit_latex=""):
+    median = float(summary["median"])
     lower_error = median - float(summary["-1sigma"])
     upper_error = float(summary["+1sigma"]) - median
     ul = unit_latex.strip("$") if unit_latex else ""
-    return f"${{{display_latex(label)}}}{label_suffix} = {error_sigfig_latex_string(median, upper_error, lower_error)}{f'~{ul}' if unit_latex else ''}$"
+    return f"${{{display_latex(label)}}}{label_suffix} = {error_sigfig_latex_string(median if map_value is None else map_value, upper_error, lower_error)}{f'~{ul}' if unit_latex else ''}$"
 
 def _credible_interval_summary(samples, unit, map_index):
     m2sig, m1sig, med,p1sig, p2sig = np.percentile(samples, [2.275, 15.865,50, 84.135, 97.725])
@@ -189,14 +189,8 @@ def credible_intervals(results):
     map_index = results.map_index
     
     for label in param_names:
-        samples = getattr(results, label, None)
-        if samples is None:
-            samples = results.samples.get(label, None)
-        if samples is None:
-            raise ValueError(f"Samples for parameter '{label}' not found in results.")
-
-        
         unit = results.unit_system.get_parameter_unit(label) if results.unit_system is not None else None
+        samples = results[label, unit]        
 
         credible_intervals[label] = _credible_interval_summary(samples, unit, map_index)
 
@@ -269,7 +263,7 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
             print(_latex_credible_interval(
                 label,
                 intervals[label],
-                reported_maps[label],
+                map_value=reported_maps[label],
                 label_suffix=r"_{{\rm MAP}}",
                 unit_latex=unit_latex
             ))

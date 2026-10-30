@@ -56,18 +56,6 @@ class Fitter(ABC):
         fit_results_dict['null_hypothesis'] = null_hypothesis_canonical
 
         fit_results_dict['data'] = data
-
-        # FIXME
-        # parameter_factors = {}
-        # known_output_names = set(self.param_order) | set(canonical_priors)
-        # for name in known_output_names:
-        #     unit = data.parameter_unit(name)
-        #     dimension = data.parameter_dimension(name)
-        #     if unit is not None and dimension is not None:
-        #         parameter_factors[name] = unit.to(CanonicalUnits[dimension])
-        # fit_results_dict['parameter_factors'] = parameter_factors
-
-        # FIXME
         fit_results_dict['ref_epoch'] = self._reported_ref_epoch(data)
         
         return FitResults(**fit_results_dict)
@@ -144,7 +132,7 @@ class Fitter(ABC):
         canonical_priors = {param: pr.canonical for param, pr in self.priors.items()}
         data_ref_epoch = getattr(data, 'ref_epoch', None)
         if self._use_data_ref_epoch and data_ref_epoch is not None:
-            canonical_priors['Tepoch'] = FixedPrior(data_ref_epoch, unit=data.parameter_unit('t'))
+            canonical_priors['Tepoch'] = FixedPrior(data_ref_epoch, unit=data.parameter_unit('t')).canonical
 
         for name, _ in canonical_priors.items():
             if name == 'Tepoch' and self._use_data_ref_epoch and data_ref_epoch is not None:
@@ -159,6 +147,7 @@ class Fitter(ABC):
                 if not unit.is_equivalent(dimensionless_unscaled):
                     print(f"ASSUMPTION: Assuming prior on '{name}' is in units of {unit}. To suppress this warning, explicitly set the unit on the prior.")
                 canonical_priors[name].set_unit(unit)
+                canonical_priors[name] = canonical_priors[name].canonical
 
         return canonical_priors
 

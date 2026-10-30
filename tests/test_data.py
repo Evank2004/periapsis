@@ -319,14 +319,14 @@ def test_radial_velocity_chi2_is_weighted_and_passes_system():
     assert result == pytest.approx(3.0)
     method, times, system = orbit.calls[0]
     assert method == "rv"
-    assert times is data.t
+    assert times is data.t_canonical
     assert system == "2"
 
 
 def test_radial_velocity_observation_accessors_return_original_arrays():
     data = make_rv()
 
-    assert data._radial_velocity(DummyOrbit()) is data.rv
+    assert data._radial_velocity(DummyOrbit()) is data.rv_canonical
 
 
 def test_gaia_converts_scalars_to_one_dimensional_arrays():

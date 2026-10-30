@@ -33,7 +33,7 @@ class RVInitialGuess(InitialGuess):
         periods = 1/frequencies
         pdc_vals = np.zeros(num_freq)
 
-        x = self.data.rv
+        x = self.data.rv_canonical
         t = self.data.t_canonical
         #sample distance matrix
         a = np.abs(x[:,np.newaxis] - x)

@@ -45,8 +45,8 @@ def test_fitter_uses_data_epoch_unless_explicit_epoch_is_given():
     data_epoch = DummyFitter()._canonical_priors(data)["Tepoch"].value
     explicit_epoch = DummyFitter(ref_epoch=2.0)._canonical_priors(data)["Tepoch"].value
 
-    assert data_epoch == pytest.approx(5.0)
-    assert explicit_epoch == pytest.approx(2.0)
+    assert data_epoch == pytest.approx(5.0/365.25)
+    assert explicit_epoch == pytest.approx(2.0/365.25)
 
 
 def test_fitter_preserves_explicit_t_epoch_prior():

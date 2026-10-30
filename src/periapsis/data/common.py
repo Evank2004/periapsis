@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 from .data import Data
 from periapsis.model.orbit import Orbit
-from periapsis.params.units import UnitSystem
+from periapsis.params.units import UnitSystem, is_quantity
 from periapsis.params.params import flux_parameter
-from astropy import units as u
 from typing import Mapping, Any, Optional
 import numpy as np
 
@@ -53,9 +54,24 @@ def _orbit_value(orbit, name, default=None):
         return orbit.derived_params[name]
     return default
 
-class AstrometryData(SystemData):
+
+class _AstrometryDataBase(SystemData):
     def __init__(self, t, x, y, x_err, y_err,plxf_x=None,plxf_y=None,ref_epoch=None, units: Optional[Mapping[str, Any]] = None,
                 system=None, instrument=None,band=None):
+        if units is None:
+            if is_quantity(t) and is_quantity(x) and is_quantity(y) and is_quantity(x_err) and is_quantity(y_err):
+                units = {
+                    "t": t.unit,
+                    "x": x.unit,
+                    "y": y.unit,
+                    "x_err": x_err.unit,
+                    "y_err": y_err.unit,
+                }
+                t = t.value
+                x = x.value
+                y = y.value
+                x_err = x_err.value
+                y_err = y_err.value
         super().__init__(system, units)
         required_units = {"t", "x", "y", "x_err", "y_err"}
         missing_units = required_units - self.unit_system.units.keys()
@@ -65,14 +81,25 @@ class AstrometryData(SystemData):
             raise ValueError("Unit for 't' must represent time.")
         if self.unit_system.get_parameter_dimension("x") not in {"angle", "length"}:
             raise ValueError("Unit for 'x' must represent an angle or length.")
+        if self.unit_system.get_parameter_dimension("y") not in {"angle", "length"}:
+            raise ValueError("Unit for 'y' must represent an angle or length.")
+        if self.unit_system.get_parameter_dimension("x_err") not in {"angle", "length"}:
+            raise ValueError("Unit for 'x_err' must represent an angle or length.")
+        if self.unit_system.get_parameter_dimension("y_err") not in {"angle", "length"}:
+            raise ValueError("Unit for 'y_err' must represent an angle or length.")
 
-        self.t = np.atleast_1d(self.unit_system.convert_to_canonical("t", t))
-        self.x = np.atleast_1d(self.unit_system.convert_to_canonical("x", x))
-        self.y = np.atleast_1d(self.unit_system.convert_to_canonical("y", y))
-        self.x_err = np.atleast_1d(self.unit_system.convert_to_canonical("x_err", x_err))
-        self.y_err = np.atleast_1d(self.unit_system.convert_to_canonical("y_err", y_err))
-        
-        
+        self.t = np.atleast_1d(t)
+        self.t_canonical = self.unit_system.convert_to_canonical("t", self.t)
+
+        self.x = np.atleast_1d(x)
+        self.y = np.atleast_1d(y)
+        self.x_err = np.atleast_1d(x_err)
+        self.y_err = np.atleast_1d(y_err)
+        if ref_epoch is None:
+            self.ref_epoch = np.mean(self.t)
+        else:
+            self.ref_epoch = ref_epoch
+        self.ref_epoch_canonical = self.unit_system.convert_to_canonical("t", self.ref_epoch)
         
         self.plxf_x = plxf_x
         self.plxf_y = plxf_y
@@ -84,11 +111,6 @@ class AstrometryData(SystemData):
         if self.y_err.shape != self.y.shape:
             self.y_err = np.broadcast_to(self.y_err, self.y.shape)
 
-        if ref_epoch is None:
-            self.ref_epoch = np.mean(self.t)
-        else:
-            self.ref_epoch = self.unit_system.convert_to_canonical("t", ref_epoch)
-
         if plxf_x is not None and plxf_y is not None:
             self.plxf_x = np.atleast_1d(plxf_x)
             self.plxf_y = np.atleast_1d(plxf_y)
@@ -99,8 +121,7 @@ class AstrometryData(SystemData):
             self.parallax = True
         else:
             self.parallax = False
-
-        
+    
         self.instrument = instrument
         self.band = band
         
@@ -108,32 +129,80 @@ class AstrometryData(SystemData):
     @property
     def dof(self):
         """Returns the degrees of freedom of the data."""
-        return 2*len(self.t)
+        return 2*len(self.t_canonical)
 
+    def has_astrometry(self) -> bool:
+        return True
+
+    def has_radial_velocity(self) -> bool:
+        return False
+
+    def _radial_velocity(self, orbit: Orbit):
+        raise NotImplementedError
+
+
+class AstrometryData(_AstrometryDataBase):
+    """
+    Class for handling 2D astrometry data (on-sky positions and their uncertainties) for an individual system.
+    """
+    def __new__(cls, t, x, y, x_err, y_err, plxf_x=None, plxf_y=None, ref_epoch=None, units: Optional[Mapping[str, Any]] = None,
+                system=None, instrument=None, band=None) -> _AstrometryDataBase:
+        if units is None:
+            if is_quantity(t) and is_quantity(x) and is_quantity(y) and is_quantity(x_err) and is_quantity(y_err):
+                units = {
+                    "t": t.unit,
+                    "x": x.unit,
+                    "y": y.unit,
+                    "x_err": x_err.unit,
+                    "y_err": y_err.unit,
+                }
+            else:
+                raise ValueError(f"Units must be provided for {cls.__name__}.")
+        unit_system = UnitSystem(units)
+        if unit_system.get_parameter_dimension("x") == "length" and unit_system.get_parameter_dimension("y") == "length":
+            return PhysicalAstrometryData(t, x, y, x_err, y_err, plxf_x, plxf_y, ref_epoch, units, system, instrument, band)
+        elif unit_system.get_parameter_dimension("x") == "angle" and unit_system.get_parameter_dimension("y") == "angle":
+            return super().__new__(cls)
+        else:
+            raise ValueError("Units for 'x' and 'y' must either both represent a physical length or both represent a projected angular length.")
+
+    def __init__(self, t, x, y, x_err, y_err, plxf_x=None, plxf_y=None, ref_epoch=None, units: Mapping[str, Any] = None,
+                    system=None, instrument=None, band=None):
+        super().__init__(t, x, y, x_err, y_err, plxf_x, plxf_y, ref_epoch, units, system, instrument, band)
+        if self.unit_system.get_parameter_dimension("x") != "angle" or self.unit_system.get_parameter_dimension("y") != "angle":
+            raise ValueError("Units for 'x' and 'y' must represent an angle.")
+
+        self.x_ang_canonical = self.unit_system.convert_to_canonical("x", self.x)
+        self.y_ang_canonical = self.unit_system.convert_to_canonical("y", self.y)
+        self.x_err_ang_canonical = self.unit_system.convert_to_canonical("x_err", self.x_err)
+        self.y_err_ang_canonical = self.unit_system.convert_to_canonical("y_err", self.y_err)
+
+    # FIXME test chi2 method
     def chi2(self, orbit: Orbit,jitter_x=None,jitter_y=None):
-        x, y = orbit.astrometry(self.t,self.plxf_x,self.plxf_y, system=self.system)
-
+        x_ang, y_ang = orbit.astrometry_ang(self.t_canonical, self.plxf_x, self.plxf_y, system=self.system)
+    
         if jitter_x is not None:
-            total_x_err = np.sqrt(self.x_err**2 + jitter_x**2)
+            total_x_ang_err = np.sqrt(self.x_err_ang_canonical**2 + jitter_x**2)
         else:
-            total_x_err = self.x_err
+            total_x_ang_err = self.x_err_ang_canonical
         if jitter_y is not None:
-            total_y_err = np.sqrt(self.y_err**2 + jitter_y**2)
+            total_y_ang_err = np.sqrt(self.y_err_ang_canonical**2 + jitter_y**2)
         else:
-            total_y_err = self.y_err
-        chi2_x = np.sum(((self.x - x) / total_x_err) ** 2)
-        chi2_y = np.sum(((self.y - y) / total_y_err) ** 2)
+            total_y_ang_err = self.y_err_ang_canonical
+        chi2_x = np.sum(((self.x_ang_canonical - x_ang) / total_x_ang_err) ** 2)
+        chi2_y = np.sum(((self.y_ang_canonical - y_ang) / total_y_ang_err) ** 2)
         return chi2_x + chi2_y
 
-    def log_likelihood(self, orbit: Orbit,offset_names=None):
+    #FIXME test log_likelihood method
+    def log_likelihood(self, orbit: Orbit, offset_names=None):
         flux_name = flux_parameter(self.band)
         flux_ratio = (
             orbit.params[flux_name]
             if flux_name is not None and flux_name in orbit.params
             else None
         )
-        x, y = orbit.astrometry(
-            self.t,
+        x_ang, y_ang = orbit.astrometry_ang(
+            self.t_canonical,
             self.plxf_x,
             self.plxf_y,
             system=self.system,
@@ -142,12 +211,12 @@ class AstrometryData(SystemData):
         offset_names = set() if offset_names is None else set(offset_names)
         if f"astro_{self.instrument}_x_offset" in offset_names:
             x_offset = _orbit_value(orbit, f"astro_{self.instrument}_x_offset", default=0.0)
-            x += x_offset
+            x_ang += x_offset
         if f"astro_{self.instrument}_y_offset" in offset_names:
             y_offset = _orbit_value(orbit, f"astro_{self.instrument}_y_offset", default=0.0)
-            y += y_offset
-        residuals_x = self.x - x
-        residuals_y = self.y - y
+            y_ang += y_offset
+        residuals_x = self.x_ang_canonical - x_ang
+        residuals_y = self.y_ang_canonical - y_ang
 
         jitter_name = (
             'astro_jitter'
@@ -157,29 +226,96 @@ class AstrometryData(SystemData):
 
         jitter = orbit.params.get(jitter_name)
 
-        ln_like_x = _gaussian_log_likelihood(residuals_x,self.x_err,jitter)
-        ln_like_y = _gaussian_log_likelihood(residuals_y,self.y_err,jitter)
+        ln_like_x = _gaussian_log_likelihood(residuals_x,self.x_err_ang_canonical,jitter)
+        ln_like_y = _gaussian_log_likelihood(residuals_y,self.y_err_ang_canonical,jitter)
             
         return ln_like_x + ln_like_y
 
-    def has_astrometry(self) -> bool:
-        return True
+    def _astrometry(self, orbit: Orbit):
+        return self.x_ang_canonical, self.y_ang_canonical
 
-    def has_radial_velocity(self) -> bool:
-        return False
+
+class PhysicalAstrometryData(_AstrometryDataBase):
+    def __init__(self, t, x, y, x_err, y_err, plxf_x=None, plxf_y=None, ref_epoch=None, units: Mapping[str, Any] = None,
+                 system=None, instrument=None, band=None):
+        super().__init__(t, x, y, x_err, y_err, plxf_x, plxf_y, ref_epoch, units, system, instrument, band)
+        if self.unit_system.get_parameter_dimension("x") != "length" or self.unit_system.get_parameter_dimension("y") != "length":
+            raise ValueError("Units for 'x' and 'y' must represent a physical length.")
+
+        self.x_canonical = self.unit_system.convert_to_canonical("x", self.x)
+        self.y_canonical = self.unit_system.convert_to_canonical("y", self.y)
+        self.x_err_canonical = self.unit_system.convert_to_canonical("x_err", self.x_err)
+        self.y_err_canonical = self.unit_system.convert_to_canonical("y_err", self.y_err)
+
+    def chi2(self, orbit: Orbit,jitter_x=None,jitter_y=None):
+        x, y = orbit.astrometry(self.t_canonical, self.plxf_x, self.plxf_y, system=self.system)
+    
+        if jitter_x is not None:
+            total_x_err = np.sqrt(self.x_err_canonical**2 + jitter_x**2)
+        else:
+            total_x_err = self.x_err_canonical
+        if jitter_y is not None:
+            total_y_err = np.sqrt(self.y_err_canonical**2 + jitter_y**2)
+        else:
+            total_y_err = self.y_err_canonical
+        chi2_x = np.sum(((self.x_canonical - x) / total_x_err) ** 2)
+        chi2_y = np.sum(((self.y_canonical - y) / total_y_err) ** 2)
+        return chi2_x + chi2_y
+
+
+    def log_likelihood(self, orbit: Orbit, offset_names=None):
+            flux_name = flux_parameter(self.band)
+            flux_ratio = (
+                orbit.params[flux_name]
+                if flux_name is not None and flux_name in orbit.params
+                else None
+            )
+            x, y = orbit.astrometry(
+                self.t_canonical,
+                self.plxf_x,
+                self.plxf_y,
+                system=self.system,
+                flux_ratio=flux_ratio,
+            )
+            offset_names = set() if offset_names is None else set(offset_names)
+            if f"astro_{self.instrument}_x_offset" in offset_names:
+                x_offset = _orbit_value(orbit, f"astro_{self.instrument}_x_offset", default=0.0)
+                x += x_offset
+            if f"astro_{self.instrument}_y_offset" in offset_names:
+                y_offset = _orbit_value(orbit, f"astro_{self.instrument}_y_offset", default=0.0)
+                y += y_offset
+            residuals_x = self.x_canonical - x
+            residuals_y = self.y_canonical - y
+    
+            jitter_name = (
+                'astro_jitter'
+                if self.instrument is None
+                else f"astro_{self.instrument}_jitter"
+            )
+    
+            jitter = orbit.params.get(jitter_name)
+    
+            ln_like_x = _gaussian_log_likelihood(residuals_x,self.x_err,jitter)
+            ln_like_y = _gaussian_log_likelihood(residuals_y,self.y_err,jitter)
+                
+            return ln_like_x + ln_like_y
 
     def _astrometry(self, orbit: Orbit):
-        return self.x, self.y
-
-    def _radial_velocity(self, orbit: Orbit):
-        raise NotImplementedError
-    
-    def t_series(self):
-        return self.x, self.y,None, self.t
+        return self.x_canonical, self.y_canonical
     
 
 class RadialVelocityData(SystemData):
     def __init__(self, t, rv, rv_err, units: Optional[Mapping[str, Any]] = None, system=None,instrument=None):
+        if units is None:
+            if is_quantity(t) and is_quantity(rv) and is_quantity(rv_err):
+                units = {
+                    "t": t.unit,
+                    "rv": rv.unit,
+                    "rv_err": rv_err.unit,
+                }
+                t = t.value
+                rv = rv.value
+                rv_err = rv_err.value
         super().__init__(system, units)
         required_units = {"t", "rv", "rv_err"}
         missing_units = required_units - self.unit_system.units.keys()
@@ -189,15 +325,20 @@ class RadialVelocityData(SystemData):
             raise ValueError("Unit for 't' must represent time.")
         if self.unit_system.get_parameter_dimension("rv") != "velocity":
             raise ValueError("Unit for 'rv' must represent velocity.")
+        if self.unit_system.get_parameter_dimension("rv_err") != "velocity":
+            raise ValueError("Unit for 'rv_err' must represent velocity.")
 
-        self.t = np.atleast_1d(self.unit_system.convert_to_canonical("t", t))
-        self.rv = np.atleast_1d(self.unit_system.convert_to_canonical("rv", rv))
-        self.rv_err = np.atleast_1d(self.unit_system.convert_to_canonical("rv_err", rv_err))
+        self.t = np.atleast_1d(t)
+        self.rv = np.atleast_1d(rv)
+        self.rv_err = np.atleast_1d(rv_err)
         if self.rv.shape != self.t.shape:
             raise ValueError("rv must have the same shape as t")
         if self.rv_err.shape != self.rv.shape:
             self.rv_err = np.broadcast_to(self.rv_err, self.rv.shape)
-        
+
+        self.t_canonical = self.unit_system.convert_to_canonical("t", self.t)
+        self.rv_canonical = self.unit_system.convert_to_canonical("rv", self.rv)
+        self.rv_err_canonical = self.unit_system.convert_to_canonical("rv_err", self.rv_err) 
         
         self.instrument = instrument
         
@@ -247,8 +388,5 @@ class RadialVelocityData(SystemData):
 
     def _astrometry(self, orbit: Orbit):
         raise NotImplementedError
-    
-    def t_series(self):
-        return None, None,self.rv, self.t
     
     

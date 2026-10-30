@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from periapsis.fitting.results import FitResults, SampledPriors
+from periapsis.fitting.results import FitResults, SampledPriors, ParameterSamples
 from periapsis.prior import Bounds, FixedPrior, UniformPrior
 
 
@@ -90,7 +90,7 @@ def test_fit_results_tracks_sampled_fixed_and_covered_parameters():
 def test_fit_results_getitem_returns_sampled_parameter_array():
     results = make_results()
 
-    assert results["P"] is results.samples["P"]
+    assert results["P"].samples is results.samples["P"]
     np.testing.assert_allclose(results["P"], [2.0, 4.0, 8.0])
 
 
@@ -121,6 +121,7 @@ def test_fit_results_derives_using_sampled_and_fixed_parameters():
         P=np.array([10.0, 20.0]),
         a1=np.array([1.0, 2.0]),
         priors={"M1": FixedPrior(1.0)},
+        canonical_priors={"M1": FixedPrior(1.0)},
     )
 
     assert "M2" in results.covered_params
@@ -173,13 +174,14 @@ def test_sample_priors_returns_sampled_priors_with_requested_configuration():
         param_names=["P"],
         P=np.array([2.0, 4.0]),
         priors={"P": UniformPrior(1.0, 5.0)},
+        canonical_priors={"P": UniformPrior(1.0, 5.0)},
     )
     rng = np.random.RandomState(3)
 
     sampled = results.sample_priors(rng, size=6)
 
     assert isinstance(sampled, SampledPriors)
-    assert sampled.priors is results.priors
+    assert sampled.priors is results.canonical_priors
     assert sampled.param_order == ["P"]
     assert sampled.size == 6
     assert sampled.rng is rng
@@ -324,3 +326,8 @@ def test_sampled_priors_getitem_raises_for_unreachable_parameter():
 
     with pytest.raises(KeyError):
         _ = sampled["e"]
+
+def test_parameter_samples_handles_numpy_behaviors():
+    result = ParameterSamples(np.array([1.0, 2.0, 3.0]), name="x", unit="m")
+    assert np.all(result > 0)
+    assert result.shape == (3,)

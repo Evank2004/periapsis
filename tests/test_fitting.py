@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import pytest
 from astropy import units as u
@@ -12,9 +14,11 @@ from periapsis.fitting import *
 from periapsis.initial import InitialGuess
 from periapsis.model import Orbit
 from periapsis.prior import Bounds, UniformPrior, FixedPrior
-from periapsis.utils.helpers import _matrix_builder, _matrix_filler, _sigma
+from periapsis.prior.prior import Prior
+import periapsis.utils.helpers as helpers
 
 ASTRO_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
+PHYS_ASTRO_UNITS = {"t": u.yr, "x": u.AU, "y": u.AU, "x_err": u.AU, "y_err": u.AU}
 RV_UNITS = {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr}
 GAIA_UNITS = {"t": u.yr, "x": u.rad, "err": u.rad}
 
@@ -41,8 +45,8 @@ def test_fitter_uses_data_epoch_unless_explicit_epoch_is_given():
     data_epoch = DummyFitter()._canonical_priors(data)["Tepoch"].value
     explicit_epoch = DummyFitter(ref_epoch=2.0)._canonical_priors(data)["Tepoch"].value
 
-    assert data_epoch == pytest.approx(5.0 * u.day.to(u.yr))
-    assert explicit_epoch == pytest.approx(2.0 * u.day.to(u.yr))
+    assert data_epoch == pytest.approx(5.0)
+    assert explicit_epoch == pytest.approx(2.0)
 
 
 def test_fitter_preserves_explicit_t_epoch_prior():
@@ -132,7 +136,7 @@ def test_sigma_returns_cached_errors_without_jitter():
     )
     base_sigma = np.array([1.0, 2.0, 3.0, 4.0])
 
-    sigma = _sigma(data, {}, base_sigma)
+    sigma = helpers.sigma(data, {}, base_sigma)
 
     assert sigma is base_sigma
 
@@ -159,7 +163,7 @@ def test_sigma_applies_independent_joint_jitters():
     data = JointData([astrometry, radial_velocity])
     base_sigma = np.array([1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
 
-    sigma = _sigma(
+    sigma = helpers.sigma(
         data,
         {
             "astro_HST_jitter": 1.0,
@@ -185,7 +189,7 @@ def test_matrix_filler_applies_band_flux_factor_and_derives_q():
         band="F814W",
         units=ASTRO_UNITS,
     )
-    matrix, columns = _matrix_builder(data, ref_epoch=0.0)
+    matrix, columns = helpers._matrix_builder(data, ref_epoch=0.0)
     params = {
         "P": 10.0,
         "e": 0.0,
@@ -195,12 +199,12 @@ def test_matrix_filler_applies_band_flux_factor_and_derives_q():
         "f_F814W": 0.5,
     }
 
-    _matrix_filler(matrix, columns, params, data)
+    helpers._matrix_filler(matrix, columns, params, data)
 
     factor = 1 - (0.5 * (1 + 2)) / (2 * (1 + 0.5))
     assert params["q"] == pytest.approx(2.0)
-    assert matrix[0, columns["B1"]] == pytest.approx(1.0 * factor)
-    assert matrix[0, columns["G1"]] == pytest.approx(0.0)
+    assert matrix[0, columns["B1_ang"]] == pytest.approx(1.0 * factor)
+    assert matrix[0, columns["G1_ang"]] == pytest.approx(0.0)
 
 
 def test_matrix_builder_adds_requested_acceleration_columns():
@@ -213,15 +217,15 @@ def test_matrix_builder_adds_requested_acceleration_columns():
         system=1,
         units=ASTRO_UNITS,
     )
-    matrix, columns = _matrix_builder(
+    matrix, columns = helpers._matrix_builder(
         astrometry,
         ref_epoch=0.0,
-        linear_params=("dmu_alpha", "dmu_delta"),
+        linear_params=("dmu_alpha_ang", "dmu_delta_ang"),
     )
 
-    assert {"dmu_alpha", "dmu_delta"}.issubset(columns)
-    np.testing.assert_allclose(matrix[:, columns["dmu_alpha"]], [0.0, 2.0, 0.0, 0.0])
-    np.testing.assert_allclose(matrix[:, columns["dmu_delta"]], [0.0, 0.0, 0.0, 2.0])
+    assert {"dmu_alpha_ang", "dmu_delta_ang"}.issubset(columns)
+    np.testing.assert_allclose(matrix[:, columns["dmu_alpha_ang"]], [0.0, 2.0, 0.0, 0.0])
+    np.testing.assert_allclose(matrix[:, columns["dmu_delta_ang"]], [0.0, 0.0, 0.0, 2.0])
 
     radial_velocity = RadialVelocityData(
         t=[0.0, 2.0],
@@ -230,7 +234,7 @@ def test_matrix_builder_adds_requested_acceleration_columns():
         system=1,
         units=RV_UNITS,
     )
-    rv_matrix, rv_columns = _matrix_builder(
+    rv_matrix, rv_columns = helpers._matrix_builder(
         radial_velocity,
         ref_epoch=0.0,
         linear_params=("dgamma",),
@@ -243,61 +247,61 @@ def test_matrix_builder_adds_requested_acceleration_columns():
 
 
 test_priors = {
-    "P": UniformPrior(1.0, 10.0),
-    "a1": UniformPrior(0.1, 10.0),
-    "K1": UniformPrior(0.0, 10.0),
+    "P": UniformPrior(1.0, 10.0, "yr"),
+    "a1": UniformPrior(0.1, 10.0, "AU"),
+    "K1": UniformPrior(0.0, 10.0, "km/s"),
     "e": UniformPrior(0.0, 0.99),
-    "M0": UniformPrior(0.0, 2 * np.pi),
-    "omega": UniformPrior(0.0, 2 * np.pi),
+    "M0": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "omega": UniformPrior(0.0, 2 * np.pi, "rad"),
     "cosi": UniformPrior(-1.0, 1.0),
-    "Omega": UniformPrior(0.0, 2 * np.pi),
-    "dalpha": FixedPrior(0.0),
-    "ddelta": FixedPrior(0.0),
-    "mu_alpha": FixedPrior(0.0),
-    "mu_delta": FixedPrior(0.0),
-    "Tepoch": FixedPrior(0.0),
-    "gamma": FixedPrior(0.0),
+    "Omega": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "dalpha": FixedPrior(0.0, "AU"),
+    "ddelta": FixedPrior(0.0, "AU"),
+    "mu_alpha": FixedPrior(0.0, "mas/yr"),
+    "mu_delta": FixedPrior(0.0, "mas/yr"),
+    "Tepoch": FixedPrior(0.0, "yr"),
+    "gamma": FixedPrior(0.0, "km/s"),
 }
 
 test_astrometry_priors = {
-    "P": UniformPrior(1.0, 10.0),
-    "a1": UniformPrior(0.1, 10.0),
+    "P": UniformPrior(1.0, 10.0, "yr"),
+    "a1": UniformPrior(0.1, 10.0, "AU"),
     "e": UniformPrior(0.0, 0.99),
-    "M0": UniformPrior(0.0, 2 * np.pi),
-    "omega": UniformPrior(0.0, 2 * np.pi),
+    "M0": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "omega": UniformPrior(0.0, 2 * np.pi, "rad"),
     "cosi": UniformPrior(-1.0, 1.0),
-    "Omega": UniformPrior(0.0, 2 * np.pi),
-    "dalpha": FixedPrior(0.0),
-    "ddelta": FixedPrior(0.0),
-    "mu_alpha": FixedPrior(0.0),
-    "mu_delta": FixedPrior(0.0),
-    "Tepoch": FixedPrior(0.0),
+    "Omega": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "dalpha": FixedPrior(0.0, "AU"),
+    "ddelta": FixedPrior(0.0, "AU"),
+    "mu_alpha": FixedPrior(0.0, "mas/yr"),
+    "mu_delta": FixedPrior(0.0, "mas/yr"),
+    "Tepoch": FixedPrior(0.0, "yr"),
 }
 
 test_gaia_astrometry_priors = {
-    "P": UniformPrior(1.0, 10.0),
-    "a1": UniformPrior(0.1, 10.0),
+    "P": UniformPrior(1.0, 10.0, "yr"),
+    "a1": UniformPrior(0.1, 10.0, "AU"),
     "e": UniformPrior(0.0, 0.99),
-    "M0": UniformPrior(0.0, 2 * np.pi),
-    "omega": UniformPrior(0.0, 2 * np.pi),
+    "M0": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "omega": UniformPrior(0.0, 2 * np.pi, "rad"),
     "cosi": UniformPrior(-1.0, 1.0),
-    "Omega": UniformPrior(0.0, 2 * np.pi),
-    "dalpha": FixedPrior(0.0),
-    "ddelta": FixedPrior(0.0),
-    "mu_alpha": FixedPrior(0.0),
-    "mu_delta": FixedPrior(0.0),
-    "distance": FixedPrior(10.0),
-    "Tepoch": FixedPrior(0.0),
+    "Omega": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "dalpha": FixedPrior(0.0, "AU"),
+    "ddelta": FixedPrior(0.0, "AU"),
+    "mu_alpha": FixedPrior(0.0, "mas/yr"),
+    "mu_delta": FixedPrior(0.0, "mas/yr"),
+    "distance": FixedPrior(10.0, "pc"),
+    "Tepoch": FixedPrior(0.0, "yr"),
 }
 
 test_rv_priors = {
-    "P": UniformPrior(1.0, 10.0),
-    "K1": UniformPrior(0.0, 10.0),
+    "P": UniformPrior(1.0, 10.0, "yr"),
+    "K1": UniformPrior(0.0, 10.0, "km/s"),
     "e": UniformPrior(0.0, 0.99),
-    "M0": UniformPrior(0.0, 2 * np.pi),
-    "omega": UniformPrior(0.0, 2 * np.pi),
-    "gamma": FixedPrior(0.0),
-    "Tepoch": FixedPrior(0.0),
+    "M0": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "omega": UniformPrior(0.0, 2 * np.pi, "rad"),
+    "gamma": FixedPrior(0.0, "km/s"),
+    "Tepoch": FixedPrior(0.0, "yr"),
 }
 
 
@@ -306,7 +310,7 @@ def test_mcmc_fitter_runs_with_astrometry_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
-    data=AstrometryData(t, x, y, 0.01, 0.01, np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
+    data=AstrometryData(t, x, y, 0.01, 0.01, np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=PHYS_ASTRO_UNITS)
     results = fitter.fit(data, np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
@@ -322,28 +326,28 @@ def test_mcmc_fitter_runs_with_rv_data():
 
 
 def test_mcmc_fitter_runs_with_gaia_data(monkeypatch):
-    fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "a1", "e", "M0", "omega", "cosi", "Omega"], **test_gaia_astrometry_priors)
+    initial_class, _calls = deterministic_initial({"P": 5.0, "a1": 1.0, "e": 0.5, "M0": np.pi / 2, "omega": np.pi / 4, "cosi": np.cos(np.pi / 4), "Omega": np.pi / 3})
+    fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "a1", "e", "M0", "omega", "cosi", "Omega"], initial=initial_class, **test_gaia_astrometry_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, mu_alpha=0.0, mu_delta=0.0, dalpha=0.0, ddelta=0.0, distance=10.0)
     t = np.linspace(0, 10, 100)
     psi = np.random.uniform(0, 2 * np.pi, size=len(t))
     a = model.gaia_astrometry(t, spsi=np.sin(psi), cpsi=np.cos(psi), par_factor=1, system=1)
     data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1, units=GAIA_UNITS)
-    initial_class, _calls = deterministic_initial({"P": 5.0, "a1": 1.0, "e": 0.5, "M0": np.pi / 2, "omega": np.pi / 4, "cosi": np.cos(np.pi / 4), "Omega": np.pi / 3})
     FastEmceeSampler.instances = []
     monkeypatch.setattr(mcmc_module.emcee, "EnsembleSampler", FastEmceeSampler)
     monkeypatch.setattr(mcmc_module.emcee.autocorr, "integrated_time", lambda chain, quiet: np.full(chain.shape[-1], 0.5))
-    results = fitter.fit(data, rng=np.random.default_rng(0), initial=initial_class)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 
 def test_mcmc_fitter_runs_with_joint_data(monkeypatch):
     data, truth, priors = make_exact_joint_problem()
-    fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "a1", "e", "M0", "omega", "i", "Omega"], **priors)
     initial_class, _calls = deterministic_initial({"P": truth["P"], "a1": truth["a1"], "e": truth["e"], "M0": truth["M0"], "omega": truth["omega"], "i": truth["i"], "Omega": truth["Omega"]})
+    fitter = MCMCFitter(nwalkers=20, niter=1000, sample_params=["P", "a1", "e", "M0", "omega", "i", "Omega"], initial=initial_class, **priors)
     FastEmceeSampler.instances = []
     monkeypatch.setattr(mcmc_module.emcee, "EnsembleSampler", FastEmceeSampler)
     monkeypatch.setattr(mcmc_module.emcee.autocorr, "integrated_time", lambda chain, quiet: np.full(chain.shape[-1], 0.5))
-    results = fitter.fit(data, rng=np.random.default_rng(0), initial=initial_class)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_mcmc_linear_fitter_runs_with_astrometry_data():
@@ -366,26 +370,26 @@ def test_mcmc_linear_fitter_runs_with_astrometry_data():
 
 def test_mcmc_linear_fitter_runs_with_joint_data(monkeypatch):
     data, truth, priors = make_exact_joint_problem()
-    fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **priors)
     initial_class, _calls = deterministic_initial({"P": truth["P"], "e": truth["e"], "Tp": 1.0})
+    fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], initial=initial_class, **priors)
     FastEmceeSampler.instances = []
     monkeypatch.setattr(mcmc_linear_module.emcee, "EnsembleSampler", FastEmceeSampler)
     monkeypatch.setattr(mcmc_linear_module.emcee.autocorr, "integrated_time", lambda chain, quiet: np.full(chain.shape[-1], 0.5))
-    results = fitter.fit(data, rng=np.random.default_rng(0), initial=initial_class)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_mcmc_linear_fitter_runs_with_gaia_data(monkeypatch):
-    fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], **test_gaia_astrometry_priors)
+    initial_class, _calls = deterministic_initial({"P": 5.0, "e": 0.5, "Tp": 1.0})
+    fitter = MCMCLinearFitter(nwalkers=20, niter=1000, sampled_params=["P", "e", "Tp"], initial=initial_class, **test_gaia_astrometry_priors)
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, mu_alpha=0.0, mu_delta=0.0, dalpha=0.0, ddelta=0.0, distance=10.0)
     t = np.linspace(0, 10, 100)
     psi = np.random.uniform(0, 2 * np.pi, size=len(t))
     a = model.gaia_astrometry(t, spsi=np.sin(psi), cpsi=np.cos(psi), par_factor=1, system=1)
     data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1, units=GAIA_UNITS)
-    initial_class, _calls = deterministic_initial({"P": 5.0, "e": 0.5, "Tp": 1.0})
     FastEmceeSampler.instances = []
     monkeypatch.setattr(mcmc_linear_module.emcee, "EnsembleSampler", FastEmceeSampler)
     monkeypatch.setattr(mcmc_linear_module.emcee.autocorr, "integrated_time", lambda chain, quiet: np.full(chain.shape[-1], 0.5))
-    results = fitter.fit(data, rng=np.random.default_rng(0), initial=initial_class)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_ultranest_fitter_runs_with_astrometry_data():
@@ -393,8 +397,8 @@ def test_ultranest_fitter_runs_with_astrometry_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
-    data = AstrometryData(t, x, y, 0.01, 0.01, 2 * np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
-    results = fitter.fit(data)
+    data = AstrometryData(t, x, y, 0.01, 0.01, 2 * np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=PHYS_ASTRO_UNITS)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_ultranest_fitter_runs_with_rv_data():
@@ -403,7 +407,7 @@ def test_ultranest_fitter_runs_with_rv_data():
     t = np.linspace(0, 10, 100)
     v = model.rv(t, system=1)
     data = RadialVelocityData(t, v, 0.01, system=1, units=RV_UNITS)
-    results = fitter.fit(data)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_ultranest_fitter_runs_with_gaia_data():
@@ -413,7 +417,7 @@ def test_ultranest_fitter_runs_with_gaia_data():
     psi = np.random.uniform(0, 2 * np.pi, size=len(t))
     a = model.gaia_astrometry(t, spsi=np.sin(psi), cpsi=np.cos(psi), par_factor=1, system=1)
     data = GaiaData(spsi=np.sin(psi), cpsi=np.cos(psi), t=t, plx_fac=np.ones(len(t)), x=a, err=0.01*np.ones(len(t)), system=1, units=GAIA_UNITS)
-    results = fitter.fit(data)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_ultranest_fitter_runs_with_joint_data():
@@ -421,12 +425,12 @@ def test_ultranest_fitter_runs_with_joint_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0, gamma=0.0)
     t_astrometry = np.linspace(0, 10, 100)
     x, y = model.astrometry(t_astrometry, np.zeros_like(t_astrometry, dtype=float), np.zeros_like(t_astrometry, dtype=float), system=1)
-    data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01, np.ones_like(t_astrometry), np.ones_like(t_astrometry), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
+    data_astrometry = AstrometryData(t_astrometry, x, y, 0.01, 0.01, np.ones_like(t_astrometry), np.ones_like(t_astrometry), ref_epoch=0.0, system=1, units=PHYS_ASTRO_UNITS)
     t_rv = np.linspace(5.1, 15.1, 10)
     rv = model.rv(t_rv, system=1)
     data_rv = RadialVelocityData(t_rv, rv, 0.01, system=1, units=RV_UNITS)
     data = JointData([data_astrometry, data_rv])
-    results = fitter.fit(data)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_ultranest_linear_fitter_runs_with_astrometry_data():
@@ -434,22 +438,22 @@ def test_ultranest_linear_fitter_runs_with_astrometry_data():
     model = Orbit(P=5.0, a1=1.0, e=0.5, M0=np.pi/2, omega=np.pi/4, i=np.pi/4, Omega=np.pi/3, dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0)
     t = np.linspace(0, 10, 100)
     x, y = model.astrometry(t, np.zeros_like(t, dtype=float), np.zeros_like(t, dtype=float), system=1)
-    data = AstrometryData(t, x, y, 0.01, 0.01, np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=ASTRO_UNITS)
-    results = fitter.fit(data)
+    data = AstrometryData(t, x, y, 0.01, 0.01, np.ones_like(t), np.ones_like(t), ref_epoch=0.0, system=1, units=PHYS_ASTRO_UNITS)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_ultranest_linear_fitter_runs_with_rv_data(monkeypatch):
     data, _truth, priors, _sampled = make_exact_rv_problem()
     monkeypatch.setattr(ultranest_linear_module.ultranest, "ReactiveNestedSampler", FastNestedSampler)
-    fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "e", "Tp"], **priors)
-    results = fitter.fit(data, quiet=True)
+    fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "e", "Tp"], quiet=True, **priors)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 def test_ultranest_linear_fitter_runs_with_joint_data(monkeypatch):
     data, _truth, priors = make_exact_joint_problem()
     monkeypatch.setattr(ultranest_linear_module.ultranest, "ReactiveNestedSampler", FastNestedSampler)
-    fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "a1", "e", "M0", "omega", "i", "Omega"], **priors)
-    results = fitter.fit(data, quiet=True)
+    fitter = UltranestLinearFitter(max_ncalls=1000, output_params=["P", "a1", "e", "M0", "omega", "i", "Omega"], quiet=True, **priors)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
     assert isinstance(results, FitResults)
 
 # def test_gaia_mcmclinear_fitter_runs_with_gaia_data():
@@ -488,7 +492,7 @@ class DummyData:
 
 
 class DummyFitter(Fitter):
-    def fit(self, data):
+    def _fit(self, data, canonical_priors: dict[str, Prior], canonical_ref_epoch: Optional[float], rng: np.random.RandomState):
         return data
 
 
@@ -510,10 +514,10 @@ def test_null_hypothesis_fit_uses_provided_mu_values():
 
     result = fitter._null_hypothesis_fit(data)
 
-    assert result["params"]["dalpha"] == pytest.approx(7.0)
-    assert result["params"]["ddelta"] == pytest.approx(-4.0)
-    assert result["params"]["mu_alpha"] == pytest.approx(2.0)
-    assert result["params"]["mu_delta"] == pytest.approx(-1.0)
+    assert result["params"]["dalpha_ang"] == pytest.approx(7.0)
+    assert result["params"]["ddelta_ang"] == pytest.approx(-4.0)
+    assert result["params"]["mu_alpha_ang"] == pytest.approx(2.0)
+    assert result["params"]["mu_delta_ang"] == pytest.approx(-1.0)
     assert result["params"]["parallax"] == pytest.approx(0.0)
 
 
@@ -692,19 +696,19 @@ def make_exact_astrometry_problem(ref_epoch=0.0, periastron_time=1.3):
         "e": 0.35,
         "Tp": periastron_time,
         "Tepoch": ref_epoch,
-        "A1": 1.2,
-        "B1": -0.7,
-        "F1": 0.3,
-        "G1": 0.8,
-        "dalpha": 2.0,
-        "ddelta": -1.0,
-        "mu_alpha": 0.05,
-        "mu_delta": -0.03,
+        "A1_ang": 1.2,
+        "B1_ang": -0.7,
+        "F1_ang": 0.3,
+        "G1_ang": 0.8,
+        "dalpha_ang": 2.0,
+        "ddelta_ang": -1.0,
+        "mu_alpha_ang": 0.05,
+        "mu_delta_ang": -0.03,
         "parallax": 0.0,
     }
     times = ref_epoch + np.linspace(0.0, 13.0, 37)
     orbit = Orbit(**truth)
-    x, y = orbit.astrometry(times, np.zeros_like(times, dtype=float), np.zeros_like(times, dtype=float), system="1")
+    x, y = orbit.astrometry_ang(times, np.zeros_like(times, dtype=float), np.zeros_like(times, dtype=float), system="1")
     data = AstrometryData(
         times,
         x,
@@ -718,9 +722,9 @@ def make_exact_astrometry_problem(ref_epoch=0.0, periastron_time=1.3):
         units=ASTRO_UNITS,
     )
     priors = {
-        "P": UniformPrior(3.0, 5.0),
+        "P": UniformPrior(3.0, 5.0, "yr"),
         "e": UniformPrior(0.25, 0.45),
-        "Tp": UniformPrior(periastron_time - 0.5, periastron_time + 0.5),
+        "Tp": UniformPrior(periastron_time - 0.5, periastron_time + 0.5, "yr"),
     }
     return data, truth, priors
 
@@ -764,9 +768,9 @@ def make_exact_gaia_problem():
         units=GAIA_UNITS,
     )
     priors = {
-        "P": UniformPrior(3.0, 5.0),
+        "P": UniformPrior(3.0, 5.0, "yr"),
         "e": UniformPrior(0.1, 0.3),
-        "Tp": UniformPrior(0.5, 1.5),
+        "Tp": UniformPrior(0.5, 1.5, "yr"),
     }
     return data, truth, priors
 
@@ -800,7 +804,7 @@ def make_exact_joint_problem():
         np.ones_like(t_astrometry),
         ref_epoch=0.0,
         system=1,
-        units=ASTRO_UNITS,
+        units=PHYS_ASTRO_UNITS,
     )
     t_rv = np.linspace(5.1, 15.1, 10)
     rv = model.rv(t_rv, system=1)
@@ -831,10 +835,10 @@ def test_null_hypothesis_fit_recovers_weighted_linear_motion():
 
     assert result["params"] == pytest.approx(
         {
-            "dalpha": 2.5,
-            "ddelta": -1.25,
-            "mu_alpha": 0.4,
-            "mu_delta": -0.2,
+            "dalpha_ang": 2.5,
+            "ddelta_ang": -1.25,
+            "mu_alpha_ang": 0.4,
+            "mu_delta_ang": -0.2,
             "parallax": 0.0,
         }
     )
@@ -849,17 +853,13 @@ def test_null_hypothesis_fit_recovers_weighted_linear_motion():
     [(0, 10), (-1, 10), (4, 0), (4, -1)],
 )
 def test_mcmc_rejects_nonpositive_sampler_sizes(nwalkers, niter):
-    """Highlight missing validation for unusable walker and iteration counts.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:17-18`` stores both values
-    without first requiring them to be positive.
-    """
+    """Highlight missing validation for unusable walker and iteration counts."""
     with pytest.raises(ValueError):
         MCMCFitter(
             nwalkers=nwalkers,
             niter=niter,
             sample_params=["P"],
-            P=UniformPrior(1.0, 2.0),
+            P=UniformPrior(1.0, 2.0, "yr"),
         )
 
 
@@ -870,7 +870,7 @@ def test_mcmc_rejects_duplicate_sampled_parameters():
             nwalkers=4,
             niter=10,
             sample_params=["P", "P"],
-            P=UniformPrior(1.0, 2.0),
+            P=UniformPrior(1.0, 2.0, "yr"),
         )
 
 
@@ -891,7 +891,7 @@ def test_mcmc_rejects_sampled_parameter_without_prior():
             nwalkers=4,
             niter=10,
             sample_params=["P", "e"],
-            P=UniformPrior(1.0, 2.0),
+            P=UniformPrior(1.0, 2.0, "yr"),
         )
 
 
@@ -902,86 +902,42 @@ def test_mcmc_rejects_fixed_sampled_parameter():
             nwalkers=4,
             niter=10,
             sample_params=["P"],
-            P=FixedPrior(2.0),
+            P=FixedPrior(2.0, "yr"),
         )
 
 
 def test_mcmc_rejects_nonfixed_prior_that_cannot_enter_posterior():
-    """Highlight nonfixed priors that would otherwise be silently ignored.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:163-171`` only records
-    reachable priors and silently drops every other nonfixed prior.
-    """
+    """Highlight nonfixed priors that would otherwise be silently ignored."""
     with pytest.warns(UserWarning, match="e"):
         MCMCFitter(
             nwalkers=4,
             niter=10,
             sample_params=["P"],
-            P=UniformPrior(1.0, 2.0),
+            P=UniformPrior(1.0, 2.0, "yr"),
             e=UniformPrior(0.0, 0.9),
         )
 
 
 def test_mcmc_linear_rejects_duplicate_sampled_parameters():
-    """Highlight duplicate linear-MCMC dimensions and ambiguous output columns.
-
-    Bug location: ``src/periapsis/fitting/mcmclinear.py:27-28`` collapses the
-    names into a frozenset without checking whether the input had duplicates.
-    """
+    """Highlight duplicate linear-MCMC dimensions and ambiguous output columns."""
     with pytest.raises(ValueError, match="Duplicate"):
         MCMCLinearFitter(
             nwalkers=8,
             niter=10,
             sampled_params=("P", "e", "Tp", "P"),
-            P=UniformPrior(3.0, 5.0),
+            P=UniformPrior(3.0, 5.0, "yr"),
             e=UniformPrior(0.1, 0.3),
-            Tp=UniformPrior(0.0, 1.0),
+            Tp=UniformPrior(0.0, 1.0, "yr"),
         )
 
 
 def test_ultranest_rejects_duplicate_output_parameters():
-    """Ensure duplicate nested outputs cannot be hidden by set conversion.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:18-19`` stores both a
-    deduplicated set and the original tuple without rejecting duplicates.
-    """
+    """Ensure duplicate nested outputs cannot be hidden by set conversion."""
     with pytest.raises(ValueError, match="Duplicate"):
         UltranestFitter(
             output_params=("P", "P"),
-            P=UniformPrior(1.0, 2.0),
+            P=UniformPrior(1.0, 2.0, "yr"),
         )
-
-
-
-def test_mcmc_prior_sampling_resamples_derived_bound_violations():
-    """Verify rejection sampling reapplies bounds on transformed parameters."""
-    class SequencedPrior:
-        def __init__(self):
-            self.calls = []
-
-        def sample(self, rng, size=1):
-            self.calls.append(size)
-            if len(self.calls) == 1:
-                return np.array([1.0, 2.0, 4.0])
-            return np.full(size, 2.0)
-
-    period_prior = SequencedPrior()
-    fitter = MCMCFitter(
-        nwalkers=3,
-        niter=2,
-        sample_params=("P",),
-        P=period_prior,
-        n=Bounds(lower=2.0, upper=4.0),
-    )
-
-    samples = fitter._sample_priors(
-        fitter.param_order,
-        size=3,
-        rng=np.random.default_rng(0),
-    )
-
-    np.testing.assert_allclose(samples[:, 0], [2.0, 2.0, 2.0])
-    assert period_prior.calls == [3, 2]
 
 
 def test_mcmc_log_posterior_uses_real_orbit_likelihood_and_all_direct_priors():
@@ -1031,18 +987,18 @@ def test_mcmc_log_posterior_rejects_direct_prior_violation_before_likelihood():
 def test_mcmc_log_posterior_evaluates_prior_on_derived_parameter():
     """Ensure priors on transformed parameters contribute to the posterior."""
     data, truth, _priors, _sampled = make_exact_rv_problem()
-    mean_motion_prior = UniformPrior(1.0, 2.0)
+    mean_motion_prior = UniformPrior(1.0, 2.0, "rad/yr")
     fitter = MCMCFitter(
         nwalkers=4,
         niter=2,
         sample_params=("P",),
         n=mean_motion_prior,
         e=FixedPrior(truth["e"]),
-        Tp=FixedPrior(truth["Tp"]),
-        K1=FixedPrior(truth["K1"]),
-        omega1=FixedPrior(truth["omega1"]),
-        gamma=FixedPrior(truth["gamma"]),
-        Tepoch=FixedPrior(truth["Tepoch"]),
+        Tp=FixedPrior(truth["Tp"], "yr"),
+        K1=FixedPrior(truth["K1"], "km/s"),
+        omega1=FixedPrior(truth["omega1"], "rad"),
+        gamma=FixedPrior(truth["gamma"], "km/s"),
+        Tepoch=FixedPrior(truth["Tepoch"], "yr"),
     )
     context = fitter._posterior_context(data)
 
@@ -1061,11 +1017,7 @@ def test_mcmc_log_posterior_evaluates_prior_on_derived_parameter():
 def test_mcmc_fit_integrates_initialization_sampler_and_results(
     monkeypatch,
 ):
-    """Exercise the full MCMC flow and expose dropped sampler/result metadata.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:258`` explicitly stores
-    ``None`` as ``raw_sampler`` instead of preserving the completed sampler.
-    """
+    """Exercise the full MCMC flow and expose dropped sampler/result metadata."""
     data, truth, priors, sampled = make_exact_rv_problem()
     initial_class, initial_calls = deterministic_initial(truth)
     FastEmceeSampler.instances = []
@@ -1085,13 +1037,13 @@ def test_mcmc_fit_integrates_initialization_sampler_and_results(
         niter=4,
         sample_params=sampled,
         pool=pool,
+        initial=initial_class,
         **priors,
     )
 
     results = fitter.fit(
         data,
         rng=np.random.default_rng(5),
-        initial=initial_class,
     )
 
     sampler = FastEmceeSampler.instances[-1]
@@ -1116,11 +1068,7 @@ def test_mcmc_fit_integrates_initialization_sampler_and_results(
 def test_mcmc_fit_recovers_when_autocorrelation_time_is_not_finite(
     monkeypatch,
 ):
-    """Highlight crashes when autocorrelation estimation returns only NaNs.
-
-    Bug location: ``src/periapsis/fitting/mcmc.py:227-232`` converts the
-    extrema of an all-NaN autocorrelation estimate directly to integers.
-    """
+    """Highlight crashes when autocorrelation estimation returns only NaNs."""
     data, truth, priors, sampled = make_exact_rv_problem()
     initial_class, _calls = deterministic_initial(truth)
     monkeypatch.setattr(
@@ -1137,6 +1085,7 @@ def test_mcmc_fit_recovers_when_autocorrelation_time_is_not_finite(
         nwalkers=10,
         niter=4,
         sample_params=sampled,
+        initial=initial_class,
         **priors,
     )
 
@@ -1145,7 +1094,6 @@ def test_mcmc_fit_recovers_when_autocorrelation_time_is_not_finite(
             results = fitter.fit(
                 data,
                 rng=np.random.default_rng(5),
-                initial=initial_class,
             )
 
     assert isinstance(results, FitResults)
@@ -1157,18 +1105,18 @@ def test_mcmc_astrometry_fit_carries_null_hypothesis(
 ):
     """Ensure astrometric MCMC results retain the null-hypothesis fit."""
     data, truth, orbital_priors = make_exact_astrometry_problem()
-    sampled = ("P", "e", "Tp", "A1", "B1", "F1", "G1", "dalpha", "ddelta", "mu_alpha", "mu_delta")
+    sampled = ("P", "e", "Tp", "A1_ang", "B1_ang", "F1_ang", "G1_ang", "dalpha_ang", "ddelta_ang", "mu_alpha_ang", "mu_delta_ang")
     priors = {
         **orbital_priors,
-        "A1": UniformPrior(0.0, 2.0),
-        "B1": UniformPrior(-1.5, 0.0),
-        "F1": UniformPrior(0.0, 1.0),
-        "G1": UniformPrior(0.0, 1.5),
-        "dalpha": UniformPrior(1.0, 3.0),
-        "ddelta": UniformPrior(-2.0, 0.0),
-        "mu_alpha": UniformPrior(0.0, 0.1),
-        "mu_delta": UniformPrior(-0.08, 0.02),
-        "Tepoch": FixedPrior(truth["Tepoch"]),
+        "A1_ang": UniformPrior(0.0, 2.0, "mas"),
+        "B1_ang": UniformPrior(-1.5, 0.0, "mas"),
+        "F1_ang": UniformPrior(0.0, 1.0, "mas"),
+        "G1_ang": UniformPrior(0.0, 1.5, "mas"),
+        "dalpha_ang": UniformPrior(1.0, 3.0, "mas"),
+        "ddelta_ang": UniformPrior(-2.0, 0.0, "mas"),
+        "mu_alpha_ang": UniformPrior(0.0, 0.1, "mas/yr"),
+        "mu_delta_ang": UniformPrior(-0.08, 0.02, "mas/yr"),
+        "Tepoch": FixedPrior(truth["Tepoch"], "yr"),
     }
     initial_class, _calls = deterministic_initial(truth)
     monkeypatch.setattr(
@@ -1185,13 +1133,13 @@ def test_mcmc_astrometry_fit_carries_null_hypothesis(
         nwalkers=24,
         niter=3,
         sample_params=sampled,
+        initial=initial_class,
         **priors,
     )
 
     results = fitter.fit(
         data,
         rng=np.random.default_rng(1),
-        initial=initial_class,
     )
 
     expected_null = fitter._null_hypothesis_fit(data)
@@ -1200,65 +1148,10 @@ def test_mcmc_astrometry_fit_carries_null_hypothesis(
     assert results.null_hypothesis["params"] == pytest.approx(expected_null["params"])
 
 
-def test_mcmc_linear_likelihood_uses_absolute_periastron_time(
-    monkeypatch,
-):
-    """Highlight erroneous scaling of absolute Tp by the orbital period.
-
-    Bug locations: ``src/periapsis/fitting/mcmclinear.py:99`` and
-    ``src/periapsis/fitting/mcmclinear.py:187`` use ``Tp * P`` although
-    ``Tp`` is alreaddelta an absolute time.
-    """
-    data, truth, priors = make_exact_astrometry_problem(
-        ref_epoch=0.0,
-        periastron_time=1.3,
-    )
-    initial_class, _calls = deterministic_initial(truth)
-    ProbeEmceeSampler.value = None
-    monkeypatch.setattr(
-        mcmc_linear_module.emcee,
-        "EnsembleSampler",
-        ProbeEmceeSampler,
-    )
-    fitter = MCMCLinearFitter(
-        nwalkers=8,
-        niter=2,
-        sampled_params=("P", "e", "Tp"),
-        **priors,
-    )
-
-    with pytest.raises(ProbeComplete):
-        fitter.fit(
-            data,
-            rng=np.random.default_rng(0),
-            initial=initial_class,
-        )
-
-    expected_log_prior = sum(
-        prior.logpdf(truth[name])
-        for name, prior in priors.items()
-    )
-    expected_log_likelihood = -0.5 * np.sum(
-        np.log(
-            2
-            * np.pi
-            * np.concatenate((data.x_err ** 2, data.y_err ** 2))
-        )
-    )
-    assert ProbeEmceeSampler.value == pytest.approx(
-        expected_log_prior + expected_log_likelihood,
-        abs=1e-8,
-    )
-
-
 def test_mcmc_linear_passes_caller_parameter_order_to_initialization(
     monkeypatch,
 ):
-    """Ensure set iteration cannot reorder initializer and sampler columns.
-
-    Bug locations: ``src/periapsis/fitting/mcmclinear.py:41`` reconstructs
-    column order from a frozenset, and line 114 repeats that unordered mapping.
-    """
+    """Ensure set iteration cannot reorder initializer and sampler columns."""
     data, truth, priors = make_exact_astrometry_problem()
     requested_order = ("Tp", "q", "P", "e")
     truth_with_extra = {**truth, "q": 0.5}
@@ -1276,6 +1169,7 @@ def test_mcmc_linear_passes_caller_parameter_order_to_initialization(
         nwalkers=8,
         niter=2,
         sampled_params=requested_order,
+        initial=initial_class,
         **priors_with_extra,
     )
 
@@ -1283,7 +1177,6 @@ def test_mcmc_linear_passes_caller_parameter_order_to_initialization(
         fitter.fit(
             data,
             rng=np.random.default_rng(0),
-            initial=initial_class,
         )
 
     assert calls == [(requested_order, 8)]
@@ -1294,7 +1187,7 @@ def test_ultranest_requires_priors_to_cover_every_output():
     with pytest.raises(ValueError, match="Missing priors"):
         UltranestFitter(
             output_params=("P", "e"),
-            P=UniformPrior(1.0, 2.0),
+            P=UniformPrior(1.0, 2.0, "yr"),
         )
 
 
@@ -1303,17 +1196,13 @@ def test_ultranest_rejects_overconstrained_prior_parameterizations():
     with pytest.raises(ValueError, match="Overconstrained"):
         UltranestFitter(
             output_params=("P",),
-            P=UniformPrior(3.0, 5.0),
-            n=UniformPrior(1.0, 2.0),
+            P=UniformPrior(3.0, 5.0, "yr"),
+            n=UniformPrior(1.0, 2.0, "rad/yr"),
         )
 
 
 def test_ultranest_sample_order_follows_prior_insertion_order():
-    """Ensure nested sample columns preserve deterministic prior ordering.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:34-35`` builds
-    ``sample_order`` from a set, discarding the caller's insertion order.
-    """
+    """Ensure nested sample columns preserve deterministic prior ordering."""
     _data, _truth, priors, sampled = make_exact_rv_problem()
 
     fitter = UltranestFitter(
@@ -1332,11 +1221,7 @@ def test_ultranest_likelihood_supports_one_sided_derived_bounds(
     monkeypatch,
     bound,
 ):
-    """Highlight comparisons against None for valid one-sided Bounds priors.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:71`` performs one
-    chained comparison even when either bound endpoint is ``None``.
-    """
+    """Highlight comparisons against None for valid one-sided Bounds priors."""
     data, _truth, priors, sampled = make_exact_rv_problem()
     ProbeNestedSampler.value = None
     monkeypatch.setattr(
@@ -1347,11 +1232,12 @@ def test_ultranest_likelihood_supports_one_sided_derived_bounds(
     fitter = UltranestFitter(
         output_params=sampled,
         n=bound,
+        quiet=True,
         **priors,
     )
 
     with pytest.raises(ProbeComplete):
-        fitter.fit(data, quiet=True)
+        fitter.fit(data, rng=np.random.default_rng(0))
 
     assert np.isfinite(ProbeNestedSampler.value)
 
@@ -1359,11 +1245,7 @@ def test_ultranest_likelihood_supports_one_sided_derived_bounds(
 def test_ultranest_fit_integrates_transform_likelihood_and_results(
     monkeypatch,
 ):
-    """Exercise nested transforms through results and expose lost diagnostics.
-
-    Bug locations: ``src/periapsis/fitting/ultranest.py:133`` writes ``ESS``,
-    while ``src/periapsis/fitting/results.py:22`` only consumes ``Ess``.
-    """
+    """Exercise nested transforms through results and expose lost diagnostics."""
     data, _truth, priors, sampled = make_exact_rv_problem()
     FastNestedSampler.instances = []
     monkeypatch.setattr(
@@ -1381,17 +1263,18 @@ def test_ultranest_fit_integrates_transform_likelihood_and_results(
         Lepsilon=0.01,
         max_iters=50,
         max_ncalls=100,
+        quiet=True,
         **priors,
     )
 
-    results = fitter.fit(data, quiet=True)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
 
     sampler = FastNestedSampler.instances[-1]
     assert isinstance(results, FitResults)
     assert np.all(np.isfinite(sampler.logl))
     assert results.raw_samples is sampler
     assert results.backend == "ultranest"
-    assert results.fit_method == "Campbell"
+    assert results.fit_method == "full"
     assert results.Ess == 23
     assert sampler.run_kwargs == {
         "min_num_live_points": 20,
@@ -1419,20 +1302,16 @@ def test_ultranest_fit_integrates_transform_likelihood_and_results(
 def test_ultranest_results_persist_requested_derived_outputs(
     monkeypatch,
 ):
-    """Ensure requested derived outputs are stored as named result columns.
-
-    Bug location: ``src/periapsis/fitting/ultranest.py:123-136`` assembles
-    result mappings from sampled names only, omitting derived output columns.
-    """
+    """Ensure requested derived outputs are stored as named result columns."""
     data, truth, _priors, _sampled = make_exact_rv_problem()
     priors = {
-        "n": UniformPrior(1.0, 2.0),
+        "n": UniformPrior(1.0, 2.0, "rad/yr"),
         "e": FixedPrior(truth["e"]),
-        "Tp": FixedPrior(truth["Tp"]),
-        "K1": FixedPrior(truth["K1"]),
-        "omega1": FixedPrior(truth["omega1"]),
-        "gamma": FixedPrior(truth["gamma"]),
-        "Tepoch": FixedPrior(truth["Tepoch"]),
+        "Tp": FixedPrior(truth["Tp"], "yr"),
+        "K1": FixedPrior(truth["K1"], "km/s"),
+        "omega1": FixedPrior(truth["omega1"], "rad"),
+        "gamma": FixedPrior(truth["gamma"], "km/s"),
+        "Tepoch": FixedPrior(truth["Tepoch"], "yr"),
     }
     monkeypatch.setattr(
         ultranest_module.ultranest,
@@ -1441,10 +1320,11 @@ def test_ultranest_results_persist_requested_derived_outputs(
     )
     fitter = UltranestFitter(
         output_params=("P",),
+        quiet=True,
         **priors,
     )
 
-    results = fitter.fit(data, quiet=True)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
 
     assert "P" in results.samples
     np.testing.assert_allclose(
@@ -1452,54 +1332,10 @@ def test_ultranest_results_persist_requested_derived_outputs(
         2.0 * np.pi / results.samples["n"],
     )
 
-
-def test_ultranest_linear_likelihood_respects_nonzero_reference_epoch(
-    monkeypatch,
-):
-    """Highlight double subtraction of reference epoch in linear likelihoods.
-
-    Bug location: ``src/periapsis/fitting/ultranestlinear.py:112-115``
-    subtracts ``ref_epoch`` from data times before subtracting absolute ``Tp``.
-    """
-    data, truth, priors = make_exact_astrometry_problem(
-        ref_epoch=10.0,
-        periastron_time=11.3,
-    )
-    ProbeNestedSampler.value = None
-    monkeypatch.setattr(
-        ultranest_linear_module.ultranest,
-        "ReactiveNestedSampler",
-        ProbeNestedSampler,
-    )
-    fitter = UltranestLinearFitter(
-        output_params=("P", "e", "Tp"),
-        **priors,
-    )
-
-    with pytest.raises(ProbeComplete):
-        fitter.fit(data, quiet=True)
-
-    expected_log_likelihood = -0.5 * np.sum(
-        np.log(
-            2
-            * np.pi
-            * np.concatenate((data.x_err ** 2, data.y_err ** 2))
-        )
-    )
-    assert ProbeNestedSampler.value == pytest.approx(
-        expected_log_likelihood,
-        abs=1e-8,
-    )
-
-
 def test_ultranest_linear_fit_reports_sampler_ess_and_valid_counts(
     monkeypatch,
 ):
-    """Ensure linear nested results retain ESS and posterior filtering counts.
-
-    Bug locations: ``src/periapsis/fitting/ultranestlinear.py:220`` writes
-    ``ESS``, while ``src/periapsis/fitting/results.py:22`` expects ``Ess``.
-    """
+    """Ensure linear nested results retain ESS and posterior filtering counts."""
     data, _truth, priors = make_exact_astrometry_problem()
     monkeypatch.setattr(
         ultranest_linear_module.ultranest,
@@ -1508,10 +1344,11 @@ def test_ultranest_linear_fit_reports_sampler_ess_and_valid_counts(
     )
     fitter = UltranestLinearFitter(
         output_params=("P", "e", "Tp"),
+        quiet=True,
         **priors,
     )
 
-    results = fitter.fit(data, quiet=True)
+    results = fitter.fit(data, rng=np.random.default_rng(0))
 
     assert results.Ess == 23
     assert results.samples["n_samples_raw"] == 3

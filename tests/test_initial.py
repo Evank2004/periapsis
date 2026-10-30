@@ -22,6 +22,7 @@ from periapsis.initial import (
 )
 
 ASTRO_UNITS = {"t": u.yr, "x": u.rad, "y": u.rad, "x_err": u.rad, "y_err": u.rad}
+ASTRO_PHYS_UNITS = {"t": u.yr, "x": u.AU, "y": u.AU, "x_err": u.AU, "y_err": u.AU}
 RV_UNITS = {"t": u.yr, "rv": u.AU / u.yr, "rv_err": u.AU / u.yr}
 GAIA_UNITS = {"t": u.yr, "x": u.rad, "err": u.rad}
 from periapsis.prior import FixedPrior
@@ -91,6 +92,20 @@ def make_astrometry_data():
         plxf_y=np.abs(np.linspace(0.0, 5.0, 6)) + 0.1,
         system="1",
         units=ASTRO_UNITS,
+    )
+
+def make_astrometry_phys_data():
+    from periapsis.data.common import AstrometryData
+    return AstrometryData(
+        t=np.linspace(0.0, 5.0, 6),
+        x = np.array([0.0, 1.0, 0.0, -1.0, 0.0, 1.0]),
+        y = np.array([1.0, 0.0, -1.0, 0.0, 1.0, 0.0]),
+        x_err = np.ones(6),
+        y_err = np.ones(6),
+        plxf_x = np.abs(np.linspace(0.0, 5.0, 6)) + 0.1,
+        plxf_y = np.abs(np.linspace(0.0, 5.0, 6)) + 0.1,
+        system="1",
+        units=ASTRO_PHYS_UNITS,
     )
 
 
@@ -430,9 +445,9 @@ def test_lomb_scargle_combines_both_coordinates_and_uses_prior_range(
 
     class FakeLombScargle:
         def __init__(self, times, values, errors):
-            assert times is data.t
-            self.coordinate = "x" if values is data.x else "y"
-            expected_errors = data.x_err if self.coordinate == "x" else data.y_err
+            assert times is data.t_canonical
+            self.coordinate = "x" if values is data.x_ang_canonical else "y"
+            expected_errors = data.x_err_ang_canonical if self.coordinate == "x" else data.y_err_ang_canonical
             assert errors is expected_errors
 
         def power(self, frequencies):
@@ -575,15 +590,15 @@ def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
     orbital_chi2 = iter([90.0, 40.0, 80.0])
 
     def fake_periodogram_helper(matrix, values, errors):
-        assert values is data.x
-        assert errors is data.err
+        assert values is data.x_canonical
+        assert errors is data.err_canonical
         matrices.append(matrix.copy())
         if matrix.shape[1] == 5:
             return np.zeros(5), 100.0
         return np.zeros(9), next(orbital_chi2)
 
     monkeypatch.setattr(
-        gaia_module,
+        gaia_module.helpers,
         "_lsq_helper",
         fake_periodogram_helper,
     )
@@ -621,7 +636,7 @@ def test_delisle_periodogram_uses_default_period_range(monkeypatch):
         return None, float(orbital_calls)
 
     monkeypatch.setattr(
-        gaia_module,
+        gaia_module.helpers,
         "_lsq_helper",
         fake_periodogram_helper,
     )

@@ -7,32 +7,35 @@ from periapsis.utils.helpers import _flatten_and_join
 from periapsis.model.orbit import Orbit
 from periapsis.prior import FixedPrior
 from scipy.stats import chi2
+from periapsis.utils.helpers import error_sigfig_latex_string
+from periapsis.params import display_latex
+import astropy.units as u
 
 
-def _json_default(value):
+def _json_numpy(value):
     if isinstance(value, np.ndarray):
         return value.tolist()
     if isinstance(value, np.generic):
         return value.item()
+    if isinstance(value, u.UnitBase):
+        return value.to_string()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
-def _latex_credible_interval(label, summary, median=None):
+def _latex_credible_interval(label, summary, median=None, label_suffix="", unit_latex=""):
     median = float(summary["median"] if median is None else median)
     lower_error = median - float(summary["-1sigma"])
     upper_error = float(summary["+1sigma"]) - median
+    ul = unit_latex.strip("$") if unit_latex else ""
+    return f"${{{display_latex(label)}}}{label_suffix} = {error_sigfig_latex_string(median, upper_error, lower_error)}{f'~{ul}' if unit_latex else ''}$"
 
-    return (
-        rf"${label} = {median:.2f}"
-        rf"^{{+{upper_error:.2f}}}"
-        rf"_{{-{lower_error:.2f}}}$"
-    )
-
-def _credible_interval_summary(samples):
+def _credible_interval_summary(samples, unit, map_index):
     m2sig, m1sig, med,p1sig, p2sig = np.percentile(samples, [2.275, 15.865,50, 84.135, 97.725])
     return {
+        'unit': unit,
         '-2sigma': m2sig,
         '-1sigma': m1sig,
         'median': med,
+        'map': samples[map_index],
         '+1sigma': p1sig,
         '+2sigma': p2sig,
     }
@@ -183,6 +186,7 @@ def credible_intervals(results):
 
     param_names = results.param_names
     credible_intervals={}
+    map_index = results.map_index
     
     for label in param_names:
         samples = getattr(results, label, None)
@@ -192,17 +196,20 @@ def credible_intervals(results):
             raise ValueError(f"Samples for parameter '{label}' not found in results.")
 
         
-        
+        unit = results.unit_system.get_parameter_unit(label) if results.unit_system is not None else None
 
-        credible_intervals[label] = _credible_interval_summary(samples)
+        credible_intervals[label] = _credible_interval_summary(samples, unit, map_index)
 
     m2_samples = _get_result_value(results, 'M2')
+    m2_unit = results.unit_system.get_parameter_unit('M2') if results.unit_system is not None else None
+
     if m2_samples is not None:
-        credible_intervals['M2'] = _credible_interval_summary(m2_samples)
+        credible_intervals['M2'] = _credible_interval_summary(m2_samples, m2_unit, map_index)
     else:
         min_m2_samples = _get_result_value(results, 'minM2')
+        min_m2_unit = results.unit_system.get_parameter_unit('minM2') if results.unit_system is not None else None
         if min_m2_samples is not None:
-            credible_intervals['minM2'] = _credible_interval_summary(min_m2_samples)
+            credible_intervals['minM2'] = _credible_interval_summary(min_m2_samples, min_m2_unit, map_index)
 
     return credible_intervals
 
@@ -225,66 +232,53 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
         'p_value_map': p_map,
         'p_value_med': p_med,
         'sigma_significance': sig_significance,
-        'credible_intervals': intervals
     }
     if getattr(results, 'backend', None) == 'emcee':
         stats.update({
+            'sampled_params': results.sampled_param_names, 
             'Ess': results.Ess,
             'mean_acceptance_fraction': results.mean_acceptance_fraction,
             'tau': results.tau
         })
 
     fit_results = {
-        'fit_params':{
-            'MAP_params': getattr(results, 'MAP_params', None),
-            'median_params': getattr(results, 'median_params', None)
-        }
+        'MAP_params': getattr(results, 'MAP_params', None),
+        'median_params': getattr(results, 'median_params', None),
+        'credible_intervals': intervals,
     }
 
-    m2_samples = _get_result_value(results, 'M2')
-    if m2_samples is not None:
-        fit_results['derived_fit_params'] = {
-            'M2': {
-                'median': float(np.median(m2_samples)),
-                'credible_intervals': _credible_interval_summary(m2_samples),
-            }
-        }
-
-    mmin_samples = _get_result_value(results, 'minM2')
-    if isinstance(data,RadialVelocityData) and mmin_samples is not None:
-        fit_results.setdefault('derived_fit_params', {})['minM2'] = {
-            'median': float(np.median(mmin_samples)),
-            'credible_intervals': _credible_interval_summary(mmin_samples),
-        }
-        
-
-
     if pretty_print:
-        print(json.dumps(stats, indent=indent, sort_keys=False, default=_json_default))
+        print(json.dumps(stats, indent=indent, sort_keys=False, default=_json_numpy))
         print("\n" + "=" * 80 + "\n")
-        print(json.dumps(fit_results, indent=indent, sort_keys=False, default=_json_default))
-        print("\nLaTeX Median values with 1-sigma credible intervals:")
-        reported_medians = fit_results['fit_params']['median_params'] or {}
-        reported_maps = fit_results['fit_params']['MAP_params'] or {}
+        print(json.dumps(fit_results, indent=indent, sort_keys=False, default=_json_numpy))
+        print("\n" + "=" * 80 + "\n")
+        print("LaTeX Median values with 1-sigma credible intervals:")
+        reported_medians = fit_results['median_params'] or {}
+        reported_maps = fit_results['MAP_params'] or {}
         for label in sorted(intervals):
+            unit_latex = results.unit_system.get_parameter_unit(label).to_string("latex_inline") if results.unit_system is not None else ""
             print(_latex_credible_interval(
                 label,
                 intervals[label],
                 reported_medians.get(label),
+                unit_latex=unit_latex
             ))
         print("\nLaTeX MAP values with 1-sigma credible intervals:")
         for label in sorted(set(intervals) & set(reported_maps)):
+            unit_latex = results.unit_system.get_parameter_unit(label).to_string("latex_inline") if results.unit_system is not None else ""
             print(_latex_credible_interval(
-                rf"{label}_{{\rm MAP}}",
+                label,
                 intervals[label],
                 reported_maps[label],
+                label_suffix=r"_{{\rm MAP}}",
+                unit_latex=unit_latex
             ))
 
     if savepath is not None:
         with open(savepath/"stats.json", "w") as f:
-            json.dump(stats, f, indent=indent, sort_keys=True, default=_json_default)
+            json.dump(stats, f, indent=indent, sort_keys=True, default=_json_numpy)
         with open(savepath/"fit_results.json", "w") as f:
-            json.dump(fit_results, f, indent=indent, sort_keys=True, default=_json_default)
+            json.dump(fit_results, f, indent=indent, sort_keys=True, default=_json_numpy)
     
 
     return stats,fit_results

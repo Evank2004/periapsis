@@ -1,9 +1,13 @@
+from __future__ import annotations
+
+from periapsis.params.units import get_canonical_unit_scale
+
 from .prior import Prior
 import numpy as np
 from scipy.special import ndtri
 
 class NormalPrior(Prior):
-    def __init__(self, mean: float, std: float):
+    def __init__(self, mean: float, std: float, unit=None):
         if std <= 0:
             raise ValueError("Standard deviation must be positive for a NormalPrior.")
         self.mean = mean
@@ -16,14 +20,28 @@ class NormalPrior(Prior):
 
         self.constants = -0.5*np.log(2*np.pi*self.std**2)
 
-    def scale(self, factor):
-        if factor <= 0:
-            raise ValueError("Prior scale factor must be positive.")
-        self.mean *= factor
-        self.std *= factor
-        self.min = self.mean - 10*self.std
-        self.max = self.mean + 10*self.std
-        self.constants = -0.5*np.log(2*np.pi*self.std**2)
+        if unit is None:
+            self.unit = None
+            self._canonical = self
+        else:
+            self.set_unit(unit)
+
+    def __repr__(self):
+        return f"NormalPrior(mean={self.mean}, std={self.std}, unit={self.unit if self.unit is not None else 'canonical'})"
+
+
+    @property
+    def canonical(self) -> NormalPrior:
+        return self._canonical
+
+    def set_unit(self, unit):
+        """Overrides the unit of the prior, discarding the current unit"""
+        self.unit = unit
+        if unit is None:
+            self._canonical = self
+        else:
+            factor = get_canonical_unit_scale(unit)
+            self._canonical = NormalPrior(self.mean*factor, self.std*factor, unit=None)
 
     def sample(self, random_state, size=1):
         return random_state.normal(loc=self.mean, scale=self.std, size=size)

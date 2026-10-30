@@ -14,9 +14,10 @@ all_parameters = {
 }
 
 ang_parameters = {
-    'a', 'b', 'p', 'r_a', 'r_p', 'A', 'B', 'C', 'F', 'G', 'H',
-    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'A1', 'B1', 'C1', 'F1', 'G1', 'H1',
-    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'A2', 'B2', 'C2', 'F2', 'G2', 'H2',
+    'a', 'b', 'p', 'r_a', 'r_p', 'A', 'B', 'F', 'G',
+    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'A1', 'B1', 'F1', 'G1',
+    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'A2', 'B2', 'F2', 'G2',
+    'dalpha', 'ddelta', 'mu_alpha', 'mu_delta', 'dmu_alpha', 'dmu_delta',
 }
 
 wrapped_parameters = {
@@ -38,8 +39,14 @@ a: Literal["a"] = "a"
 a1: Literal["a1"] = "a1"
 """Semi-major axis of body 1's orbit ellipse (the orbit of body 1 with the barycenter at the focus of the ellipse)"""
 
+a1sini: Literal["a1sini"] = "a1sini"
+"""a1 * sin(i)"""
+
 a2: Literal["a2"] = "a2"
 """Semi-major axis of body 2's orbit ellipse (the orbit of body 2 with the barycenter at the focus of the ellipse)"""
+
+a2sini: Literal["a2sini"] = "a2sini"
+"""a2 * sin(i)"""
 
 b = "b"
 """Semi-minor axis of relative orbit ellipse"""
@@ -264,6 +271,12 @@ minM2 = "minM2"
 
 Msini = "Msini"
 """Mtot * sini"""
+
+M1sini = "M1sini"
+"""M1 * sini"""
+
+M2sini = "M2sini"
+"""M2 * sini"""
 
 mu = "mu"
 """Mtot * G, where G is the gravitational constant."""
@@ -513,6 +526,18 @@ def ang(param):
     return f"{param}_ang"
 
 
+def system(param, system):
+    """
+    Get the version of a parameter for a specific system (1 or 2). For example, system(a, 1) is the semi-major axis of body 1's orbit.
+    """
+    if param not in all_parameters:
+        raise ValueError(f"Parameter {param} is not a valid parameter.")
+    const = f"{param}{system}"
+    if const not in all_parameters:
+        raise ValueError(f"Parameter {param} does not have a system-specific version for system {system if system != '' else 'relative'}.")
+    return const
+
+
 _display_dict = {
     'r_a': 'rₐ',
     'r_p': 'rₚ',
@@ -536,6 +561,41 @@ _display_dict = {
     'gamma': 'γ',
 }
 
+_latex_display_dict = {
+    'r_a': r'r_a',
+    'r_p': r'r_p',
+    'omega': r'\omega',
+    'Omega': r'\Omega',
+    'piomega': r'\varpi',
+    'mu': r'\mu',
+    'Tp': r'T_p',
+    't0': r't_0',
+    'M0': r'M_0',
+    'L0': r'L_0',
+    'E0': r'E_0',
+    'nu0': r'\nu_0',
+    'l0': r'l_0',
+    'uM0': r'u_{M_0}',
+    'u0': r'u_0',
+    'dalpha': r'\Delta \alpha',
+    'ddelta': r'\Delta \delta',
+    'mu_alpha': r'\mu_\alpha',
+    'mu_delta': r'\mu_\delta',
+    'gamma': r'\gamma',
+    "distance": r'\mathrm{distance}',
+    "parallax": r'\mathrm{parallax}',
+    "Tepoch": r'T_\mathrm{epoch}',
+    "cosi": r'\cos i',
+    "sini": r'\sin i',
+    "a1sini": r'a_1 \sin i',
+    "a2sini": r'a_2 \sin i',
+    "Mtot": r'M_\mathrm{tot}',
+    "Msini": r'M\sin i',
+    "M1sini": r'M_1 \sin i',
+    "M2sini": r'M_2 \sin i',
+    "minM": r'\min M',
+}
+
 
 def display(param):
     """
@@ -552,6 +612,22 @@ def display(param):
         return f"{display(param[:-1])}₂"
     else:
         return _display_dict[param] if param in _display_dict else param
+
+def display_latex(param):
+    """
+    Get a display-friendly version of a parameter name in LaTeX format.
+    """
+    if param.startswith("log"):
+        return fr"\log_{{10}}({display_latex(param[3:])})"
+    elif param.endswith("_ang"):
+        return fr"{{{display_latex(param[:-4])}}}_{{\mathrm{{ang}}}}"
+
+    if param.endswith("1"):
+        return f"{{{display_latex(param[:-1])}}}_{{1}}"
+    elif param.endswith("2"):
+        return f"{{{display_latex(param[:-1])}}}_{{2}}"
+    else:
+        return _latex_display_dict[param] if param in _latex_display_dict else param
 
 
 

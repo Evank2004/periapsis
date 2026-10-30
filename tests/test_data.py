@@ -30,6 +30,11 @@ class DummyOrbit:
         self.calls.append(("astrometry", t, plxf_x, plxf_y, system))
         return self.x, self.y
 
+    def astrometry_ang(self, t, plxf_x=0.0, plxf_y=0.0, system=None, **kwargs):
+        self.astrometry_kwargs = kwargs
+        self.calls.append(("astrometry_ang", t, plxf_x, plxf_y, system))
+        return self.x, self.y
+
     def rv(self, t, system=None):
         self.calls.append(("rv", t, system))
         return self.rv_values
@@ -88,6 +93,7 @@ def test_data_package_exports_all_public_data_classes():
     assert data_package.__all__ == [
         "Data",
         "AstrometryData",
+        "PhysicalAstrometryData",
         "RadialVelocityData",
         "JointData",
         "GaiaData",
@@ -103,7 +109,7 @@ def test_astrometry_data_converts_reference_epoch_to_canonical_time():
         "y_err": u.rad,
     })
 
-    assert data.ref_epoch == pytest.approx(10.0 * u.day.to(u.yr))
+    assert data.ref_epoch_canonical == pytest.approx(10.0 * u.day.to(u.yr))
 
 
 def test_astrometry_likelihood_passes_band_flux_ratio_to_orbit():
@@ -126,9 +132,9 @@ def test_data_base_class_is_abstract():
 )
 def test_system_data_requires_a_system(data_class):
     if data_class is AstrometryData:
-        arguments = dict(t=0.0, x=0.0, y=0.0, x_err=1.0, y_err=1.0,plxf_x=0.0, plxf_y=0.0)
+        arguments = dict(t=0.0, x=0.0, y=0.0, x_err=1.0, y_err=1.0,plxf_x=0.0, plxf_y=0.0, units={"t": "yr", "x": "rad", "y": "rad", "x_err": "rad", "y_err": "rad"})
     elif data_class is RadialVelocityData:
-        arguments = dict(t=0.0, rv=0.0, rv_err=1.0)
+        arguments = dict(t=0.0, rv=0.0, rv_err=1.0, units={"t": "yr", "rv": "AU/yr", "rv_err": "AU/yr"})
     else:
         arguments = dict(
             spsi=0.0,
@@ -137,6 +143,7 @@ def test_system_data_requires_a_system(data_class):
             plx_fac=0.0,
             x=0.0,
             err=1.0,
+            units={"t": "yr", "x": "rad", "err": "rad"},
         )
 
     with pytest.raises(ValueError, match="system"):
@@ -223,8 +230,8 @@ def test_astrometry_chi2_uses_both_weighted_coordinates_and_system():
     expected_y = 1.0**2 + 1.0**2 + 1.0**2
     assert result == pytest.approx(expected_x + expected_y)
     method, times, plxf_x, plxf_y, system = orbit.calls[0]
-    assert method == "astrometry"
-    assert times is data.t
+    assert method == "astrometry_ang"
+    assert times is data.t_canonical
     assert plxf_x is data.plxf_x
     assert plxf_y is data.plxf_y
     assert system == "1"
@@ -280,14 +287,9 @@ def test_astrometry_observation_accessors_return_original_arrays():
     data = make_astrometry()
 
     x, y = data._astrometry(DummyOrbit())
-    t_series = data.t_series()
 
-    assert x is data.x
-    assert y is data.y
-    assert t_series[0] is data.x
-    assert t_series[1] is data.y
-    assert t_series[2] is None
-    assert t_series[3] is data.t
+    assert x is data.x_ang_canonical
+    assert y is data.y_ang_canonical
 
 
 def test_radial_velocity_converts_scalars_and_broadcasts_uncertainty():
@@ -325,11 +327,6 @@ def test_radial_velocity_observation_accessors_return_original_arrays():
     data = make_rv()
 
     assert data._radial_velocity(DummyOrbit()) is data.rv
-    x, y, rv, times = data.t_series()
-    assert x is None
-    assert y is None
-    assert rv is data.rv
-    assert times is data.t
 
 
 def test_gaia_converts_scalars_to_one_dimensional_arrays():
@@ -384,7 +381,7 @@ def test_gaia_chi2_uses_reported_uncertainties_without_jitter():
     assert result == pytest.approx(11.0)
     call = orbit.calls[0]
     assert call[0] == "gaia_astrometry"
-    assert call[1] is data.t
+    assert call[1] is data.t_canonical
     assert call[2] is data.spsi
     assert call[3] is data.cpsi
     assert call[4] is data.plx_fac
@@ -444,7 +441,6 @@ def test_joint_log_likelihood_only_applies_nonreference_offsets():
 def test_gaia_basic_observation_accessors():
     data = make_gaia()
 
-    assert data.t_series() is data.t
     assert data._radial_velocity(DummyOrbit()) is None
 
 
@@ -560,14 +556,3 @@ def test_joint_data_ignores_modalities_a_component_does_not_provide():
     np.testing.assert_allclose(x, astrometry.x)
     np.testing.assert_allclose(y, astrometry.y)
     np.testing.assert_allclose(rv, radial_velocity.rv)
-
-
-def test_joint_data_concatenates_component_time_arrays():
-    components = [
-        SimpleNamespace(t_series=lambda: np.array([1.0, 2.0])),
-        SimpleNamespace(t_series=lambda: np.array([4.0])),
-    ]
-
-    result = JointData(components).t_series()
-
-    np.testing.assert_allclose(result, [1.0, 2.0, 4.0])

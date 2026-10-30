@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+from periapsis.params.units import get_canonical_unit_scale
+
 from .prior import Prior
 import numpy as np
 
 class Bounds(Prior):
-    def __init__(self, lower: float = None, upper: float = None):
+    def __init__(self, lower: float = None, upper: float = None, unit = None):
         self.lower = lower
         self.upper = upper
         if lower is None and upper is None:
@@ -10,13 +14,26 @@ class Bounds(Prior):
         if lower is not None and upper is not None and lower > upper:
             raise ValueError("Lower bound cannot be greater than upper bound.")
 
-    def scale(self, factor):
-        if factor <= 0:
-            raise ValueError("Prior scale factor must be positive.")
-        if self.lower is not None:
-            self.lower *= factor
-        if self.upper is not None:
-            self.upper *= factor
+        if unit is None:
+            self.unit = None
+            self._canonical = self
+        else:
+            self.set_unit(unit)
+            
+
+    @property
+    def canonical(self) -> Bounds:
+        return self._canonical
+
+    def set_unit(self, unit):
+        """Overrides the unit of the prior, discarding the current unit"""
+        self.unit = unit
+        factor = get_canonical_unit_scale(unit)
+        self._canonical = Bounds(
+            lower=self.lower * factor if self.lower is not None else None,
+            upper=self.upper * factor if self.upper is not None else None,
+            unit=None
+        )
 
     def sample(self, random_state, size=1):
         raise NotImplementedError("Bounds does not support sampling.")

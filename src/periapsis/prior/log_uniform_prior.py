@@ -1,8 +1,12 @@
+from __future__ import annotations
+
+from periapsis.params.units import get_canonical_unit_scale
+
 from .prior import Prior
 import numpy as np
 
 class LogUniformPrior(Prior):
-    def __init__(self, lower_bound: float, upper_bound: float):
+    def __init__(self, lower_bound: float, upper_bound: float, unit = None):
         if lower_bound <= 0 or upper_bound <= 0:
             raise ValueError("Bounds must be positive for a LogUniformPrior.")
         if lower_bound >= upper_bound:
@@ -13,13 +17,27 @@ class LogUniformPrior(Prior):
         self.min = lower_bound
         self.max = upper_bound
 
-    def scale(self, factor):
-        if factor <= 0:
-            raise ValueError("Prior scale factor must be positive.")
-        self.lower_bound *= factor
-        self.upper_bound *= factor
-        self.min = self.lower_bound
-        self.max = self.upper_bound
+        if unit is None:
+            self.unit = None
+            self._canonical = self
+        else:
+            self.set_unit(unit)
+
+    def __repr__(self):
+        return f"LogUniformPrior(lower_bound={self.lower_bound}, upper_bound={self.upper_bound}, unit={self.unit if self.unit is not None else 'canonical'})"
+
+    @property
+    def canonical(self) -> LogUniformPrior:
+        return self._canonical
+
+    def set_unit(self, unit):
+        """Overrides the unit of the prior, discarding the current unit"""
+        self.unit = unit
+        if unit is None:
+            self._canonical = self
+        else:
+            factor = get_canonical_unit_scale(unit)
+            self._canonical = LogUniformPrior(self.lower_bound*factor, self.upper_bound*factor, unit=None)
 
     def sample(self, random_state, size=1):
         return 10**random_state.uniform(low=np.log10(self.lower_bound), high=np.log10(self.upper_bound), size=size)

@@ -105,8 +105,8 @@ class GaiaData(SystemData):
         Xsmooth = np.cos(Esmooth) - params['e']
         Ysmooth = np.sqrt(1-params['e']**2)*np.sin(Esmooth)
 
-        ra_orb = params[f'B{system}']*Xsmooth + params[f'G{system}']*Ysmooth
-        dec_orb = params[f'A{system}']*Xsmooth + params[f'F{system}']*Ysmooth
+        ra_orb = params[f'B{system}_ang']*Xsmooth + params[f'G{system}_ang']*Ysmooth
+        dec_orb = params[f'A{system}_ang']*Xsmooth + params[f'F{system}_ang']*Ysmooth
 
         #--------position decomposition ---------
         res_1d = self.x_canonical - model_x
@@ -115,8 +115,8 @@ class GaiaData(SystemData):
         dec_obs = res_1d * self.cpsi
 
         #pos for Tp
-        ra_peri = params[f'B{system}']*(1-params['e'])
-        dec_peri = params[f'A{system}']*(1-params['e'])
+        ra_peri = params[f'B{system}_ang']*(1-params['e'])
+        dec_peri = params[f'A{system}_ang']*(1-params['e'])
 
 
         #--------linear motion ---------
@@ -124,14 +124,16 @@ class GaiaData(SystemData):
         plx_ra_smooth = np.interp(t_smooth,self.t_canonical,self.plx_fac*self.spsi)
         plx_dec_smooth = np.interp(t_smooth,self.t_canonical,self.plx_fac*self.cpsi)
 
-        ra_lin = params['dalpha'] + params['mu_alpha']*t_smooth + plx_ra_smooth*params['parallax']
-        dec_lin = params['ddelta'] + params['mu_delta']*t_smooth + plx_dec_smooth*params['parallax']
+        dt_smooth = t_smooth - params['Tepoch']
+
+        ra_lin = params['dalpha_ang'] + params['mu_alpha_ang'] * dt_smooth + plx_ra_smooth * params['parallax']
+        dec_lin = params['ddelta_ang'] + params['mu_delta_ang'] * dt_smooth + plx_dec_smooth * params['parallax']
 
         ra_full = ra_lin + ra_orb
         dec_full = dec_lin + dec_orb
 
-        ra_sky = params['dalpha'] + params['mu_alpha']*t_smooth + params['parallax']*plx_ra_smooth + ra_orb
-        dec_sky = params['ddelta'] + params['mu_delta']*t_smooth + params['parallax']*plx_dec_smooth + dec_orb    
+        ra_sky = params['dalpha_ang'] + params['mu_alpha_ang']*t_smooth + params['parallax']*plx_ra_smooth + ra_orb
+        dec_sky = params['ddelta_ang'] + params['mu_delta_ang']*t_smooth + params['parallax']*plx_dec_smooth + dec_orb    
 
 
         #--------orbital data points for plotting ---------
@@ -141,13 +143,26 @@ class GaiaData(SystemData):
         X_data = np.cos(E_data) - params['e']
         Y_data = np.sqrt(1-params['e']**2)*np.sin(E_data)
         
-        ra_data_orb = params[f'B{system}']*X_data + params[f'G{system}']*Y_data
-        dec_data_orb = params[f'A{system}']*X_data + params[f'F{system}']*Y_data
+        ra_data_orb = params[f'B{system}_ang']*X_data + params[f'G{system}_ang']*Y_data
+        dec_data_orb = params[f'A{system}_ang']*X_data + params[f'F{system}_ang']*Y_data
         ra_orb_obs = ra_data_orb + ra_obs
         dec_orb_obs = dec_data_orb + dec_obs
 
-        ra_sky_model_data = params['dalpha'] + params['mu_alpha']*self.t_canonical + params['parallax']*self.plx_fac*self.spsi + ra_data_orb
-        dec_sky_model_data = params['ddelta'] + params['mu_delta']*self.t_canonical + params['parallax']*self.plx_fac*self.cpsi + dec_data_orb
+        dt_data = self.t_canonical - params['Tepoch']
+
+        ra_sky_model_data = (
+            params['dalpha_ang']
+            + params['mu_alpha_ang'] * dt_data
+            + params['parallax'] * self.plx_fac * self.spsi
+            + ra_data_orb
+        )
+
+        dec_sky_model_data = (
+            params['ddelta_ang']
+            + params['mu_delta_ang'] * dt_data
+            + params['parallax'] * self.plx_fac * self.cpsi
+            + dec_data_orb
+        )
         #---------- projected sky data points for plotting ---------
         ra_sky_data = ra_sky_model_data + ra_obs
         dec_sky_data = dec_sky_model_data + dec_obs

@@ -312,11 +312,12 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
 
     result = guess.get_initial_guess(["n", "e"], nwalkers=3)
 
+    n_guess = 2.0 * np.pi / 10.0
     expected = np.array(
         [
-            [2.0 * np.pi / 10.0, 0.0],
-            [2.0 * np.pi / 10.0 + 1e-4, 1e-4],
-            [2.0 * np.pi / 10.0 + 2e-4, 2e-4],
+            [n_guess, 0.0],
+            [n_guess + 1e-4 * n_guess, 1e-4 * 0.9],
+            [n_guess + 2e-4 * n_guess, 2e-4 * 0.9],
         ]
     )
     np.testing.assert_allclose(result, expected)
@@ -726,7 +727,6 @@ def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
 
     assert result.shape == (2, 3)
     assert rng.normal_calls
-
 
 
 

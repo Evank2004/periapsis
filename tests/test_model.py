@@ -274,9 +274,9 @@ def test_orbit_gaia_astrometry_computes_for_fully_defined_orbit():
 def test_orbit_gaia_astrometry_projects_acceleration_terms():
     orb = Orbit(
         P=1.0, e=0.0, Tp=0.0, Tepoch=0.0,
-        A=0.0, B=0.0, F=0.0, G=0.0,
-        dalpha=0.0, ddelta=0.0, mu_alpha=0.0, mu_delta=0.0,
-        dmu_alpha=2.0, dmu_delta=4.0, parallax=0.0,
+        A_ang=0.0, B_ang=0.0, F_ang=0.0, G_ang=0.0,
+        dalpha_ang=0.0, ddelta_ang=0.0, mu_alpha_ang=0.0, mu_delta_ang=0.0,
+        dmu_alpha_ang=2.0, dmu_delta_ang=4.0, parallax=0.0,
     )
 
     assert orb.gaia_astrometry(
@@ -287,8 +287,8 @@ def test_orbit_gaia_astrometry_projects_acceleration_terms():
 def test_orbit_gaia_astrometry_uses_orbital_phase_and_all_projection_terms():
     orb = Orbit(
         P=2.0, e=0.0, Tp=1.0, Tepoch=0.0,
-        A=2.0, B=3.0, F=5.0, G=7.0,
-        dalpha=11.0, ddelta=13.0, mu_alpha=17.0, mu_delta=19.0,
+        A_ang=2.0, B_ang=3.0, F_ang=5.0, G_ang=7.0,
+        dalpha_ang=11.0, ddelta_ang=13.0, mu_alpha_ang=17.0, mu_delta_ang=19.0,
         parallax=23.0,
     )
 

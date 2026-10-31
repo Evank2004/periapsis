@@ -295,8 +295,8 @@ class PhysicalAstrometryData(_AstrometryDataBase):
     
             jitter = orbit.params.get(jitter_name)
     
-            ln_like_x = _gaussian_log_likelihood(residuals_x,self.x_err,jitter)
-            ln_like_y = _gaussian_log_likelihood(residuals_y,self.y_err,jitter)
+            ln_like_x = _gaussian_log_likelihood(residuals_x,self.x_err_canonical,jitter)
+            ln_like_y = _gaussian_log_likelihood(residuals_y,self.y_err_canonical,jitter)
                 
             return ln_like_x + ln_like_y
 

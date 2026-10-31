@@ -431,7 +431,12 @@ class UnitSystem:
         dimension = self.get_parameter_dimension(param_name)
         if dimension == "time":
             return self.units["t"]
-        if dimension == "angle" and self.astrometry_dimension == "angle" and "x" in self.units and "_ang" in param_name:
+        if (
+            dimension == "angle"
+            and self.astrometry_dimension == "angle"
+            and "x" in self.units
+            and (param_name.endswith("_ang") or param_name == par.parallax)
+        ):
             return self.units["x"]
         if dimension == "length" and self.astrometry_dimension == "length" and "x" in self.units:
             return self.units["x"]

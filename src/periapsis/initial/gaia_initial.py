@@ -196,9 +196,14 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
         param_in = []
         initial_points = []
 
+        linear_param_names = frozenset(self.cols)
+
         for name, prior in self.priors.items():
             if isinstance(prior, (Bounds, FixedPrior)):
                 continue
+            if name in linear_param_names:
+                continue
+
             param_in.append(name)
             if name == params.P:
                 initial_points.append(P_guess)

@@ -368,20 +368,35 @@ def orbit_plot(results, data, savepath=None):
         map_model = Orbit(**map_params)
         med_model = Orbit(**med_params)
 
-        if isinstance(plot_data, (AstrometryData, GaiaData)):
+        if isinstance(plot_data, GaiaData):
+            map_plot_dict = plot_data._astrometry(map_model)
+            med_plot_dict = plot_data._astrometry(med_model)
+
+            plot_t = _plot_time(plot_data, map_plot_dict['t_smooth'])
+            plot_alpha_map = _plot_position(plot_data, map_plot_dict['ra_orb'])
+            plot_alpha_med = _plot_position(plot_data, med_plot_dict['ra_orb'])
+            plot_delta_map = _plot_position(plot_data, map_plot_dict['dec_orb'])
+            plot_delta_med = _plot_position(plot_data, med_plot_dict['dec_orb'])
+            alpha_peri = map_plot_dict['ra_peri']
+            delta_peri = map_plot_dict['dec_peri']
+        elif isinstance(plot_data, AstrometryData):
             alpha_map, delta_map = map_model.pure_orbit_ang(tfold, system=system)
             alpha_med, delta_med = med_model.pure_orbit_ang(tfold, system=system)
             alpha_peri, delta_peri = _pericenter_coords(map_model, system, ang=True)
+            plot_t = _plot_time(plot_data, tfold)
+            plot_alpha_map = _plot_position(plot_data, alpha_map)
+            plot_alpha_med = _plot_position(plot_data, alpha_med)
+            plot_delta_map = _plot_position(plot_data, delta_map)
+            plot_delta_med = _plot_position(plot_data, delta_med)
         elif isinstance(plot_data, PhysicalAstrometryData):
             alpha_map, delta_map = map_model.pure_orbit(tfold, system=system)
             alpha_med, delta_med = med_model.pure_orbit(tfold, system=system)
             alpha_peri, delta_peri = _pericenter_coords(map_model, system, ang=False)
-
-        plot_t = _plot_time(plot_data, tfold)
-        plot_alpha_map = _plot_position(plot_data, alpha_map)
-        plot_alpha_med = _plot_position(plot_data, alpha_med)
-        plot_delta_map = _plot_position(plot_data, delta_map)
-        plot_delta_med = _plot_position(plot_data, delta_med)
+            plot_t = _plot_time(plot_data, tfold)
+            plot_alpha_map = _plot_position(plot_data, alpha_map)
+            plot_alpha_med = _plot_position(plot_data, alpha_med)
+            plot_delta_map = _plot_position(plot_data, delta_map)
+            plot_delta_med = _plot_position(plot_data, delta_med)
 
         ax1.plot(plot_t, plot_alpha_map, label='MAP Orbit', color='red', linestyle='-',zorder=3)
         ax1.plot(plot_t, plot_alpha_med, label='Median Orbit', color='purple', linestyle='--',zorder=3)
@@ -514,19 +529,56 @@ def sky_motion_plot(results, data, savepath=None):
             parallax = null_fit['params'].get('parallax', 0.0)
 
         if isinstance(data, GaiaData):
+            map_params = results.MAP_params
+            median_params = results.median_params
+
             tfold = np.linspace(data.t_canonical.min(), data.t_canonical.max(), 1000)
-            dt = tfold - results.canonical_MAP_params().get('Tepoch', 0)
-            plx_alpha = np.interp(tfold,data.t_canonical,data.plx_fac*data.spsi)
-            plx_delta = np.interp(tfold,data.t_canonical,data.plx_fac*data.cpsi)
 
-            alpha_lin = mu_alpha * dt + dalpha + plx_alpha*parallax
-            delta_lin = mu_delta * dt + ddelta + plx_delta*parallax
-            ax.plot(_plot_position(data, alpha_lin), _plot_position(data, delta_lin), label='Linear Model', color='orange', linestyle='-.', zorder=1, alpha=0.7)
+            dalpha = map_params["dalpha_ang"]
+            ddelta = map_params["ddelta_ang"]
+            mu_alpha = map_params["mu_alpha_ang"]
+            mu_delta = map_params["mu_delta_ang"]
+            parallax = map_params["parallax"]
+            Tepoch = map_params.get("Tepoch", 0.0)
 
-            map_plot_dict = data._astrometry(Orbit(**results.canonical_MAP_params()))
-            med_plot_dict = data._astrometry(Orbit(**results.canonical_median_params()))
-            ax.plot(_plot_position(data, map_plot_dict['ra_sky']), _plot_position(data, map_plot_dict['dec_sky']), label='MAP Sky Track', color='red', linestyle='-', zorder=1)
-            ax.plot(_plot_position(data, med_plot_dict['ra_sky']), _plot_position(data, med_plot_dict['dec_sky']), label='Median Sky Track', color='purple', linestyle='-', zorder=1)
+            dt = tfold - Tepoch
+            plx_alpha = np.interp(tfold, data.t_canonical, data.plx_fac * data.spsi)
+            plx_delta = np.interp(
+                tfold, data.t_canonical, data.plx_fac * data.cpsi
+            )
+
+            alpha_lin = dalpha + mu_alpha * dt + plx_alpha * parallax
+            delta_lin = ddelta + mu_delta * dt + plx_delta * parallax
+
+            ax.plot(
+                _plot_position(data, alpha_lin),
+                _plot_position(data, delta_lin),
+                label="Linear Model",
+                color="orange",
+                linestyle="-.",
+                zorder=1,
+                alpha=0.7,
+            )
+
+            map_plot_dict = data._astrometry(Orbit(**map_params))
+            median_plot_dict = data._astrometry(Orbit(**median_params))
+
+            ax.plot(
+                _plot_position(data, map_plot_dict["ra_sky"]),
+                _plot_position(data, map_plot_dict["dec_sky"]),
+                label="MAP Sky Track",
+                color="red",
+                linestyle="-",
+                zorder=1,
+            )
+            ax.plot(
+                _plot_position(data, median_plot_dict["ra_sky"]),
+                _plot_position(data, median_plot_dict["dec_sky"]),
+                label="Median Sky Track",
+                color="purple",
+                linestyle="-",
+                zorder=1,
+            )
 
         if isinstance(data,AstrometryData) or isinstance(data, PhysicalAstrometryData):
             plxf_x = 0.0 if data.plxf_x is None else data.plxf_x
@@ -550,7 +602,7 @@ def sky_motion_plot(results, data, savepath=None):
 
     def _plot_data(results, data):
         if isinstance(data, GaiaData):
-            map_plot_dict = data._astrometry(Orbit(**results.canonical_MAP_params()))
+            map_plot_dict = data._astrometry(Orbit(**results.MAP_params))
             ax.scatter(_plot_position(data, map_plot_dict['ra_sky_data']), _plot_position(data, map_plot_dict['dec_sky_data']), color='k', s=15, zorder=1)
             
         elif isinstance(data, AstrometryData):
@@ -730,14 +782,14 @@ def astrometry_phase_plot(results, data, savepath=None):
                 center,
                 alpha_binned,
                 yerr=alpha_err_binned,
-                fmt='s', color='orange', markersize=5, zorder=3,
+                fmt='s', color='tab:purple', markersize=5, zorder=3,
                 label=f'Binned Data ({system})',
             )
             ax[1].errorbar(
                 center,
                 delta_binned,
                 yerr=delta_err_binned,
-                fmt='s', color='orange', markersize=5, zorder=3,
+                fmt='s', color='tab:purple', markersize=5, zorder=3,
                 label=f'Binned Data ({system})',
             )
 
@@ -782,6 +834,9 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
                 alpha, delta = model.pure_orbit_ang(tfold, system=data.system)
             elif isinstance(data, PhysicalAstrometryData):
                 alpha,delta = model.pure_orbit(tfold, system=data.system)
+            elif isinstance(data, GaiaData):
+                plot_dict = data._astrometry(model)
+                alpha, delta = plot_dict['ra_orb'], plot_dict['dec_orb']
             ax.plot(_plot_position(data, alpha), _plot_position(data, delta), color='tab:blue', alpha=0.3, zorder=1)
 
     def _plot_map_median_orbits(results, data, tfold):
@@ -795,6 +850,11 @@ def multi_orbit_plot(results, data, Nplot=100, savepath=None):
         elif isinstance(data, PhysicalAstrometryData):
             alpha_map, delta_map = map_model.pure_orbit(tfold, system=data.system)
             alpha_med, delta_med = med_model.pure_orbit(tfold, system=data.system)
+        elif isinstance(data, GaiaData):
+            map_plot_dict = data._astrometry(map_model)
+            med_plot_dict = data._astrometry(med_model)
+            alpha_map, delta_map = map_plot_dict['ra_orb'], map_plot_dict['dec_orb']
+            alpha_med, delta_med = med_plot_dict['ra_orb'], med_plot_dict['dec_orb']
 
         ax.plot(_plot_position(data, alpha_map), _plot_position(data, delta_map), label='MAP Orbit', color='red', linestyle='-', zorder=4)
         ax.plot(_plot_position(data, alpha_med), _plot_position(data, delta_med), label='Median Orbit', color='purple', linestyle='--', zorder=4)
@@ -919,12 +979,13 @@ def residuals_plot(results, data, savepath=None):
             ax.set_xlabel(rf"Time [{_plot_unit(d, 't')}]")
             ax.axhline(0, color='red', linestyle='--')
             ax.legend(loc='best')
+            if savepath is not None:
+                fig.savefig(f'{savepath}/residuals_plot_{d.system}_gaia.png', dpi=300)
+                print(f"Saved residuals plot for system {d.system} to {savepath}")
+    
+            return fig
 
-        if savepath is not None:
-            fig.savefig(f'{savepath}/residuals_plot_{d.system}_gaia.png', dpi=300)
-            print(f"Saved residuals plot for system {d.system} to {savepath}")
-
-        return fig
+        
 
 
 
@@ -1326,5 +1387,4 @@ def all_plots(results, data: Data, scale=None, savepath=None):
         astrometry_phase_plot(results,data,savepath=savepath)
     residuals_plot(results,data,savepath=savepath)
     mass_distribution(results,scale=scale,savepath=savepath)
-
 

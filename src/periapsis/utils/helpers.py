@@ -116,19 +116,19 @@ def _matrix_builder(data,ref_epoch,linear_params=()):
             if "dgamma" in linear_params:
                 key_create(f'dgamma')
         elif isinstance(d, GaiaData):
-            key_create(f'dalpha')
-            key_create(f'mu_alpha')
-            if "dmu_alpha" in linear_params:
-                key_create(f'dmu_alpha')
+            key_create(f'dalpha_ang')
+            key_create(f'mu_alpha_ang')
+            if "dmu_alpha_ang" in linear_params:
+                key_create(f'dmu_alpha_ang')
             key_create(f'parallax')
-            key_create(f'ddelta')
-            key_create(f'mu_delta')
-            if "dmu_delta" in linear_params:
-                key_create(f'dmu_delta')
-            key_create(f'B{system}')
-            key_create(f'G{system}')
-            key_create(f'A{system}')
-            key_create(f'F{system}')
+            key_create(f'ddelta_ang')
+            key_create(f'mu_delta_ang')
+            if "dmu_delta_ang" in linear_params:
+                key_create(f'dmu_delta_ang')
+            key_create(f'B{system}_ang')
+            key_create(f'G{system}_ang')
+            key_create(f'A{system}_ang')
+            key_create(f'F{system}_ang')
 
     offsets = isinstance(data,JointData) and data.instrument_offsets is True
     if offsets:
@@ -203,15 +203,15 @@ def _matrix_builder(data,ref_epoch,linear_params=()):
         elif isinstance(d, GaiaData):
             n_obs = len(d.t_canonical)
             dt= d.t_canonical - ref_epoch
-            M[row_idx:row_idx+n_obs, cols[f'dalpha']] = d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'mu_alpha']] = dt*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'dalpha_ang']] = d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'mu_alpha_ang']] = dt*d.spsi
             M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plx_fac 
-            M[row_idx:row_idx+n_obs, cols[f'ddelta']] = d.cpsi
-            M[row_idx:row_idx+n_obs, cols[f'mu_delta']] = dt*d.cpsi
-            if "dmu_alpha" in linear_params:
-                M[row_idx:row_idx+n_obs, cols[f'dmu_alpha']] = 0.5*dt**2*d.spsi
-            if "dmu_delta" in linear_params:
-                M[row_idx:row_idx+n_obs, cols[f'dmu_delta']] = 0.5*dt**2*d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'ddelta_ang']] = d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'mu_delta_ang']] = dt*d.cpsi
+            if "dmu_alpha_ang" in linear_params:
+                M[row_idx:row_idx+n_obs, cols[f'dmu_alpha_ang']] = 0.5*dt**2*d.spsi
+            if "dmu_delta_ang" in linear_params:
+                M[row_idx:row_idx+n_obs, cols[f'dmu_delta_ang']] = 0.5*dt**2*d.cpsi
             if offsets:
                 instrument = str(d.instrument)
                 gaia_name = f"astro_{instrument}_offset"
@@ -271,10 +271,10 @@ def _matrix_filler(M,cols,params,data):
             Tp = params['Tp']
             X,Y,nu = _orbit_coords_nu(P,e,Tp,d.t_canonical)
             f_factor = _photocenter_factor(d, params)
-            M[row_idx:row_idx+n_obs, cols[f'B{system}']] = f_factor*X*d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'G{system}']] = f_factor*Y*d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'A{system}']] = f_factor*X*d.cpsi
-            M[row_idx:row_idx+n_obs, cols[f'F{system}']] = f_factor*Y*d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'B{system}_ang']] = f_factor*X*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'G{system}_ang']] = f_factor*Y*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'A{system}_ang']] = f_factor*X*d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'F{system}_ang']] = f_factor*Y*d.cpsi
             row_idx += n_obs
 
     
@@ -336,11 +336,11 @@ def null_matrix_builder(data,ref_epoch):
         elif isinstance(d, RadialVelocityData):
             key_create(f'gamma')
         elif isinstance(d, GaiaData):
-            key_create(f'dalpha')
-            key_create(f'mu_alpha')
+            key_create(f'dalpha_ang')
+            key_create(f'mu_alpha_ang')
             key_create(f'parallax')
-            key_create(f'ddelta')
-            key_create(f'mu_delta')
+            key_create(f'ddelta_ang')
+            key_create(f'mu_delta_ang')
 
     offsets = isinstance(data,JointData) and data.instrument_offsets is True
     if offsets:
@@ -403,10 +403,10 @@ def null_matrix_builder(data,ref_epoch):
         elif isinstance(d, GaiaData):
             n_obs = len(d.t_canonical)
             dt= d.t_canonical - ref_epoch
-            M[row_idx:row_idx+n_obs, cols[f'dalpha']] = d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'mu_alpha']] = dt*d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'ddelta']] = d.cpsi
-            M[row_idx:row_idx+n_obs, cols[f'mu_delta']] = dt*d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'dalpha_ang']] = d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'mu_alpha_ang']] = dt*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'ddelta_ang']] = d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'mu_delta_ang']] = dt*d.cpsi
             M[row_idx:row_idx+n_obs, cols[f'parallax']] = d.plx_fac
             if offsets:
                 instrument = str(d.instrument)
@@ -464,10 +464,10 @@ def _fill_periodogram_periodic(M,cols,ref_epoch,data,phase):
             dt= d.t_canonical - ref_epoch
             cos_phase = np.cos(phase * dt)
             sin_phase = np.sin(phase * dt)
-            M[row_idx:row_idx+n_obs, cols[f'B{system}']] = cos_phase*d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'G{system}']] = sin_phase*d.spsi
-            M[row_idx:row_idx+n_obs, cols[f'A{system}']] = cos_phase*d.cpsi
-            M[row_idx:row_idx+n_obs, cols[f'F{system}']] = sin_phase*d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'B{system}_ang']] = cos_phase*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'G{system}_ang']] = sin_phase*d.spsi
+            M[row_idx:row_idx+n_obs, cols[f'A{system}_ang']] = cos_phase*d.cpsi
+            M[row_idx:row_idx+n_obs, cols[f'F{system}_ang']] = sin_phase*d.cpsi
             row_idx += n_obs
 
 

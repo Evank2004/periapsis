@@ -144,20 +144,38 @@ class RVInitialGuess(InitialGuess):
         transform = build_transform_functions([*param_in, *self.fixed_prior_params], param_order)
         guess = transform(**prior_guess)
 
-        poss = []
+        pos = []
         for name in param_order:
-            poss.append(guess[name] + self.rng.normal(0, 1e-4, size=nwalkers))
-        pos = np.column_stack(poss)
-        return pos
+            if name not in guess:
+                raise ValueError(f"Missing initial guess for parameter: {name}")
+
+            prior = self.priors.get(name)
+
+            scale = 1e-4 * abs(guess[name])
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                scale = max(scale, 1e-4 * (prior.max - prior.min))
+
+            values = guess[name] + self.rng.normal(
+                0.0,
+                scale,
+                size=nwalkers,
+            )
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                values = np.clip(values, prior.min, prior.max)
+
+            pos.append(values)
+        return np.column_stack(pos)
 
 
 class RVLinearInitialGuess(RVInitialGuess):
-    def __init__(self, data, rng, ref_epoch=0.0, **priors):
+    def __init__(self, data, rng, ref_epoch=0.0, linear_params=(), **priors):
         super().__init__(data, rng, ref_epoch, **priors)
         self.PeTp_transform = build_transform_functions(
             self.priors.keys(), ("P", "e", "Tp")
         )
-        self.M, self.cols = _matrix_builder(data, self.ref_epoch)
+        self.M, self.cols = _matrix_builder(data, self.ref_epoch,linear_params=linear_params)
         self.eta = data.rv_canonical
         self.err = data.rv_err_canonical
 
@@ -253,10 +271,28 @@ class RVLinearInitialGuess(RVInitialGuess):
             [*param_in, *self.fixed_prior_params], param_order
         )
         best_values = transform(**best_prior_values)
-        positions = [
-            best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers)
-            for name in param_order
-        ]
+        positions = []
+        for name in param_order:
+            if name not in best_values:
+                raise ValueError(f"Missing initial guess for parameter: {name}")
+
+            prior = self.priors.get(name)
+
+            scale = 1e-4 * abs(best_values[name])
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                scale = max(scale, 1e-4 * (prior.max - prior.min))
+
+            values = best_values[name] + self.rng.normal(
+                0.0,
+                scale,
+                size=nwalkers,
+            )
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                values = np.clip(values, prior.min, prior.max)
+
+            positions.append(values)
         return np.column_stack(positions)
 
 

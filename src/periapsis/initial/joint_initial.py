@@ -7,6 +7,7 @@ from periapsis.prior import Bounds, FixedPrior, LogUniformPrior
 from periapsis.params.transforms import build_transform_functions
 from periapsis.utils.solvers import solve_kepler
 from periapsis.data import Data, JointData, GaiaData, RadialVelocityData, AstrometryData
+from periapsis.params import covered_parameters
 import numpy as np
 from scipy.optimize import differential_evolution,minimize, NonlinearConstraint
 
@@ -111,18 +112,26 @@ class JointLinearInitialGuess(InitialGuess):
     def _linear_seed(self):
         """ Returns an initial guess from linearization method to make it easier for small optimizer run to converge"""
 
-        param_in = []
+        linear_params = set(self.cols)
+        fixed_params = set(self.fixed_prior_params)
+
+        linear_derived_params = covered_parameters(
+            linear_params | fixed_params
+        )
+
+        param_in = [name for name, prior in self.priors.items()
+            if not isinstance(prior, (Bounds, FixedPrior))
+            and name not in linear_derived_params
+        ]
+
         P_guess = self.Delisle_joint()
         initial_points = []
-        for i in self.priors.keys():
-            prior = self.priors[i]
-            if isinstance(prior,(Bounds, FixedPrior)):
-                continue
-            param_in.append(i)
-            if i == 'P':
+
+        for name in param_in:
+            if name == "P":
                 initial_points.append(P_guess)
             else:
-                initial_points.append(prior.sample(self.rng, size=1)[0])
+                initial_points.append(self.priors[name].sample(self.rng, size=1)[0])
 
         bounds = self._bounds(param_in)
         lower = np.array([b[0] for b in bounds],dtype=float)
@@ -191,8 +200,11 @@ class JointLinearInitialGuess(InitialGuess):
     
                 scale = 1e-4 * abs(best_values[name])
     
-                if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                    scale = max(scale, 1e-4 * (prior.max - prior.min))
+                if prior is not None and not isinstance(prior, FixedPrior):
+                    lower = getattr(prior, "lower", getattr(prior, "min", None))
+                    upper = getattr(prior, "upper", getattr(prior, "max", None))
+                    if lower is not None and upper is not None:
+                        scale = max(scale, 1e-4 * (upper - lower))
     
                 values = best_values[name] + self.rng.normal(
                     0.0,
@@ -200,8 +212,14 @@ class JointLinearInitialGuess(InitialGuess):
                     size=nwalkers,
                 )
     
-                if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                    values = np.clip(values, prior.min, prior.max)
+                if prior is not None and not isinstance(prior, FixedPrior):
+                    lower = getattr(prior, "lower", getattr(prior, "min", None))
+                    upper = getattr(prior, "upper", getattr(prior, "max", None))
+                    if lower is not None:
+                        lower = np.nextafter(lower, upper if upper is not None else np.inf)
+                    if upper is not None:
+                        upper = np.nextafter(upper, lower if lower is not None else -np.inf)
+                    values = np.clip(values, lower, upper)
     
                 poss.append(values)
 
@@ -226,20 +244,19 @@ class JointInitialGuess(JointLinearInitialGuess):
         best_values = self._linear_seed()
 
 
-        _matrix_filler(self.M_base, self.cols, best_values, self.data)
-        sigma = _sigma(self.data, best_values, self.sigma)
-        mu,_ = _lsq_helper(self.M_base, self.eta, sigma)
+        helpers._matrix_filler(self.M_base, self.cols, best_values, self.data)
+        sigma = helpers.sigma(self.data, best_values, self.sigma)
+        mu,_ = helpers._lsq_helper(self.M_base, self.eta, sigma)
 
         best_values.update({
             name:mu[i] for name,i in self.cols.items()
         })
-        
-                
 
         transform = build_transform_functions(
-            best_values.keys(), param_order,)
-
+            best_values.keys(),param_order,
+        )
         best_values.update(transform(**best_values))
+        
 
         positions = []
         for name in param_order:
@@ -252,8 +269,11 @@ class JointInitialGuess(JointLinearInitialGuess):
 
             scale = 1e-4 * abs(best_values[name])
 
-            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                scale = max(scale, 1e-4 * (prior.max - prior.min))
+            if prior is not None and not isinstance(prior, FixedPrior):
+                lower = getattr(prior, "lower", getattr(prior, "min", None))
+                upper = getattr(prior, "upper", getattr(prior, "max", None))
+                if lower is not None and upper is not None:
+                    scale = max(scale, 1e-4 * (upper - lower))
 
             values = best_values[name] + self.rng.normal(
                 0.0,
@@ -261,8 +281,14 @@ class JointInitialGuess(JointLinearInitialGuess):
                 size=nwalkers,
             )
 
-            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                values = np.clip(values, prior.min, prior.max)
+            if prior is not None and not isinstance(prior, FixedPrior):
+                lower = getattr(prior, "lower", getattr(prior, "min", None))
+                upper = getattr(prior, "upper", getattr(prior, "max", None))
+                if lower is not None:
+                    lower = np.nextafter(lower, upper if upper is not None else np.inf)
+                if upper is not None:
+                    upper = np.nextafter(upper, lower if lower is not None else -np.inf)
+                values = np.clip(values, lower, upper)
 
             positions.append(values)
         return np.column_stack(positions)

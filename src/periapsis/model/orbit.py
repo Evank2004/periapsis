@@ -46,9 +46,9 @@ _vxyz_param_names = {
 }
 
 _gaia_param_names = {
-    "": {par.P, par.e, par.Tp,  par.A, par.B, par.F, par.G, par.parallax, par.dalpha, par.ddelta, par.mu_alpha, par.mu_delta}, # Relative Gaia astrometry
-    "1": {par.P, par.e, par.Tp, par.A1, par.B1, par.F1, par.G1, par.parallax, par.dalpha, par.ddelta, par.mu_alpha, par.mu_delta}, # Primary Gaia astrometry
-    "2": {par.P, par.e, par.Tp, par.A2, par.B2, par.F2, par.G2, par.parallax, par.dalpha, par.ddelta, par.mu_alpha, par.mu_delta} # Secondary Gaia astrometry
+    "": {par.P, par.e, par.Tp,  par.ang(par.A), par.ang(par.B), par.ang(par.F), par.ang(par.G), par.parallax, par.ang(par.dalpha), par.ang(par.ddelta), par.ang(par.mu_alpha), par.ang(par.mu_delta)}, # Relative Gaia astrometry
+    "1": {par.P, par.e, par.Tp, par.ang(par.A1), par.ang(par.B1), par.ang(par.F1), par.ang(par.G1), par.parallax, par.ang(par.dalpha), par.ang(par.ddelta), par.ang(par.mu_alpha), par.ang(par.mu_delta)}, # Primary Gaia astrometry
+    "2": {par.P, par.e, par.Tp, par.ang(par.A2), par.ang(par.B2), par.ang(par.F2), par.ang(par.G2), par.parallax, par.ang(par.dalpha), par.ang(par.ddelta), par.ang(par.mu_alpha), par.ang(par.mu_delta)} # Secondary Gaia astrometry
 }
 
 class Orbit():
@@ -291,8 +291,8 @@ class Orbit():
         
         wss = self._wss(t, spsi, cpsi, par_factor, system)
 
-        wk = ((self.derived_params[par.system(par.B, system)]*X + self.derived_params[par.system(par.G, system)]*Y)*spsi
-              + (self.derived_params[par.system(par.A, system)]*X + self.derived_params[par.system(par.F, system)]*Y)*cpsi)
+        wk = ((self.derived_params[par.ang(par.system(par.B, system))]*X + self.derived_params[par.ang(par.system(par.G, system))]*Y)*spsi
+              + (self.derived_params[par.ang(par.system(par.A, system))]*X + self.derived_params[par.ang(par.system(par.F, system))]*Y)*cpsi)
 
         return wss + wk
 
@@ -303,21 +303,21 @@ class Orbit():
         dt = t - self.derived_params['Tepoch']
         values = self.derived_params
         wss = 0.0
-        if 'dalpha' in values:
-            wss += (values['dalpha']) * spsi
-        if 'mu_alpha' in values:
-            wss += (values['mu_alpha']) * dt * spsi
-        if 'mu_delta' in values:
-            wss += (values['mu_delta']) * dt * cpsi
-        if 'ddelta' in values:
-            wss += (values['ddelta']) * cpsi
+        if 'dalpha_ang' in values:
+            wss += (values['dalpha_ang']) * spsi
+        if 'mu_alpha_ang' in values:
+            wss += (values['mu_alpha_ang']) * dt * spsi
+        if 'mu_delta_ang' in values:
+            wss += (values['mu_delta_ang']) * dt * cpsi
+        if 'ddelta_ang' in values:
+            wss += (values['ddelta_ang']) * cpsi
         if 'parallax' in values:
             wss += values['parallax'] * par_factor
 
-        if 'dmu_alpha' in values:
-            wss += 0.5 * (values['dmu_alpha']) * dt**2 * spsi
-        if 'dmu_delta' in values:
-            wss += 0.5 * (values['dmu_delta']) * dt**2 * cpsi
+        if 'dmu_alpha_ang' in values:
+            wss += 0.5 * (values['dmu_alpha_ang']) * dt**2 * spsi
+        if 'dmu_delta_ang' in values:
+            wss += 0.5 * (values['dmu_delta_ang']) * dt**2 * cpsi
 
 
         return wss

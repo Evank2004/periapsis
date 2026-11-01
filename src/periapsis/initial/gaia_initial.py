@@ -2,6 +2,7 @@ import numpy as np
 import periapsis.utils.helpers as helpers
 from periapsis.data.gaia import GaiaData
 from periapsis.params.transforms import build_transform_functions
+from periapsis.params.transforms import covered_parameters
 from periapsis.prior import Bounds, FixedPrior
 from scipy.optimize import differential_evolution, minimize, NonlinearConstraint
 import periapsis.params as params
@@ -189,26 +190,32 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
 
     def _linear_seed(self):
         ''' Function for starting nonlinear fitter with a linear fit for Gaia data'''
+
+        linear_params = set(self.cols)
+        fixed_params = set(self.fixed_prior_params)
+
+        linear_derived_params = covered_parameters(
+            linear_params | fixed_params
+        )
+
+        param_in = [name for name, prior in self.priors.items()
+            if not isinstance(prior, (Bounds, FixedPrior))
+            and name not in linear_derived_params
+        ]
+        
+        
         P_guess, _ = self.Delisle_periodogram()
         self.PeTp_transform = build_transform_functions(
             self.priors.keys(), ("P", "e", "Tp")
         )
-        param_in = []
+        
         initial_points = []
 
-        linear_param_names = frozenset(self.cols)
-
-        for name, prior in self.priors.items():
-            if isinstance(prior, (Bounds, FixedPrior)):
-                continue
-            if name in linear_param_names:
-                continue
-
-            param_in.append(name)
-            if name == params.P:
+        for name in param_in:
+            if name == "P":
                 initial_points.append(P_guess)
             else:
-                initial_points.append(prior.sample(self.rng, size=1)[0])
+                initial_points.append(self.priors[name].sample(self.rng, size=1)[0])
 
         bounds = self._bounds(param_in)
         lower = np.asarray([bound[0] for bound in bounds], dtype=float)
@@ -227,13 +234,11 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
                 },
             )[bound]
 
-        constraints = [
-                    NonlinearConstraint(
-                        bounds_transform_fn(name), bound.lower, bound.upper
-                    )
-                    for name, bound in self.priors.items()
-                    if isinstance(bound, Bounds)
-                ]
+        constraints = []
+        for name, bound in self.priors.items():
+            if not isinstance(bound, Bounds):
+                continue
+            constraints.append(NonlinearConstraint(bounds_transform_fn(name),  bound.lower, bound.upper))
         
         linear_neg_lnlike = super().neg_lnlike
 
@@ -259,14 +264,16 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
         best_vals.update(
             {name: prior.value for name, prior in self.fixed_prior_params.items()}
         )
+
         best_vals.update(self.PeTp_transform(**best_vals))
 
         helpers._matrix_filler(self.M_base, self.cols, best_vals, self.data)
         sigma = helpers.sigma(self.data, best_vals, self.data.err_canonical)
-        mu,_ = helpers._lsq_helper(self.M_base, self.data.x_canonical, sigma)
+        mu, _ = helpers._lsq_helper(self.M_base, self.data.x_canonical, sigma)
 
         best_vals.update({
-            name:mu[i] for name,i in self.cols.items()
+            name: mu[index]
+            for name, index in self.cols.items()
         })
 
         return best_vals
@@ -286,14 +293,19 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
         positions = []
         for name in param_order:
             if name not in best_values:
-                raise ValueError(f"Missing initial guess for parameter: {name}")
+                raise ValueError(
+                    f"Missing initial guess for parameter: {name}"
+                    )
 
             prior = self.priors.get(name)
 
             scale = 1e-4 * abs(best_values[name])
 
-            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                scale = max(scale, 1e-4 * (prior.max - prior.min))
+            if prior is not None and not isinstance(prior, FixedPrior):
+                lower = getattr(prior, "lower", getattr(prior, "min", None))
+                upper = getattr(prior, "upper", getattr(prior, "max", None))
+                if lower is not None and upper is not None:
+                    scale = max(scale, 1e-4 * (upper - lower))
 
             values = best_values[name] + self.rng.normal(
                 0.0,
@@ -301,8 +313,14 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
                 size=nwalkers,
             )
 
-            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                values = np.clip(values, prior.min, prior.max)
+            if prior is not None and not isinstance(prior, FixedPrior):
+                lower = getattr(prior, "lower", getattr(prior, "min", None))
+                upper = getattr(prior, "upper", getattr(prior, "max", None))
+                if lower is not None:
+                    lower = np.nextafter(lower, upper if upper is not None else np.inf)
+                if upper is not None:
+                    upper = np.nextafter(upper, lower if lower is not None else -np.inf)
+                values = np.clip(values, lower, upper)
 
             positions.append(values)
         return np.column_stack(positions)

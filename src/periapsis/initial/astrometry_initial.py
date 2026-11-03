@@ -3,7 +3,7 @@ import numpy as np
 from scipy.optimize import minimize, differential_evolution, NonlinearConstraint, LinearConstraint
 from astropy.timeseries import LombScargle
 from scipy.signal import find_peaks
-from periapsis.params.transforms import build_transform_functions
+from periapsis.params.transforms import build_transform_functions,covered_parameters
 from periapsis.prior import FixedPrior, Bounds
 import periapsis.utils.helpers as helpers
 import periapsis.params as params
@@ -16,6 +16,35 @@ class AstrometryInitialGuess(InitialGuess):
     def __init__(self, data, rng, ref_epoch=0.0, **priors):
         super().__init__(data, rng, ref_epoch, **priors)
         self.ref_epoch = ref_epoch
+        self.M_base, self.cols = helpers._matrix_builder(
+        data,
+        ref_epoch,
+        linear_params=self.priors.keys(),
+        )
+
+        if isinstance(data, PhysicalAstrometryData):
+            self.eta = np.concatenate((
+                data.x_canonical,
+                data.y_canonical,
+            ))
+            self.err = np.concatenate((
+                data.x_err_canonical,
+                data.y_err_canonical,
+            ))
+        elif isinstance(data, AstrometryData):
+            self.eta = np.concatenate((
+                data.x_ang_canonical,
+                data.y_ang_canonical,
+            ))
+            self.err = np.concatenate((
+                data.x_err_ang_canonical,
+                data.y_err_ang_canonical,
+            ))
+        else:
+            raise ValueError(
+                "Data must be an instance of AstrometryData "
+                "or PhysicalAstrometryData."
+            )
 
     
     def lomb_scargle(self):
@@ -68,7 +97,7 @@ class AstrometryInitialGuess(InitialGuess):
             if prior is not None:
                 bounds.append((prior.min, prior.max))
             else:
-                raise ValueError(f"Missing prior bounds for parameter: {name}")   
+                raise ValueError(f"Missing prior bounds for parameter: {name}")
         return bounds
     
     def ln_like(self,params_dict,data):
@@ -93,7 +122,7 @@ class AstrometryInitialGuess(InitialGuess):
                 if np.isinf(lp):
                     return -np.inf
             else:
-                raise ValueError(f"Missing prior bounds for parameter: {name}")
+                continue
         return lp
     
     def neg_lnlike(self,params,data,priors,param_in):
@@ -102,90 +131,201 @@ class AstrometryInitialGuess(InitialGuess):
         return -(self.ln_prior(params_dict, priors) + self.ln_like(params_dict, data))
     
 
-    def get_initial_guess(self, param_order, nwalkers):
-        """
-        Returns an intial guess on fitted parameters based on the data
-        """
-        param_in = []
+
+    def _linear_seed(self):
+        linear_params = set(self.cols)
+        fixed_params = set(self.fixed_prior_params)
+
+        linear_derived_params = covered_parameters(
+            linear_params | fixed_params
+        )
+
+        param_in = [
+            name
+            for name, prior in self.priors.items()
+            if not isinstance(prior, (Bounds, FixedPrior))
+            and name not in linear_derived_params
+        ]
+
         a1_guess, p_guess = self.lomb_scargle()
         initial_points = []
-        for i in self.priors.keys():
-            prior = self.priors[i]
-            if isinstance(prior, (Bounds, FixedPrior)):
-                continue
-            param_in.append(i)
-            if i == params.a or i == params.a1 or i == params.a2:
-                initial_points.append(a1_guess)
-            elif i == params.P:
-                initial_points.append(p_guess)
-            else:
-                initial_points.append(prior.sample(self.rng, size=1)[0])
-        
-        bounds = self._bounds(param_in)
-        lower = np.array([b[0] for b in bounds], dtype=float)
-        upper = np.array([b[1] for b in bounds], dtype=float)
-        initial_points = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
 
+        for name in param_in:
+            if name == params.P:
+                initial_points.append(p_guess)
+            elif name in {params.a, params.a1, params.a2}:
+                initial_points.append(a1_guess)
+            else:
+                initial_points.append(
+                    self.priors[name].sample(self.rng, size=1)[0]
+                )
+
+        bounds = self._bounds(param_in)
+        lower = np.asarray([bound[0] for bound in bounds], dtype=float)
+        upper = np.asarray([bound[1] for bound in bounds], dtype=float)
+        initial_points = np.clip(
+            np.asarray(initial_points, dtype=float),
+            lower,
+            upper,
+        )
+
+        self.PeTp_transform = build_transform_functions(
+            self.priors.keys(),
+            ("P", "e", "Tp"),
+        )
+
+        def linear_neg_lnlike(values, param_in):
+            params_dict = dict(zip(param_in, values))
+            params_dict.update({
+                name: prior.value
+                for name, prior in self.fixed_prior_params.items()
+            })
+            params_dict.update(self.PeTp_transform(**params_dict))
+
+            solved_params, chi2 = helpers._linear_solution(
+                self.M_base,
+                self.cols,
+                params_dict,
+                self.data,
+                self.eta,
+                self.err,
+            )
+
+            ln_prior = self.ln_prior(solved_params, self.priors)
+
+            if not np.isfinite(ln_prior) or not np.isfinite(chi2):
+                return np.inf
+
+            return 0.5 * chi2 - ln_prior
+
+        def bounds_transform_fn(name, values):
+            params_dict = dict(zip(param_in, values))
+            params_dict.update({
+                parameter: prior.value
+                for parameter, prior in self.fixed_prior_params.items()
+            })
+            params_dict.update(self.PeTp_transform(**params_dict))
+
+            solved_params, _ = helpers._linear_solution(
+                self.M_base,
+                self.cols,
+                params_dict,
+                self.data,
+                self.eta,
+                self.err,
+            )
+            return solved_params[name]
+
+        constraints = [
+            NonlinearConstraint(
+                lambda values, name=name: bounds_transform_fn(name, values),
+                bound.lower,
+                bound.upper,
+            )
+            for name, bound in self.priors.items()
+            if isinstance(bound, Bounds)
+        ]
 
         result = differential_evolution(
-            self.neg_lnlike, 
-            bounds=bounds, 
-            args=(self.data, self.priors,param_in), 
+            linear_neg_lnlike,
+            bounds=bounds,
+            args=(param_in,),
             maxiter=2000,
             polish=False,
-            x0=initial_points
+            x0=initial_points,
         )
-
-        def bounds_transform_fn(bound):
-            transform = build_transform_functions([*param_in, *self.fixed_prior_params], [bound])
-            return lambda x: transform(
-                **dict(zip(param_in, x)),
-                **{name: prior.value for name, prior in self.fixed_prior_params.items()},
-            )[bound]
-
-        constraints = []
-        for name, bound in self.priors.items():
-            if not isinstance(bound, Bounds):
-                continue
-            constraints.append(NonlinearConstraint(bounds_transform_fn(name),  bound.lower, bound.upper))
 
         orbit = minimize(
-            self.neg_lnlike, 
+            linear_neg_lnlike,
             x0=result.x,
-            method='SLSQP', 
-            args=(self.data, self.priors,param_in), 
+            method="SLSQP",
+            args=(param_in,),
             bounds=bounds,
             constraints=constraints,
-            options={'maxiter': 2000}
+            options={"maxiter": 2000},
         )
 
-        best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
-        transform = build_transform_functions([*param_in, *self.fixed_prior_params], param_order)
-        best_prior_values.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
-        best_values = transform(**best_prior_values)
-        poss = []
+        best_values = dict(zip(
+            param_in,
+            np.clip(orbit.x, lower, upper),
+        ))
+        best_values.update({
+            name: prior.value
+            for name, prior in self.fixed_prior_params.items()
+        })
+        best_values.update(self.PeTp_transform(**best_values))
+
+        best_values, _ = helpers._linear_solution(
+            self.M_base,
+            self.cols,
+            best_values,
+            self.data,
+            self.eta,
+            self.err,
+        )
+
+        return best_values
+
+
+
+    def get_initial_guess(self, param_order, nwalkers):
+        best_values = self._linear_seed()
+
+        transform = build_transform_functions(
+            best_values.keys(),
+            param_order,
+        )
+        best_values.update(transform(**best_values))
+
+        positions = []
         for name in param_order:
-            poss.append(best_values[name] + self.rng.normal(0, 1e-4, size=nwalkers) * best_values[name])
-        pos = np.column_stack(poss)
+            if name not in best_values:
+                raise ValueError(
+                    f"Missing initial guess for parameter: {name}"
+                )
+
+            prior = self.priors.get(name)
+            scale = 1e-4 * max(abs(best_values[name]), 1.0)
+
+            if prior is not None and not isinstance(prior, FixedPrior):
+                scale = max(
+                    scale,
+                    1e-4 * (prior.max - prior.min),
+                )
+
+            values = best_values[name] + self.rng.normal(
+                0.0,
+                scale,
+                size=nwalkers,
+            )
+
+            if prior is not None and not isinstance(prior, FixedPrior):
+                values = np.clip(
+                    values,
+                    np.nextafter(prior.min, prior.max),
+                    np.nextafter(prior.max, prior.min),
+                )
+
+            positions.append(values)
+        pos = np.column_stack(positions)
+
         return pos
 
 
 class AstrometryLinearInitialGuess(AstrometryInitialGuess):
     def __init__(self, data, rng, ref_epoch=0.0, linear_params=(), **priors):
-        super().__init__(data, rng, ref_epoch, **priors)
-        self.PeTp_transform = build_transform_functions(self.priors.keys(), ('P', 'e', 'Tp'))
-        self.ref_epoch = ref_epoch
-        self.M, self.cols = helpers._matrix_builder(
-            data, self.ref_epoch, linear_params=linear_params
+        super().__init__(data,rng,ref_epoch,**priors)
+        self.PeTp_transform = build_transform_functions(
+            self.priors.keys(),
+            ("P", "e", "Tp"),
         )
-        if isinstance(data, PhysicalAstrometryData):
-            self.eta = np.concatenate((data.x_canonical, data.y_canonical))
-            self.err = np.concatenate((data.x_err_canonical, data.y_err_canonical))
-        elif isinstance(data, AstrometryData):
-            self.eta = np.concatenate((data.x_ang_canonical, data.y_ang_canonical))
-            self.err = np.concatenate((data.x_err_ang_canonical, data.y_err_ang_canonical))
-        else:
-            raise ValueError("Data must be an instance of AstrometryData or PhysicalAstrometryData.")
+        self.M, self.cols = helpers._matrix_builder(
+            data,
+            ref_epoch,
+            linear_params=linear_params,
+        )
+
+        
         
     def neg_lnlike(self,params,data,priors,param_in):
         params_dict = dict(zip(param_in,params))

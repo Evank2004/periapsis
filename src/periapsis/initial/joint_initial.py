@@ -236,21 +236,145 @@ class JointLinearInitialGuess(InitialGuess):
 
 
 class JointInitialGuess(JointLinearInitialGuess):
-    def __init__(self,data,rng,ref_epoch=0.0, linear_params=(), **priors):
-        super().__init__(data, rng, ref_epoch, linear_params=linear_params, **priors)
+    def __init__(self, data, rng, ref_epoch=0.0, **priors):
+        super().__init__(data,rng,ref_epoch,
+            linear_params=priors.keys(),
+            **priors,
+        )
 
+        def _linear_seed(self):
+            """Return a linearized seed for the full nonlinear MCMC fit."""
+            linear_params = set(self.cols)
+            fixed_params = set(self.fixed_prior_params)
+
+            linear_derived_params = covered_parameters(
+                linear_params | fixed_params
+            )
+
+            param_in = [
+                name
+                for name, prior in self.priors.items()
+                if not isinstance(prior, (Bounds, FixedPrior))
+                and name not in linear_derived_params
+            ]
+
+            P_guess = self.Delisle_joint()
+            initial_points = []
+
+            for name in param_in:
+                if name == "P":
+                    initial_points.append(P_guess)
+                else:
+                    initial_points.append(
+                        self.priors[name].sample(self.rng, size=1)[0]
+                    )
+
+            bounds = self._bounds(param_in)
+            lower = np.array([bound[0] for bound in bounds], dtype=float)
+            upper = np.array([bound[1] for bound in bounds], dtype=float)
+            initial_points = np.clip(
+                np.asarray(initial_points, dtype=float),
+                lower,
+                upper,
+            )
+
+            def linear_neg_lnlike(params, param_in):
+                params_dict = dict(zip(param_in, params))
+                params_dict.update({
+                    name: prior.value
+                    for name, prior in self.fixed_prior_params.items()
+                })
+                params_dict.update(self.PeTp_transform(**params_dict))
+
+                solved_params, chi2 = helpers._linear_solution(
+                    self.M_base,
+                    self.cols,
+                    params_dict,
+                    self.data,
+                    self.eta,
+                    self.sigma,
+                )
+
+                ln_prior = self.lnprior(solved_params)
+
+                if not np.isfinite(ln_prior) or not np.isfinite(chi2):
+                    return np.inf
+
+                return 0.5 * chi2 - ln_prior
+
+            def evaluate_bound(name, values):
+                params_dict = dict(zip(param_in, values))
+                params_dict.update({
+                    parameter: prior.value
+                    for parameter, prior in self.fixed_prior_params.items()
+                })
+                params_dict.update(self.PeTp_transform(**params_dict))
+
+                solved_params, _ = helpers._linear_solution(
+                    self.M_base,
+                    self.cols,
+                    params_dict,
+                    self.data,
+                    self.eta,
+                    self.sigma,
+                )
+                return solved_params[name]
+
+            constraints = [
+                NonlinearConstraint(
+                    lambda values, name=name: evaluate_bound(name, values),
+                    bound.lower,
+                    bound.upper,
+                )
+                for name, bound in self.priors.items()
+                if isinstance(bound, Bounds)
+            ]
+
+            result = differential_evolution(
+                linear_neg_lnlike,
+                bounds=bounds,
+                args=(param_in,),
+                maxiter=2000,
+                polish=False,
+                x0=initial_points,
+            )
+
+            orbit = minimize(
+                linear_neg_lnlike,
+                x0=result.x,
+                method="SLSQP",
+                args=(param_in,),
+                bounds=bounds,
+                constraints=constraints,
+                options={"maxiter": 2000},
+            )
+
+            best_values = dict(zip(
+                param_in,
+                np.clip(orbit.x, lower, upper),
+            ))
+            best_values.update({
+                name: prior.value
+                for name, prior in self.fixed_prior_params.items()
+            })
+            best_values.update(self.PeTp_transform(**best_values))
+
+            best_values, _ = helpers._linear_solution(
+                self.M_base,
+                self.cols,
+                best_values,
+                self.data,
+                self.eta,
+                self.sigma,
+            )
+
+            return best_values
+
+    
     def get_initial_guess(self, param_order, nwalkers):
         
         best_values = self._linear_seed()
 
-
-        helpers._matrix_filler(self.M_base, self.cols, best_values, self.data)
-        sigma = helpers.sigma(self.data, best_values, self.sigma)
-        mu,_ = helpers._lsq_helper(self.M_base, self.eta, sigma)
-
-        best_values.update({
-            name:mu[i] for name,i in self.cols.items()
-        })
 
         transform = build_transform_functions(
             best_values.keys(),param_order,

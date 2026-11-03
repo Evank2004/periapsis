@@ -603,6 +603,20 @@ def _photocenter_factor(data,params):
     return q_f_to_photocenter_factor(params['q'],params[flux_name],data.system)
 
 
+def _linear_solution(M, cols, params_dict, data, eta, err):
+    """Solve linear coefficients for a nonlinear parameter dictionary."""
+    _matrix_filler(M, cols, params_dict, data)
+    sigma_values = sigma(data, params_dict, err)
+    mu, chi2 = _lsq_helper(M, eta, sigma_values)
+
+    solved_params = dict(params_dict)
+    solved_params.update({
+        name: mu[index]
+        for name, index in cols.items()
+    })
+
+    return solved_params, chi2
+
 def float_to_scientific_latex_string(value, precision=None):
     """
     Format a float as a LaTeX string in scientific notation.

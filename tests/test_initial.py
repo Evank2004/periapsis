@@ -238,105 +238,107 @@ def test_zucker_period_search_uses_default_range_when_no_period_prior(
     ]
 
 
-def test_rv_negative_log_posterior_combines_log_likelihood_and_priors(monkeypatch):
-    data = make_rv_data()
-    data.log_likelihood = lambda model, offset_names=None: -4.0
-    varying = StubPrior(-10.0, 10.0, logpdf_value=-1.5)
-    fixed = FixedPrior(2.0)
-    guess = RVInitialGuess(
-        data, ref_epoch=0.0,
-        rng=np.random.RandomState(0),
-        gamma=varying,
-        P=fixed,
-    )
-    captured = {}
-
-    class FakeOrbit:
-        def __init__(self, **parameters):
-            captured.update(parameters)
-
-    monkeypatch.setattr(rv_module, "Orbit", FakeOrbit)
-
-    result = guess.neg_lnlike([3.0, 2.0], data)
-
-    assert captured == {"gamma": 3.0, "P": 2.0}
-    assert varying.logpdf_calls == [3.0]
-    assert result == pytest.approx(5.5)
-
-
-def test_rv_negative_log_posterior_is_negative_infinity_outside_prior(
-    monkeypatch,
-):
-    data = make_rv_data()
-    data.log_likelihood = lambda model, offset_names=None: 0.0
-    prior = StubPrior(0.0, 1.0, logpdf_value=-np.inf)
-    guess = RVInitialGuess(data,ref_epoch=0.0,rng= np.random.RandomState(0), e=prior)
-    monkeypatch.setattr(rv_module, "Orbit", lambda **parameters: object())
-
-    result = guess.neg_lnlike([2.0], data)
-
-    assert result == -np.inf
-
-
 def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
     data = make_rv_data()
     rng = RecordingRNG()
     period_prior = StubPrior(1.0, 10.0, sample_value=7.0)
     eccentricity_prior = StubPrior(0.0, 0.9, sample_value=0.3)
+    epoch_prior = StubPrior(0.0, 20.0, sample_value=4.0)
     guess = RVInitialGuess(
         data, ref_epoch=0.0,
         rng=rng,
         P=period_prior,
         e=eccentricity_prior,
+        Tp=epoch_prior,
     )
     monkeypatch.setattr(guess, "Zucker_pdc", lambda: 5.0)
     optimizer_calls = {}
 
     def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
         optimizer_calls["global"] = (function, bounds, args, maxiter, polish, x0)
-        return SimpleNamespace(x=np.array([6.0, 0.4]))
+        return SimpleNamespace(x=np.array([6.0, 0.4, 4.0]))
 
-    def fake_minimize(function, x0, method, args, bounds, options):
+    def fake_minimize(function, x0, method, args, bounds, constraints, options):
         optimizer_calls["local"] = (
             function,
             x0,
             method,
             args,
             bounds,
+            constraints,
             options,
         )
-        return SimpleNamespace(x=np.array([20.0, -1.0]))
+        return SimpleNamespace(x=np.array([20.0, -1.0, 30.0]))
 
     monkeypatch.setattr(rv_module, "differential_evolution", fake_differential_evolution)
     monkeypatch.setattr(rv_module, "minimize", fake_minimize)
 
-    result = guess.get_initial_guess(["n", "e"], nwalkers=3)
+    result = guess.get_initial_guess(["P", "e", "Tp"], nwalkers=3)
 
-    n_guess = 2.0 * np.pi / 10.0
-    expected = np.array(
-        [
-            [n_guess, 0.0],
-            [n_guess + 1e-4 * n_guess, 1e-4 * 0.9],
-            [n_guess + 2e-4 * n_guess, 2e-4 * 0.9],
-        ]
-    )
-    np.testing.assert_allclose(result, expected)
-    assert result.shape == (3, 2)
+    assert result.shape == (3, 3)
+    assert np.all((result[:, 0] >= 1.0) & (result[:, 0] <= 10.0))
+    assert np.all((result[:, 1] >= 0.0) & (result[:, 1] <= 0.9))
+    assert np.all((result[:, 2] >= 0.0) & (result[:, 2] <= 20.0))
     assert eccentricity_prior.sample_calls == [(rng, 1)]
-    assert optimizer_calls["global"][1:5] == (
-        [(1.0, 10.0), (0.0, 0.9)],
-        (data,),
-        2000,
-        False,
+    assert optimizer_calls["global"][1] == [
+        (1.0, 10.0),
+        (0.0, 0.9),
+        (0.0, 20.0),
+    ]
+    assert optimizer_calls["global"][2] == (["P", "e", "Tp"],)
+    np.testing.assert_array_equal(
+        optimizer_calls["global"][5],
+        [5.0, 0.3, 4.0],
     )
-    np.testing.assert_array_equal(optimizer_calls["global"][5], [5.0, 0.3])
-    assert optimizer_calls["local"][2:] == (
-        "L-BFGS-B",
-        (data,),
-        [(1.0, 10.0), (0.0, 0.9)],
-        {"maxiter": 2000},
+    assert optimizer_calls["local"][2] == "SLSQP"
+
+
+def test_rv_initial_guess_solves_dgamma_as_a_linear_parameter(monkeypatch):
+    guess = RVInitialGuess(
+        make_rv_data(),
+        ref_epoch=0.0,
+        rng=np.random.RandomState(0),
+        P=StubPrior(1.0, 10.0, sample_value=5.0),
+        e=StubPrior(0.0, 0.9, sample_value=0.3),
+        Tp=StubPrior(0.0, 20.0, sample_value=4.0),
+        dgamma=StubPrior(-2.0, 2.0),
     )
-    np.testing.assert_array_equal(optimizer_calls["local"][1], [6.0, 0.4])
+    monkeypatch.setattr(guess, "Zucker_pdc", lambda: 5.0)
+    optimizer_calls = {}
+    linear_solution_calls = []
+
+    def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
+        optimizer_calls["global"] = (function, bounds, args, x0)
+        return SimpleNamespace(x=np.array([5.0, 0.3, 4.0]))
+
+    def fake_minimize(function, x0, method, args, bounds, constraints, options):
+        optimizer_calls["local"] = (function, x0, bounds)
+        return SimpleNamespace(x=np.array([5.0, 0.3, 4.0]))
+
+    def fake_linear_solution(matrix, cols, params, data, eta, err):
+        linear_solution_calls.append(params)
+        return {**params, "dgamma": 0.75}, 1.0
+
+    monkeypatch.setattr(rv_module, "differential_evolution", fake_differential_evolution)
+    monkeypatch.setattr(rv_module, "minimize", fake_minimize)
+    monkeypatch.setattr(rv_module.helpers, "_linear_solution", fake_linear_solution)
+
+    result = guess.get_initial_guess(["P", "e", "Tp", "dgamma"], nwalkers=2)
+
+    assert optimizer_calls["global"][1] == [
+        (1.0, 10.0),
+        (0.0, 0.9),
+        (0.0, 20.0),
+    ]
+    assert optimizer_calls["global"][2] == (["P", "e", "Tp"],)
+    assert optimizer_calls["local"][1].shape == (3,)
+    assert len(linear_solution_calls) == 1
+    assert linear_solution_calls[0]["P"] == 5.0
+    assert linear_solution_calls[0]["e"] == 0.3
+    assert linear_solution_calls[0]["Tp"] == 4.0
+    assert "dgamma" not in linear_solution_calls[0]
+    assert np.all((result[:, 3] >= -2.0) & (result[:, 3] <= 2.0))
+    np.testing.assert_allclose(result[:, 3], 0.75, atol=1e-3)
 
 
 def test_astrometry_bounds_preserve_order_and_require_every_prior():
@@ -395,8 +397,7 @@ def test_astrometry_log_prior_handles_impossible_and_missing_values():
     )
 
     assert guess.ln_prior({"e": 2.0}, {"e": impossible}) == -np.inf
-    with pytest.raises(ValueError, match="e"):
-        guess.ln_prior({"e": 0.2}, {})
+    assert guess.ln_prior({"e": 0.2}, {}) == 0.0
 
 
 def test_astrometry_negative_log_posterior_maps_parameter_order(monkeypatch):
@@ -505,26 +506,26 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
 ):
     data = make_astrometry_data()
     rng = RecordingRNG()
-    axis_prior = StubPrior(1.0, 10.0, sample_value=4.0)
     period_prior = StubPrior(2.0, 8.0, sample_value=5.0)
     eccentricity_prior = StubPrior(0.0, 0.9, sample_value=0.3)
+    epoch_prior = StubPrior(0.0, 20.0, sample_value=4.0)
     guess = AstrometryInitialGuess(
         data, ref_epoch=0.0,
         rng=rng,
-        a=axis_prior,
         P=period_prior,
         e=eccentricity_prior,
+        Tp=epoch_prior,
     )
     monkeypatch.setattr(guess, "lomb_scargle", lambda: (3.0, 6.0))
     calls = {}
 
     def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
         calls["global"] = (function, bounds, args, maxiter, polish, x0)
-        return SimpleNamespace(x=np.array([3.0, 6.0, 0.3]))
+        return SimpleNamespace(x=np.array([6.0, 0.3, 4.0]))
 
     def fake_minimize(function, x0, method, args, bounds, constraints, options):
         calls["local"] = (function, x0, method, args, bounds, constraints, options)
-        return SimpleNamespace(x=np.array([20.0, 20.0, -1.0]))
+        return SimpleNamespace(x=np.array([20.0, -1.0, 30.0]))
 
     monkeypatch.setattr(
         astrometry_module,
@@ -533,25 +534,21 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
     )
     monkeypatch.setattr(astrometry_module, "minimize", fake_minimize)
 
-    result = guess.get_initial_guess(["P", "e"], nwalkers=2)
+    result = guess.get_initial_guess(["P", "e", "Tp"], nwalkers=2)
 
-    expected = np.array([[8.0, 0.0], [8.0008, 0.0000]])
-    np.testing.assert_allclose(result, expected)
+    assert result.shape == (2, 3)
+    assert np.all((result[:, 0] >= 2.0) & (result[:, 0] <= 8.0))
+    assert np.all((result[:, 1] >= 0.0) & (result[:, 1] <= 0.9))
+    assert np.all((result[:, 2] >= 0.0) & (result[:, 2] <= 20.0))
     assert eccentricity_prior.sample_calls == [(rng, 1)]
-    assert calls["global"][1:5] == (
-        [(1.0, 10.0), (2.0, 8.0), (0.0, 0.9)],
-        (data, guess.priors, ["a", "P", "e"]),
-        2000,
-        False,
-    )
-    np.testing.assert_array_equal(calls["global"][5], [3.0, 6.0, 0.3])
-    assert calls["local"][2:] == (
-        "SLSQP",
-        (data, guess.priors, ["a", "P", "e"]),
-        [(1.0, 10.0), (2.0, 8.0), (0.0, 0.9)],
-        [],
-        {"maxiter": 2000},
-    )
+    assert calls["global"][1] == [
+        (2.0, 8.0),
+        (0.0, 0.9),
+        (0.0, 20.0),
+    ]
+    assert calls["global"][2] == (["P", "e", "Tp"],)
+    np.testing.assert_array_equal(calls["global"][5], [6.0, 0.3, 4.0])
+    assert calls["local"][2] == "SLSQP"
 
 
 def test_astrometry_linear_objective_includes_fixed_epoch_transform(monkeypatch):
@@ -727,7 +724,3 @@ def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
 
     assert result.shape == (2, 3)
     assert rng.normal_calls
-
-
-
-

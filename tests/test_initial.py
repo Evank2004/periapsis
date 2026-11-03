@@ -293,6 +293,54 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
     assert optimizer_calls["local"][2] == "SLSQP"
 
 
+def test_rv_initial_guess_solves_dgamma_as_a_linear_parameter(monkeypatch):
+    guess = RVInitialGuess(
+        make_rv_data(),
+        ref_epoch=0.0,
+        rng=np.random.RandomState(0),
+        P=StubPrior(1.0, 10.0, sample_value=5.0),
+        e=StubPrior(0.0, 0.9, sample_value=0.3),
+        Tp=StubPrior(0.0, 20.0, sample_value=4.0),
+        dgamma=StubPrior(-2.0, 2.0),
+    )
+    monkeypatch.setattr(guess, "Zucker_pdc", lambda: 5.0)
+    optimizer_calls = {}
+    linear_solution_calls = []
+
+    def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
+        optimizer_calls["global"] = (function, bounds, args, x0)
+        return SimpleNamespace(x=np.array([5.0, 0.3, 4.0]))
+
+    def fake_minimize(function, x0, method, args, bounds, constraints, options):
+        optimizer_calls["local"] = (function, x0, bounds)
+        return SimpleNamespace(x=np.array([5.0, 0.3, 4.0]))
+
+    def fake_linear_solution(matrix, cols, params, data, eta, err):
+        linear_solution_calls.append(params)
+        return {**params, "dgamma": 0.75}, 1.0
+
+    monkeypatch.setattr(rv_module, "differential_evolution", fake_differential_evolution)
+    monkeypatch.setattr(rv_module, "minimize", fake_minimize)
+    monkeypatch.setattr(rv_module.helpers, "_linear_solution", fake_linear_solution)
+
+    result = guess.get_initial_guess(["P", "e", "Tp", "dgamma"], nwalkers=2)
+
+    assert optimizer_calls["global"][1] == [
+        (1.0, 10.0),
+        (0.0, 0.9),
+        (0.0, 20.0),
+    ]
+    assert optimizer_calls["global"][2] == (["P", "e", "Tp"],)
+    assert optimizer_calls["local"][1].shape == (3,)
+    assert len(linear_solution_calls) == 1
+    assert linear_solution_calls[0]["P"] == 5.0
+    assert linear_solution_calls[0]["e"] == 0.3
+    assert linear_solution_calls[0]["Tp"] == 4.0
+    assert "dgamma" not in linear_solution_calls[0]
+    assert np.all((result[:, 3] >= -2.0) & (result[:, 3] <= 2.0))
+    np.testing.assert_allclose(result[:, 3], 0.75, atol=1e-3)
+
+
 def test_astrometry_bounds_preserve_order_and_require_every_prior():
     guess = AstrometryInitialGuess(
         make_astrometry_data(), ref_epoch=0.0,

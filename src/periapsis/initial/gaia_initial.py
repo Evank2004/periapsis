@@ -162,6 +162,11 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
         self.PeTp_transform = build_transform_functions(
             self.priors.keys(), ("P", "e", "Tp")
         )
+        self.M_base,self.cols = helpers._matrix_builder(
+            data,
+            ref_epoch,
+            linear_params= self.priors.keys(),
+        )
 
     def ln_like(self, params_dict, data):
         model = Orbit(**params_dict)
@@ -221,26 +226,61 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
         lower = np.asarray([bound[0] for bound in bounds], dtype=float)
         upper = np.asarray([bound[1] for bound in bounds], dtype=float)
         initial_values = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
-        
-        def bounds_transform_fn(bound):
-            transform = build_transform_functions(
-                [*param_in, *self.fixed_prior_params], [bound]
-            )
-            return lambda values: transform(
-                **dict(zip(param_in, values)),
-                **{
-                    name: prior.value
-                    for name, prior in self.fixed_prior_params.items()
-                },
-            )[bound]
 
-        constraints = []
-        for name, bound in self.priors.items():
-            if not isinstance(bound, Bounds):
-                continue
-            constraints.append(NonlinearConstraint(bounds_transform_fn(name),  bound.lower, bound.upper))
+
+        def linear_neg_lnlike(params, data, priors, param_in):
+            params_dict = dict(zip(param_in, params))
+            params_dict.update({
+                name: prior.value
+                for name, prior in self.fixed_prior_params.items()
+            })
+            params_dict.update(self.PeTp_transform(**params_dict))
+
+            solved_params, chi2 = helpers._linear_solution(
+                self.M_base,
+                self.cols,
+                params_dict,
+                data,
+                data.x_canonical,
+                data.err_canonical,
+            )
+
+            ln_prior = self.ln_prior(solved_params, priors)
+
+            if not np.isfinite(ln_prior) or not np.isfinite(chi2):
+                return np.inf
+
+            return 0.5 * chi2 - ln_prior
         
-        linear_neg_lnlike = super().neg_lnlike
+        def bounds_transform_fn(bound,values):
+            params_dict = dict(zip(param_in, values))
+            params_dict.update({
+                name: prior.value
+                for name, prior in self.fixed_prior_params.items()
+            })
+            params_dict.update(self.PeTp_transform(**params_dict))
+
+            solved_params, _ = helpers._linear_solution(
+                self.M_base,
+                self.cols,
+                params_dict,
+                self.data,
+                self.data.x_canonical,
+                self.data.err_canonical,
+            )
+            return solved_params[bound]
+
+        constraints = [
+            NonlinearConstraint(
+                lambda values, name=name: bounds_transform_fn(name, values),
+                bound.lower,
+                bound.upper,
+            )
+            for name, bound in self.priors.items()
+            if isinstance(bound, Bounds)
+        ]
+        
+        
 
         result = differential_evolution(
             linear_neg_lnlike,
@@ -267,14 +307,14 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
 
         best_vals.update(self.PeTp_transform(**best_vals))
 
-        helpers._matrix_filler(self.M_base, self.cols, best_vals, self.data)
-        sigma = helpers.sigma(self.data, best_vals, self.data.err_canonical)
-        mu, _ = helpers._lsq_helper(self.M_base, self.data.x_canonical, sigma)
-
-        best_vals.update({
-            name: mu[index]
-            for name, index in self.cols.items()
-        })
+        best_vals,_ = helpers._linear_solution(
+            self.M_base,
+            self.cols,
+            best_vals,
+            self.data,
+            self.data.x_canonical,
+            self.data.err_canonical,
+        )
 
         return best_vals
         

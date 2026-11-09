@@ -12,15 +12,17 @@ from periapsis.model.orbit import Orbit
 
 class GaiaLinearInitialGuess(InitialGuess):
     """Class for obtaining initial guess for Gaia data for MCMCLinearFitter"""
-    def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, linear_params=(), **priors):
-        super().__init__(data, rng, ref_epoch, **priors)
+    def __init__(self, data, rng: np.random.RandomState, ref_epoch=0.0, npeaks=3, linear_params=(), **priors):
+        super().__init__(data, rng, ref_epoch,npeaks=npeaks, **priors)
         self.M_base, self.cols = helpers._matrix_builder(
             data, ref_epoch, linear_params=linear_params
         )
         
 
-    def Delisle_periodogram(self,num_freq=10000):
+    def Delisle_periodogram(self,npeaks=None,num_freq=10000):
         """Compute the Delisle periodogram to obtain an initial guess on Period"""
+        if npeaks is None:
+            npeaks = self.npeaks
 
         prior_p = self.priors.get('P')
         p_min = prior_p.min if prior_p is not None else 0.001
@@ -49,10 +51,12 @@ class GaiaLinearInitialGuess(InitialGuess):
 
             power[i] = z_GLS
 
-        P_guess = periods[np.argmax(power)]
+        top_cands = np.argsort(power)[::-1][:npeaks]
+        P_guesses = periods[top_cands]
+        self.period_guesses = P_guesses
         max_pwr = power[np.argmax(power)]
 
-        return P_guess, max_pwr
+        return P_guesses, max_pwr
 
     def _bounds(self,prior_param_names):
         """Returns bounds on the fitted parameters based on the priors"""
@@ -84,7 +88,7 @@ class GaiaLinearInitialGuess(InitialGuess):
     
     def get_initial_guess(self, param_order, nwalkers):
         """Return walkers around a globally and locally optimized Gaia solution."""
-        P_guess, _ = self.Delisle_periodogram()
+        P_guesses, _ = self.Delisle_periodogram()
         self.PeTp_transform = build_transform_functions(
             self.priors.keys(), ('P', 'e', 'Tp')
         )
@@ -98,7 +102,7 @@ class GaiaLinearInitialGuess(InitialGuess):
         initial_points = []
         for name in param_in:
             if name == 'P':
-                initial_points.append(P_guess)
+                initial_points.append(P_guesses[0])
             else:
                 initial_points.append(self.priors[name].sample(self.rng, size=1)[0])
         initial_points = np.clip(np.asarray(initial_points, dtype=float), lower, upper)
@@ -116,16 +120,31 @@ class GaiaLinearInitialGuess(InitialGuess):
             if not isinstance(bound, Bounds):
                 continue
             constraints.append(NonlinearConstraint(bounds_transform_fn(name),  bound.lower, bound.upper))
-                
 
-        result = differential_evolution(
-            self.neg_lnlike,
-            bounds=bounds,
-            args=(self.data, self.priors, param_in),
-            maxiter=2000,
-            polish=False,
-            x0=initial_points
-        )
+        results = []
+
+        for period in P_guesses:
+            candidate = initial_points.copy()
+            candidate[param_in.index('P')] = period
+            candidate = np.clip(candidate, lower, upper)
+
+            result = differential_evolution(
+                self.neg_lnlike,
+                bounds=bounds,
+                args=(self.data, self.priors, param_in),
+                maxiter=2000,
+                polish=False,
+                x0=candidate
+            )
+
+            if np.isfinite(result.fun):
+                results.append(result)
+
+        if not results:
+            raise RuntimeError("All initializer period candidates failed.")
+
+        result = min(results, key=lambda r: r.fun)
+
         orbit = minimize(
             self.neg_lnlike,
             x0=result.x,
@@ -136,22 +155,43 @@ class GaiaLinearInitialGuess(InitialGuess):
             options={'maxiter': 2000},
         )
 
-        best_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
+        if orbit.success and np.isfinite(orbit.fun):
+            best_vector = orbit.x
+        else:
+            best_vector = result.x
+
+        best_values = dict(zip(
+            param_in, np.clip(best_vector, lower, upper)
+        ))
+
         best_values.update({name: prior.value for name, prior in self.fixed_prior_params.items()})
         best_values.update(self.PeTp_transform(**best_values))
-        poss = []
+        positions = []
         for name in param_order:
             if name not in best_values:
                 raise ValueError(f"Missing initial guess for parameter: {name}")
-            values = best_values[name] + self.rng.normal(
-                0, 1e-4, size=nwalkers
-            ) * max(abs(best_values[name]), 1.0)
             prior = self.priors.get(name)
+            
+            scale = max(
+                1e-4 * abs(best_values[name]),
+                1e-8,
+            )
+
+            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                scale = max(scale, 1e-4 * (prior.max - prior.min))
+
+            values = best_values[name] + self.rng.normal(
+                0.0,
+                scale,
+                size=nwalkers,
+            )
+
             if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
                 values = np.clip(values, prior.min, prior.max)
-            poss.append(values)
 
-        return np.column_stack(poss)
+            positions.append(values)
+
+        return np.column_stack(positions)
 
 
 class GaiaInitialGuess(GaiaLinearInitialGuess):
@@ -209,7 +249,7 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
         ]
         
         
-        P_guess, _ = self.Delisle_periodogram()
+        P_guesses, _ = self.Delisle_periodogram()
         self.PeTp_transform = build_transform_functions(
             self.priors.keys(), ("P", "e", "Tp")
         )
@@ -218,7 +258,7 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
 
         for name in param_in:
             if name == "P":
-                initial_points.append(P_guess)
+                initial_points.append(P_guesses[0])
             else:
                 initial_points.append(self.priors[name].sample(self.rng, size=1)[0])
 
@@ -244,7 +284,6 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
                 data.x_canonical,
                 data.err_canonical,
             )
-
             ln_prior = self.ln_prior(solved_params, priors)
 
             if not np.isfinite(ln_prior) or not np.isfinite(chi2):
@@ -280,16 +319,28 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
             if isinstance(bound, Bounds)
         ]
         
-        
+        results = []
+        for period in P_guesses:
+            candidate = initial_values.copy()
+            candidate[param_in.index("P")] = period
+            candidate = np.clip(candidate, lower, upper)
 
-        result = differential_evolution(
-            linear_neg_lnlike,
-            bounds=bounds,
-            args=(self.data, self.priors, param_in),
-            maxiter=2000,
-            polish=False,
-            x0=initial_values
-        )
+            result = differential_evolution(
+                linear_neg_lnlike,
+                bounds=bounds,
+                args=(self.data, self.priors, param_in),
+                maxiter=2000,
+                polish=False,
+                x0=candidate
+            )
+
+            if np.isfinite(result.fun):
+                results.append(result)
+
+        if not results:
+            raise RuntimeError("All initializer period candidates failed.")
+
+        result = min(results, key=lambda r: r.fun)
 
         orbit = minimize(
             linear_neg_lnlike,
@@ -300,7 +351,15 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
             constraints=constraints,
             options={"maxiter": 2000},
         )
-        best_vals = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
+
+        if orbit.success and np.isfinite(orbit.fun):
+            best_vector = orbit.x
+        else:
+            best_vector = result.x
+
+        best_vals = dict(zip
+            (param_in, np.clip(best_vector, lower, upper)
+        ))
         best_vals.update(
             {name: prior.value for name, prior in self.fixed_prior_params.items()}
         )
@@ -315,7 +374,6 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
             self.data.x_canonical,
             self.data.err_canonical,
         )
-
         return best_vals
         
 
@@ -329,7 +387,6 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
             best_values.keys(), param_order
         )
         best_values.update(transform(**best_values))
-    
         positions = []
         for name in param_order:
             if name not in best_values:
@@ -339,7 +396,10 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
 
             prior = self.priors.get(name)
 
-            scale = 1e-4 * abs(best_values[name])
+            scale = max(
+                1e-4 * abs(best_values[name]),
+                1e-8,
+            )
 
             if prior is not None and not isinstance(prior, FixedPrior):
                 lower = getattr(prior, "lower", getattr(prior, "min", None))

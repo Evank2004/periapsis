@@ -12,8 +12,8 @@ from .initial import InitialGuess
 
 class RVInitialGuess(InitialGuess):
     "Class for obtaining intial guess for RV data"
-    def __init__(self, data: RadialVelocityData, rng: np.random.RandomState, ref_epoch=0.0, **priors):
-        super().__init__(data, rng, ref_epoch, **priors)
+    def __init__(self, data: RadialVelocityData, rng: np.random.RandomState, ref_epoch=0.0, npeaks=3, **priors):
+        super().__init__(data, rng, ref_epoch, npeaks=npeaks, **priors)
         self.M_base, self.cols = helpers._matrix_builder(
             data,
             ref_epoch,
@@ -21,6 +21,7 @@ class RVInitialGuess(InitialGuess):
         )
         self.eta = data.rv_canonical
         self.err = data.rv_err_canonical
+        
 
 
     def _double_center(self,matrix):
@@ -30,8 +31,10 @@ class RVInitialGuess(InitialGuess):
         total_mean = np.mean(matrix)
         return matrix - row_mean - col_mean + total_mean
 
-    def Zucker_pdc(self,num_freq=10000):
+    def Zucker_pdc(self,npeaks=None,num_freq=10000):
         """Compute the Zucker PDC to obtain an initial guess on Period"""
+        if npeaks is None:
+            npeaks = self.npeaks
         prior_p = self.priors.get('P')
         p_min = prior_p.min if prior_p is not None else 0.001
         p_max = prior_p.max if prior_p is not None else 100
@@ -60,9 +63,12 @@ class RVInitialGuess(InitialGuess):
 
             pdc_vals[i] = PDC
 
-        P_guess = periods[np.argmax(pdc_vals)]
+        top_cands = np.argsort(pdc_vals)[::-1][:npeaks]
+        top_periods = periods[top_cands]
+        self.period_guesses = top_periods
+        
 
-        return P_guess
+        return top_periods
 
     def Bounds(self, param_names):
         """Returns bounds on the fitted parameters based on the priors"""
@@ -80,7 +86,7 @@ class RVInitialGuess(InitialGuess):
     def _linear_seed(self):
         linear_params = set(self.cols)
         fixed_params = set(self.fixed_prior_params)
-        
+
         linear_derived_params = covered_parameters(
             linear_params | fixed_params
         )
@@ -92,29 +98,22 @@ class RVInitialGuess(InitialGuess):
             and name not in linear_derived_params
         ]
 
-        P_guess = self.Zucker_pdc()
-        initial_points = []
-        for name in param_in:
-            if name == "P":
-                initial_points.append(P_guess)
-            else:
-                prior = self.priors.get(name)
-                if prior is not None:
-                    initial_points.append(prior.sample(self.rng, size=1)[0])
-
-        bounds = self.Bounds(param_in)
-        lower = np.asarray([bound[0] for bound in bounds], dtype=float)
-        upper = np.asarray([bound[1] for bound in bounds], dtype=float)
-        initial_points = np.clip(
-            np.asarray(initial_points, dtype=float),
-            lower,
-            upper,
-        )
+        P_guesses = self.Zucker_pdc()
 
         self.PeTp_transform = build_transform_functions(
             self.priors.keys(),
             ("P", "e", "Tp"),
         )
+
+        initial_points = []
+        for name in param_in:
+            if name == "P":
+                initial_points.append(P_guesses[0])
+            else:
+                initial_points.append(
+                    self.priors[name].sample(self.rng, size=1)[0]
+                )
+
 
         def linear_neg_lnlike(values, param_in):
             params_dict = dict(zip(param_in, values))
@@ -132,23 +131,35 @@ class RVInitialGuess(InitialGuess):
                 self.eta,
                 self.err,
             )
-
-            
-            lp = 0
-            for name, val in solved_params.items():
+            lp = 0.0
+            for name, value in solved_params.items():
                 prior = self.priors.get(name)
-                if prior is not None:
-                    if isinstance(prior, FixedPrior):
-                        continue  # Skip fixed priors
-                    lp += prior.logpdf(val)
-                    if np.isinf(lp):
-                        return -np.inf
-                else:
-                    continue #linear columns dont all need explicit priors
-            if not np.isfinite(lp) or not np.isfinite(chi2):
+                if prior is None or isinstance(prior, FixedPrior):
+                    continue
+
+                
+                contribution = prior.logpdf(value)
+                if not np.isfinite(contribution):
+                    return np.inf
+
+                lp += contribution
+
+            if not np.isfinite(chi2):
                 return np.inf
 
             return 0.5 * chi2 - lp
+
+
+        bounds = self.Bounds(param_in)
+        lower = np.asarray([bound[0] for bound in bounds], dtype=float)
+        upper = np.asarray([bound[1] for bound in bounds], dtype=float)
+
+        initial_points = np.clip(
+            np.asarray(initial_points, dtype=float),
+            lower,
+            upper,
+        )
+
 
         def bounds_transform_fn(name, values):
             params_dict = dict(zip(param_in, values))
@@ -178,14 +189,30 @@ class RVInitialGuess(InitialGuess):
             if isinstance(bound, Bounds)
         ]
 
-        result = differential_evolution(
-            linear_neg_lnlike,
-            bounds=bounds,
-            args=(param_in,),
-            maxiter=2000,
-            polish=False,
-            x0=initial_points,
-        )
+
+        results = []
+
+        for period in P_guesses:
+            candidate = initial_points.copy()
+            candidate[param_in.index("P")] = period
+            candidate = np.clip(candidate, lower, upper)
+
+            result = differential_evolution(
+                linear_neg_lnlike,
+                bounds=bounds,
+                args=(param_in,),
+                maxiter=2000,
+                polish=False,
+                x0=candidate,
+            )
+
+            if np.isfinite(result.fun):
+                results.append(result)
+
+        if not results:
+            raise RuntimeError("All RV initializer period candidates failed.")
+
+        result = min(results, key=lambda item: item.fun)
 
         orbit = minimize(
             linear_neg_lnlike,
@@ -197,10 +224,17 @@ class RVInitialGuess(InitialGuess):
             options={"maxiter": 2000},
         )
 
+        if orbit.success and np.isfinite(orbit.fun):
+            best_vector = orbit.x
+        else:
+            best_vector = result.x
+        
         best_values = dict(zip(
             param_in,
-            np.clip(orbit.x, lower, upper),
+            np.clip(best_vector, lower, upper),
         ))
+        
+
         best_values.update({
             name: prior.value
             for name, prior in self.fixed_prior_params.items()
@@ -220,41 +254,80 @@ class RVInitialGuess(InitialGuess):
 
     def get_initial_guess(self, param_order, nwalkers):
         best_values = self._linear_seed()
-        transform = build_transform_functions(
-            best_values.keys(),
-            param_order,
+        linear_params = set(self.cols)
+        fixed_params = set(self.fixed_prior_params)
+        linear_derived_params = covered_parameters(
+            linear_params | fixed_params
         )
-        best_values.update(transform(**best_values))
+
+        nonlinear_names = [
+            name
+            for name, prior in self.priors.items()
+            if not isinstance(prior, (Bounds, FixedPrior))
+            and name not in linear_derived_params
+        ]
 
         positions = []
-        for name in param_order:
-            if name not in best_values:
-                raise ValueError(f"Missing initial guess for parameter: {name}")
 
-            prior = self.priors.get(name)
+        for _ in range(nwalkers):
+            params = dict(best_values)
 
-            scale = 1e-4 * abs(best_values[name])
+            for name in nonlinear_names:
+                prior = self.priors.get(name)
+                if prior is None:
+                    raise ValueError(
+                        f"Missing prior for parameter: {name}"
+                    )
 
-            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                scale = max(scale, 1e-4 * (prior.max - prior.min))
+                scale = max(
+                    1e-4 * abs(best_values[name]),
+                    1e-8,
+                )
 
-            values = best_values[name] + self.rng.normal(
-                0.0,
-                scale,
-                size=nwalkers,
+                if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
+                    lower = getattr(prior, "lower", getattr(prior, "min", None))
+                    upper = getattr(prior, "upper", getattr(prior, "max", None))
+                    if lower is not None and upper is not None:
+                        scale = max(scale, 1e-4 * (upper - lower))
+
+                value = best_values[name] + self.rng.normal(
+                    0.0,
+                    scale,
+                )
+
+                params[name] = np.clip(
+                    value,
+                    prior.min,
+                    prior.max,
+                )
+
+            params.update(self.PeTp_transform(**params))
+
+            params, _ = helpers._linear_solution(
+                self.M_base,
+                self.cols,
+                params,
+                self.data,
+                self.eta,
+                self.err,
             )
 
-            if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                values = np.clip(values, prior.min, prior.max)
+            transform = build_transform_functions(
+                params.keys(),
+                param_order,
+            )
+            params.update(transform(**params))
+            positions.append([
+                params[name]
+                for name in param_order
+            ])
 
-            positions.append(values)
-        pos = np.column_stack(positions)
-        return pos
+        return np.asarray(positions)
 
 
 class RVLinearInitialGuess(RVInitialGuess):
-    def __init__(self, data, rng, ref_epoch=0.0, linear_params=(), **priors):
-        super().__init__(data, rng, ref_epoch, **priors)
+    def __init__(self, data, rng, ref_epoch=0.0, npeaks=3, linear_params=(), **priors):
+        super().__init__(data, rng, ref_epoch, npeaks, **priors)
         self.PeTp_transform = build_transform_functions(
             self.priors.keys(), ("P", "e", "Tp")
         )
@@ -285,22 +358,25 @@ class RVLinearInitialGuess(RVInitialGuess):
         })
         lp = self.ln_prior(params_dict, priors)
         if np.isinf(lp):
-            return -np.inf
+            return np.inf
 
         PeTp_params = self.PeTp_transform(**params_dict)
         _, chi2 = matrix_method(self, PeTp_params, data)
+        if not np.isfinite(chi2):
+            return np.inf
+        
         return 0.5 * chi2 - lp
 
     def get_initial_guess(self, param_order, nwalkers):
         param_in = []
-        p_guess = self.Zucker_pdc()
+        p_guesses = self.Zucker_pdc()
         initial_points = []
         for name, prior in self.priors.items():
             if isinstance(prior, (Bounds, FixedPrior)):
                 continue
             param_in.append(name)
             if name == "P":
-                initial_points.append(p_guess)
+                initial_points.append(p_guesses[0])
             else:
                 initial_points.append(prior.sample(self.rng, size=1)[0])
 
@@ -327,14 +403,30 @@ class RVLinearInitialGuess(RVInitialGuess):
             if isinstance(bound, Bounds)
         ]
 
-        result = differential_evolution(
-            self.neg_lnlike,
-            bounds=bounds,
-            args=(self.data, self.priors, param_in),
-            maxiter=2000,
-            polish=False,
-            x0=initial_points
-        )
+        results = []
+        
+        for period in p_guesses:
+            candidate = initial_points.copy()
+            candidate[param_in.index("P")] = period
+            candidate = np.clip(candidate, lower, upper)
+
+            result = differential_evolution(
+                self.neg_lnlike,
+                bounds=bounds,
+                args=(self.data, self.priors, param_in),
+                maxiter=2000,
+                polish=False,
+                x0=candidate,
+            )
+
+            if np.isfinite(result.fun):
+                results.append(result)
+
+        if not results:
+            raise RuntimeError("All RV initializer period candidates failed.")
+
+        result = min(results, key=lambda item: item.fun)
+
         orbit = minimize(
             self.neg_lnlike,
             x0=result.x,
@@ -345,7 +437,16 @@ class RVLinearInitialGuess(RVInitialGuess):
             options={"maxiter": 2000},
         )
 
-        best_prior_values = dict(zip(param_in, np.clip(orbit.x, lower, upper)))
+        if orbit.success and np.isfinite(orbit.fun):
+            best_vector = orbit.x
+        else:
+            best_vector = result.x
+
+        
+        best_prior_values = dict(zip(
+            param_in,
+            np.clip(best_vector, lower, upper),
+        ))
         best_prior_values.update({
             name: prior.value
             for name, prior in self.fixed_prior_params.items()
@@ -361,10 +462,16 @@ class RVLinearInitialGuess(RVInitialGuess):
 
             prior = self.priors.get(name)
 
-            scale = 1e-4 * abs(best_values[name])
+            scale = max(
+                1e-4 * abs(best_values[name]),
+                1e-8,
+            )
 
             if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                scale = max(scale, 1e-4 * (prior.max - prior.min))
+                lower = getattr(prior, "lower", getattr(prior, "min", None))
+                upper = getattr(prior, "upper", getattr(prior, "max", None))
+                if lower is not None and upper is not None:
+                    scale = max(scale, 1e-4 * (upper - lower))
 
             values = best_values[name] + self.rng.normal(
                 0.0,

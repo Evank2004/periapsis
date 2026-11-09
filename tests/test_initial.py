@@ -211,7 +211,7 @@ def test_zucker_period_search_uses_prior_bounds_and_best_period(monkeypatch):
 
     result = guess.Zucker_pdc(num_freq=3)
 
-    assert result == pytest.approx(4.0)
+    assert result[0] == pytest.approx(4.0)
     assert logspace_calls == [
         (pytest.approx(np.log10(1.0 / 8.0)), pytest.approx(np.log10(1.0)), 3)
     ]
@@ -228,11 +228,10 @@ def test_zucker_period_search_uses_default_range_when_no_period_prior(
         return np.array([1.0 / 100.0, 1.0 / 50.0, 1.0 / 25.0, 1.0 / 10.0, 1.0])
 
     monkeypatch.setattr(rv_module.np, "logspace", fake_logspace)
-    monkeypatch.setattr(rv_module.np, "argmax", lambda values: 0)
-
     result = guess.Zucker_pdc(num_freq=5)
 
-    assert result == pytest.approx(100.0)
+    assert result.shape == (3,)
+    assert np.all((result >= 0.001) & (result <= 1000.0))
     assert logspace_calls == [
         (pytest.approx(np.log10(0.01)), pytest.approx(np.log10(1000.0)), 5)
     ]
@@ -251,12 +250,12 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
         e=eccentricity_prior,
         Tp=epoch_prior,
     )
-    monkeypatch.setattr(guess, "Zucker_pdc", lambda: 5.0)
+    monkeypatch.setattr(guess, "Zucker_pdc", lambda: np.array([5.0]))
     optimizer_calls = {}
 
     def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
         optimizer_calls["global"] = (function, bounds, args, maxiter, polish, x0)
-        return SimpleNamespace(x=np.array([6.0, 0.4, 4.0]))
+        return SimpleNamespace(x=np.array([6.0, 0.4, 4.0]), fun=0.0)
 
     def fake_minimize(function, x0, method, args, bounds, constraints, options):
         optimizer_calls["local"] = (
@@ -268,7 +267,11 @@ def test_rv_initial_guess_runs_optimizers_clips_and_transforms(monkeypatch):
             constraints,
             options,
         )
-        return SimpleNamespace(x=np.array([20.0, -1.0, 30.0]))
+        return SimpleNamespace(
+            x=np.array([20.0, -1.0, 30.0]),
+            success=True,
+            fun=0.0,
+        )
 
     monkeypatch.setattr(rv_module, "differential_evolution", fake_differential_evolution)
     monkeypatch.setattr(rv_module, "minimize", fake_minimize)
@@ -303,17 +306,21 @@ def test_rv_initial_guess_solves_dgamma_as_a_linear_parameter(monkeypatch):
         Tp=StubPrior(0.0, 20.0, sample_value=4.0),
         dgamma=StubPrior(-2.0, 2.0),
     )
-    monkeypatch.setattr(guess, "Zucker_pdc", lambda: 5.0)
+    monkeypatch.setattr(guess, "Zucker_pdc", lambda: np.array([5.0]))
     optimizer_calls = {}
     linear_solution_calls = []
 
     def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
         optimizer_calls["global"] = (function, bounds, args, x0)
-        return SimpleNamespace(x=np.array([5.0, 0.3, 4.0]))
+        return SimpleNamespace(x=np.array([5.0, 0.3, 4.0]), fun=0.0)
 
     def fake_minimize(function, x0, method, args, bounds, constraints, options):
         optimizer_calls["local"] = (function, x0, bounds)
-        return SimpleNamespace(x=np.array([5.0, 0.3, 4.0]))
+        return SimpleNamespace(
+            x=np.array([5.0, 0.3, 4.0]),
+            success=True,
+            fun=0.0,
+        )
 
     def fake_linear_solution(matrix, cols, params, data, eta, err):
         linear_solution_calls.append(params)
@@ -332,13 +339,63 @@ def test_rv_initial_guess_solves_dgamma_as_a_linear_parameter(monkeypatch):
     ]
     assert optimizer_calls["global"][2] == (["P", "e", "Tp"],)
     assert optimizer_calls["local"][1].shape == (3,)
-    assert len(linear_solution_calls) == 1
+    assert len(linear_solution_calls) == 3
     assert linear_solution_calls[0]["P"] == 5.0
     assert linear_solution_calls[0]["e"] == 0.3
     assert linear_solution_calls[0]["Tp"] == 4.0
     assert "dgamma" not in linear_solution_calls[0]
+    assert all(call["dgamma"] == 0.75 for call in linear_solution_calls[1:])
     assert np.all((result[:, 3] >= -2.0) & (result[:, 3] <= 2.0))
     np.testing.assert_allclose(result[:, 3], 0.75, atol=1e-3)
+
+
+def test_astrometry_initial_guess_falls_back_to_global_result(
+    monkeypatch,
+):
+    guess = AstrometryInitialGuess(
+        make_astrometry_data(),
+        RecordingRNG(),
+        ref_epoch=0.0,
+        P=StubPrior(2.0, 8.0),
+        e=StubPrior(0.0, 0.9),
+        Tp=StubPrior(0.0, 20.0),
+    )
+    monkeypatch.setattr(
+        guess,
+        "lomb_scargle",
+        lambda: (3.0, np.array([6.0])),
+    )
+    monkeypatch.setattr(
+        astrometry_module.helpers,
+        "_linear_solution",
+        lambda matrix, cols, params, data, eta, err: (params, 0.0),
+    )
+    monkeypatch.setattr(
+        astrometry_module,
+        "differential_evolution",
+        lambda *args, **kwargs: SimpleNamespace(
+            x=np.array([6.0, 0.3, 4.0]),
+            fun=0.0,
+        ),
+    )
+    monkeypatch.setattr(
+        astrometry_module,
+        "minimize",
+        lambda *args, **kwargs: SimpleNamespace(
+            x=np.array([7.0, 0.4, 5.0]),
+            success=False,
+            fun=np.inf,
+        ),
+    )
+
+    result = guess.get_initial_guess(["P", "e", "Tp"], nwalkers=2)
+
+    assert result.shape == (2, 3)
+    np.testing.assert_allclose(
+        result,
+        np.array([[6.0, 0.3, 4.0], [6.0, 0.3, 4.0]]),
+        atol=0.01,
+    )
 
 
 def test_astrometry_bounds_preserve_order_and_require_every_prior():
@@ -477,6 +534,41 @@ def test_lomb_scargle_combines_both_coordinates_and_uses_prior_range(
     assert frequencies_seen[0][-1] == pytest.approx(0.5)
 
 
+def test_lomb_scargle_respects_npeaks_override(monkeypatch):
+    guess = AstrometryInitialGuess(
+        make_astrometry_data(),
+        ref_epoch=0.0,
+        rng=np.random.RandomState(0),
+        P=StubPrior(2.0, 10.0),
+    )
+    model_parameters_called = []
+
+    class FakeLombScargle:
+        def __init__(self, times, values, errors):
+            pass
+
+        def power(self, frequencies):
+            return np.zeros_like(frequencies)
+
+        def model_parameters(self, frequency):
+            model_parameters_called.append(frequency)
+            return np.array([0.0, 1.0, 1.0])
+
+    monkeypatch.setattr(astrometry_module, "LombScargle", FakeLombScargle)
+    monkeypatch.setattr(
+        astrometry_module,
+        "find_peaks",
+        lambda power: (np.array([100, 200, 300]), {}),
+    )
+
+    amplitudes, periods = guess.lomb_scargle(npeaks=2)
+
+    assert len(model_parameters_called) == 4
+    assert all(np.ndim(frequency) == 0 for frequency in model_parameters_called)
+    assert amplitudes.shape == (2,)
+    assert periods.shape == (2,)
+
+
 def test_lomb_scargle_uses_default_period_range_without_a_period_prior(
     monkeypatch,
 ):
@@ -516,16 +608,20 @@ def test_astrometry_initial_guess_runs_optimizers_clips_and_transforms(
         e=eccentricity_prior,
         Tp=epoch_prior,
     )
-    monkeypatch.setattr(guess, "lomb_scargle", lambda: (3.0, 6.0))
+    monkeypatch.setattr(guess, "lomb_scargle", lambda: (3.0, np.array([6.0])))
     calls = {}
 
     def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
         calls["global"] = (function, bounds, args, maxiter, polish, x0)
-        return SimpleNamespace(x=np.array([6.0, 0.3, 4.0]))
+        return SimpleNamespace(x=np.array([6.0, 0.3, 4.0]), fun=0.0)
 
     def fake_minimize(function, x0, method, args, bounds, constraints, options):
         calls["local"] = (function, x0, method, args, bounds, constraints, options)
-        return SimpleNamespace(x=np.array([20.0, -1.0, 30.0]))
+        return SimpleNamespace(
+            x=np.array([20.0, -1.0, 30.0]),
+            success=True,
+            fun=0.0,
+        )
 
     monkeypatch.setattr(
         astrometry_module,
@@ -578,6 +674,44 @@ def test_astrometry_linear_objective_includes_fixed_epoch_transform(monkeypatch)
     assert np.isfinite(value)
 
 
+def test_astrometry_linear_objective_rejects_nonfinite_values(monkeypatch):
+    guess = AstrometryLinearInitialGuess(
+        make_astrometry_data(),
+        np.random.RandomState(0),
+        P=StubPrior(2.0, 8.0),
+        e=StubPrior(0.0, 0.9),
+        Tp=StubPrior(0.0, 8.0),
+    )
+    monkeypatch.setattr(
+        astrometry_module,
+        "matrix_method",
+        lambda self, params, data: (np.zeros(1), np.nan),
+    )
+
+    assert np.isinf(
+        guess.neg_lnlike(
+            [4.0, 0.2, 1.0],
+            guess.data,
+            guess.priors,
+            ["P", "e", "Tp"],
+        )
+    )
+
+
+def test_zucker_period_search_returns_requested_number_of_candidates(
+):
+    guess = RVInitialGuess(
+        make_rv_data(),
+        ref_epoch=0.0,
+        rng=np.random.RandomState(0),
+        P=StubPrior(1.0, 8.0),
+    )
+
+    result = guess.Zucker_pdc(npeaks=2, num_freq=5)
+
+    assert result.shape == (2,)
+
+
 def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
     data = make_gaia_data()
     guess = GaiaLinearInitialGuess(
@@ -603,7 +737,7 @@ def test_delisle_periodogram_uses_prior_range_and_highest_power(monkeypatch):
 
     period, power = guess.Delisle_periodogram(num_freq=3)
 
-    assert period == pytest.approx(4.0)
+    assert period[0] == pytest.approx(4.0)
     assert power == pytest.approx(0.6)
     assert [matrix.shape for matrix in matrices] == [(4, 5), (4, 9), (4, 9), (4, 9)]
     np.testing.assert_allclose(
@@ -641,7 +775,7 @@ def test_delisle_periodogram_uses_default_period_range(monkeypatch):
 
     period, _power = guess.Delisle_periodogram(num_freq=2)
 
-    assert period == pytest.approx(100.0)
+    assert period[0] == pytest.approx(100.0)
 
 
 def test_gaia_initial_guess_uses_periodogram_and_adds_optional_jitter(
@@ -656,16 +790,23 @@ def test_gaia_initial_guess_uses_periodogram_and_adds_optional_jitter(
         Tp=StubPrior(10.0, 14.0),
         jitter=jitter_prior,
     )
-    monkeypatch.setattr(guess, "Delisle_periodogram", lambda: (4.0, 0.8))
+    monkeypatch.setattr(guess, "Delisle_periodogram", lambda: (np.array([4.0]), 0.8))
     optimizer_calls = {}
 
     def fake_differential_evolution(function, bounds, args, maxiter, polish, x0):
         optimizer_calls["global"] = (function, bounds, args, maxiter, polish, x0)
-        return SimpleNamespace(x=np.array([4.0, 0.3, 12.0, 0.05]))
+        return SimpleNamespace(
+            x=np.array([4.0, 0.3, 12.0, 0.05]),
+            fun=0.0,
+        )
 
     def fake_minimize(function, x0, method, args, bounds, constraints, options):
         optimizer_calls["local"] = (function, x0, method, args, bounds, constraints, options)
-        return SimpleNamespace(x=np.array([4.0, 0.3, 12.0, 0.05]))
+        return SimpleNamespace(
+            x=np.array([4.0, 0.3, 12.0, 0.05]),
+            success=True,
+            fun=0.0,
+        )
 
     monkeypatch.setattr(gaia_module, "differential_evolution", fake_differential_evolution)
     monkeypatch.setattr(gaia_module, "minimize", fake_minimize)
@@ -689,7 +830,7 @@ def test_gaia_initial_guess_respects_arbitrary_parameter_order(monkeypatch):
         e=StubPrior(0.1, 0.5),
         Tp=StubPrior(10.0, 14.0),
     )
-    monkeypatch.setattr(guess, "Delisle_periodogram", lambda: (4.0, 0.8))
+    monkeypatch.setattr(guess, "Delisle_periodogram", lambda: (np.array([4.0]), 0.8))
     monkeypatch.setattr(
         gaia_module.np.random,
         "randn",
@@ -713,7 +854,7 @@ def test_gaia_walker_scatter_uses_the_supplied_rng(monkeypatch):
         e=StubPrior(0.1, 0.5),
         Tp=StubPrior(10.0, 14.0),
     )
-    monkeypatch.setattr(guess, "Delisle_periodogram", lambda: (4.0, 0.8))
+    monkeypatch.setattr(guess, "Delisle_periodogram", lambda: (np.array([4.0]), 0.8))
 
     def reject_global_rng(*shape):
         raise AssertionError("walker scatter must use the injected RNG")

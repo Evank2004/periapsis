@@ -28,12 +28,13 @@ class _PosteriorContext:
 
 
 class MCMCFitter(Fitter):
-    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable,ref_epoch=None, pool=None, initial: Optional[Type[InitialGuess]] = None, **priors):
+    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable,npeaks=3,ref_epoch=None, pool=None, initial: Optional[Type[InitialGuess]] = None, **priors):
         super().__init__(ref_epoch,**priors)
         if nwalkers <= 0 or niter <= 0:
             raise ValueError("nwalkers and niter must be positive integers.")
         self.nwalkers = nwalkers
         self.niter = niter
+        self.npeaks = npeaks
         self.pool = pool
         self.param_order = tuple(sample_params)
         self.sample_params = frozenset(sample_params)
@@ -71,6 +72,8 @@ class MCMCFitter(Fitter):
         if sampled_and_fixed:
             raise ValueError(f"Sampled parameters cannot be fixed. {sorted(sampled_and_fixed)} are fixed.")
 
+        if not isinstance(npeaks, int) or npeaks <= 0:
+            raise ValueError("npeaks must be a positive integer.")
     
     def _log_posterior(self, params: np.ndarray, context: _PosteriorContext):
         lp = 0.0
@@ -169,9 +172,10 @@ class MCMCFitter(Fitter):
                 initial = GaiaInitialGuess
             else:
                 raise ValueError("No initial guess class provided and data type is not recognized for MCMC initial guess generation.")
-        initial_instance = initial(data, rng, canonical_ref_epoch, **canonical_priors)
+        initial_instance = initial(data, rng, canonical_ref_epoch, npeaks=self.npeaks, **canonical_priors)
         pos = initial_instance.get_initial_guess(self.param_order, self.nwalkers)
-
+        initial_walker = pos[0].copy()
+        period_guesses = getattr(initial_instance, 'period_guesses', None)
         
         sampler = emcee.EnsembleSampler(
             self.nwalkers,
@@ -180,6 +184,8 @@ class MCMCFitter(Fitter):
             args=(context,),
             pool=self.pool,
         )
+
+
         sampler.run_mcmc(pos, self.niter, progress=True)
 
         chain = cast(np.ndarray, sampler.get_chain())
@@ -243,6 +249,8 @@ class MCMCFitter(Fitter):
         results_dict['sampled_param_names'] = self.param_order
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params
+        results_dict['initial_walker'] = initial_walker
+        results_dict['period_guesses'] = period_guesses
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'emcee'
         results_dict['fit_method'] = 'full'

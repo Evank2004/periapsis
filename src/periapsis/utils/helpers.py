@@ -617,6 +617,20 @@ def _linear_solution(M, cols, params_dict, data, eta, err):
 
     return solved_params, chi2
 
+
+def wrap_periodic_prior(value,prior):
+    """
+    Wrap a periodic parameter value to be within prior bounds.
+    """
+    lower = prior.min
+    upper = prior.max
+    width = upper - lower
+
+    if np.isclose(width,2*np.pi):
+        return (value - lower) % width + lower
+
+    return value
+
 def float_to_scientific_latex_string(value, precision=None):
     """
     Format a float as a LaTeX string in scientific notation.

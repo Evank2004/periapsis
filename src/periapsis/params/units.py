@@ -435,7 +435,12 @@ class UnitSystem:
             dimension == "angle"
             and self.astrometry_dimension == "angle"
             and "x" in self.units
-            and (param_name.endswith("_ang") or param_name == par.parallax)
+            and (
+                param_name.endswith("_ang")
+                or param_name == par.parallax
+                or param_name == "astro_jitter"
+                or param_name.startswith("astro_")
+            )
         ):
             return self.units["x"]
         if dimension == "length" and self.astrometry_dimension == "length" and "x" in self.units:

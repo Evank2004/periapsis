@@ -896,7 +896,7 @@ def residuals_plot(results, data, savepath=None):
     '''
     Plots residuals of data from the MAP model
     '''
-    
+    figures = []
     datas = _flatten_joint(data)
     for d in datas:
         if isinstance(d,(AstrometryData, PhysicalAstrometryData)):
@@ -939,7 +939,7 @@ def residuals_plot(results, data, savepath=None):
             if savepath is not None:
                 fig.savefig(f'{savepath}/residuals_plot_{d.system}_astrometry.png', dpi=300)
                 print(f"Saved residuals plot for system {d.system} to {savepath}")
-            return fig
+            figures.append(fig)
 
         if isinstance(d,RadialVelocityData):
             fig, ax = plt.subplots()
@@ -961,7 +961,7 @@ def residuals_plot(results, data, savepath=None):
             if savepath is not None:
                 fig.savefig(f'{savepath}/residuals_plot_{d.system}_rv.png', dpi=300)
                 print(f"Saved residuals plot for system {d.system} to {savepath}")
-            return fig
+            figures.append(fig)
         
         if isinstance(d, (GaiaData)):
             fig, ax = plt.subplots()
@@ -983,7 +983,10 @@ def residuals_plot(results, data, savepath=None):
                 fig.savefig(f'{savepath}/residuals_plot_{d.system}_gaia.png', dpi=300)
                 print(f"Saved residuals plot for system {d.system} to {savepath}")
     
-            return fig
+            figures.append(fig)
+    if isinstance(data, JointData):
+        return figures
+    return figures[0] if figures else None
 
         
 

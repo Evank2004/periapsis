@@ -247,15 +247,18 @@ def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
         print(json.dumps(fit_results, indent=indent, sort_keys=False, default=_json_numpy))
         print("\n" + "=" * 80 + "\n")
         print("LaTeX Median values with 1-sigma credible intervals:")
-        reported_medians = {
-            name: results.unit_system.convert_from_canonical(name, value)
-            for name, value in (fit_results["median_params"] or {}).items()
-        }
+        reported_medians = fit_results["median_params"] or {}
+        reported_maps = fit_results["MAP_params"] or {}
 
-        reported_maps = {
-            name: results.unit_system.convert_from_canonical(name, value)
-            for name, value in (fit_results["MAP_params"] or {}).items()
-        }
+        if results.unit_system is not None:
+            reported_medians = {
+                name: results.unit_system.convert_from_canonical(name, value)
+                for name, value in reported_medians.items()
+            }
+            reported_maps = {
+                name: results.unit_system.convert_from_canonical(name, value)
+                for name, value in reported_maps.items()
+            }
         for label in sorted(intervals):
             unit = (
                 results.unit_system.get_parameter_unit(label) if results.unit_system is not None else None

@@ -14,11 +14,12 @@ import emcee
 from typing import Optional, Type
 
 class MCMCLinearFitter(Fitter):
-    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'),linear_params =(), ref_epoch=None, initial: Optional[Type[InitialGuess]] = None, **priors):
+    def __init__(self, nwalkers, niter, sampled_params=('P', 'e', 'Tp'),linear_params =(),npeaks=3, ref_epoch=None, initial: Optional[Type[InitialGuess]] = None, **priors):
         super().__init__(ref_epoch,**priors)
         self.nwalkers = nwalkers
         self.niter = niter
         self.initial = initial
+        self.npeaks = npeaks
         self.fixed_prior_params = {p for p in self.priors.keys() if isinstance(self.priors[p], FixedPrior)}
         sampled_params = tuple(sampled_params)
         sampled_jitter_params = tuple(
@@ -52,6 +53,9 @@ class MCMCLinearFitter(Fitter):
         self.late_prior_params = {p for p in self.priors.keys() if not isinstance(self.priors[p], FixedPrior) and p not in self.covered_params}
 
         self.linear_params = frozenset(linear_params)
+
+        if not isinstance(npeaks, int) or npeaks <= 0:
+            raise ValueError("npeaks must be a positive integer.")
 
     def _fit(self, data: Data, canonical_priors: dict[str, Prior], canonical_ref_epoch: Optional[float], rng: np.random.RandomState) -> dict:
         if not isinstance(data, (AstrometryData, PhysicalAstrometryData, RadialVelocityData, JointData, GaiaData)):
@@ -172,10 +176,13 @@ class MCMCLinearFitter(Fitter):
             data,
             rng,
             canonical_ref_epoch,
+            npeaks=self.npeaks,
             **initial_kwargs,
             **canonical_priors,
         )
         pos = initial_instance.get_initial_guess(param_order, self.nwalkers)
+        initial_walker = pos[0].copy()
+        period_guesses = getattr(initial_instance, 'period_guesses', None)
         sampler = emcee.EnsembleSampler(self.nwalkers, ndim, lnprob, args=(data,))
         sampler.run_mcmc(pos, self.niter,progress=True)
 
@@ -275,6 +282,8 @@ class MCMCLinearFitter(Fitter):
         results_dict['sampled_param_names'] = param_order
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params
+        results_dict['initial_walker'] = initial_walker
+        results_dict['period_guesses'] = period_guesses
         results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'emcee'
         results_dict['fit_method'] = 'linear'

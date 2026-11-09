@@ -376,7 +376,7 @@ def h_omega_to_K_c(h, omega):
     return K, c
 
 def c_h_to_K_omega(c, h):
-    omega = np.arctan2(-c, h)
+    omega = np.mod(np.arctan2(-c, h), 2*np.pi) 
     K = np.sqrt(c**2 + h**2)
     return K, omega
 

@@ -18,6 +18,8 @@ class FitResults:
         self.fit_method = samples.pop('fit_method', None)
         self.MAP_params = samples.pop('MAP_params', None)
         self.median_params = samples.pop('median_params', None)
+        self.initial_walker = samples.pop('initial_walker', None)
+        self.period_guesses = samples.pop('period_guesses', None)
         self.null_hypothesis = samples.pop('null_hypothesis', None)
         self.param_names = samples.pop('param_names', None)
         self.sampled_param_names = samples.pop('sampled_param_names', None)

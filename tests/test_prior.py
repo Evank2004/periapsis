@@ -3,6 +3,7 @@ import pytest
 
 import periapsis.prior as prior_package
 from periapsis.prior import (
+    BetaPrior,
     Bounds,
     FixedPrior,
     LogNormalPrior,
@@ -21,6 +22,7 @@ def test_prior_package_exports_all_public_prior_classes():
         "LogUniformPrior",
         "LogNormalPrior",
         "NormalPrior",
+        "BetaPrior",
         "FixedPrior",
     ]
 
@@ -79,6 +81,37 @@ def test_uniform_prior_unit_cube_transform_is_linear_and_vectorized():
     result = prior.unp(unit_values)
 
     np.testing.assert_allclose(result, [-2.0, 0.0, 2.0, 6.0])
+
+
+def test_beta_prior_exposes_bounds_and_scaled_logpdf():
+    prior = BetaPrior(2.0, 3.0, lower_bound=10.0, upper_bound=20.0)
+    normalized_value = 0.5
+    expected_logpdf = (
+        (2.0 - 1) * np.log(normalized_value)
+        + (3.0 - 1) * np.log(1.0 - normalized_value)
+        - prior.constants
+        - np.log(10.0)
+    )
+
+    assert prior.min == 10.0
+    assert prior.max == 20.0
+    assert prior.logpdf(15.0) == pytest.approx(expected_logpdf)
+    assert prior.logpdf(9.999) == -np.inf
+    assert prior.logpdf(20.001) == -np.inf
+
+
+def test_beta_prior_sampling_and_unit_cube_transform_are_bounded_and_reproducible():
+    prior = BetaPrior(1.0, 1.0, lower_bound=10.0, upper_bound=20.0)
+    first_rng = np.random.RandomState(12)
+    second_rng = np.random.RandomState(12)
+
+    first = prior.sample(first_rng, size=50)
+    second = prior.sample(second_rng, size=50)
+
+    assert np.all(first >= 10.0)
+    assert np.all(first <= 20.0)
+    np.testing.assert_allclose(first, second)
+    np.testing.assert_allclose(prior.unp(np.array([0.0, 0.25, 0.5, 1.0])), [10.0, 12.5, 15.0, 20.0])
 
 
 def test_log_uniform_prior_exposes_bounds_and_normalized_density():

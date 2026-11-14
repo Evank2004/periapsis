@@ -38,7 +38,7 @@ def _ensure_parameters_match(model, result):
             bad_params.append((name, model[name], (lower, upper)))
 
 
-    assert not bad_params, f"Parameters do not match expected values:{'\n'.join(f'  {name}: {param} (expected {expected})' for name, param, expected in bad_params)}"
+    assert not bad_params, "Parameters do not match expected values:" + '\n'.join(f'  {name}: {param} (expected {expected})' for name, param, expected in bad_params)
 
 
 def test_astrometry_ang_mcmc_linear(capsys):

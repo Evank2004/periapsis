@@ -256,6 +256,9 @@ _PARAMETER_DIMENSIONS = {
     par.Omega: "angle",
     par.Omega1: "angle",
     par.Omega2: "angle",
+    par.Omega_asc: "angle",
+    par.Omega_asc1: "angle",
+    par.Omega_asc2: "angle",
     par.omega: "angle",
     par.omega1: "angle",
     par.omega2: "angle",
@@ -278,12 +281,6 @@ _PARAMETER_DIMENSIONS = {
     par.t0: "dimensionless",
     par.Tp: "time",
     par.Tepoch: "time",
-    par.u0: "angle",
-    par.u01: "angle",
-    par.u02: "angle",
-    par.uM0: "angle",
-    par.uM01: "angle",
-    par.uM02: "angle",
 }
 for param in par.ang_parameters:
     current_dim = _PARAMETER_DIMENSIONS[param]

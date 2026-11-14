@@ -50,7 +50,7 @@ class Fitter(ABC):
              raise RuntimeError("Null-hypothesis fitting returned no result.")
 
         fit_results_dict = self._fit(data, canonical_priors, canonical_ref_epoch, rng)
-
+        fit_results_dict['fitter'] = self
         fit_results_dict['priors'] = self.priors
         fit_results_dict['canonical_priors'] = canonical_priors
         fit_results_dict['null_hypothesis'] = null_hypothesis_canonical

@@ -255,6 +255,7 @@ class AstrometryInitialGuess(InitialGuess):
                 maxiter=2000,
                 polish=False,
                 x0=candidate,
+                rng=self.rng,
             )
 
             if np.isfinite(result.fun):
@@ -457,7 +458,8 @@ class AstrometryLinearInitialGuess(AstrometryInitialGuess):
                 args=(self.data, self.priors,param_in), 
                 maxiter=2000,
                 polish=False,
-                x0=candidate
+                x0=candidate,
+                rng=self.rng,
             )
             if np.isfinite(result.fun):
                 results.append(result)

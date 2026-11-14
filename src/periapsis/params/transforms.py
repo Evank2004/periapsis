@@ -209,36 +209,6 @@ def nu0_e_to_E0(nu0, e):
     E0 = np.arctan2(np.sin(nu0) * np.sqrt(1 - e**2), e + np.cos(nu0))
     return E0
 
-def u0_to_u01_u02(u0):
-    u01 = np.mod(u0 + np.pi, 2*np.pi)
-    u02 = u0
-    return u01, u02
-
-def u01_to_u0_u02(u01):
-    u0 = np.mod(u01 + np.pi, 2*np.pi)
-    u02 = u0
-    return u0, u02
-
-def u02_to_u0_u01(u02):
-    u0 = u02
-    u01 = np.mod(u0 + np.pi, 2*np.pi)
-    return u0, u01
-
-def uM0_to_uM01_uM02(uM0):
-    uM01 = np.mod(uM0 + np.pi, 2*np.pi)
-    uM02 = uM0
-    return uM01, uM02
-
-def uM01_to_uM0_uM02(uM01):
-    uM0 = np.mod(uM01 + np.pi, 2*np.pi)
-    uM02 = uM0
-    return uM0, uM02
-
-def uM02_to_uM0_uM01(uM02):
-    uM0 = uM02
-    uM01 = np.mod(uM0 + np.pi, 2*np.pi)
-    return uM0, uM01
-
 def a_sini_n_e_to_K(a, sini, n, e):
     K = n*a*sini/np.sqrt(1 - e**2)
     return K
@@ -411,16 +381,31 @@ def div_ab(a, b):
 def identity(a):
     return a
 
+def identity2(a):
+    return a, a
+
+def identity_modpi(a):
+    return np.mod(a, np.pi)
+
 
 
 
 _transform_graph = [
     (('A', 'B', 'F', 'G',), ('a', 'cosi', 'omega', 'Omega',), A_B_F_G_to_a_cosi_omega_Omega),
-    (('A1', 'B1', 'F1', 'G1',), ('a1', 'cosi', 'omega1', 'Omega',), A_B_F_G_to_a_cosi_omega_Omega),
-    (('A2', 'B2', 'F2', 'G2',), ('a2', 'cosi', 'omega2', 'Omega',), A_B_F_G_to_a_cosi_omega_Omega),
+    (('A1', 'B1', 'F1', 'G1',), ('a1', 'cosi', 'omega1', 'Omega1',), A_B_F_G_to_a_cosi_omega_Omega),
+    (('A2', 'B2', 'F2', 'G2',), ('a2', 'cosi', 'omega2', 'Omega2',), A_B_F_G_to_a_cosi_omega_Omega),
+    (('A_ang', 'B_ang', 'F_ang', 'G_ang',), ('a_ang', 'cosi', 'omega', 'Omega',), A_B_F_G_to_a_cosi_omega_Omega),
+    (('A1_ang', 'B1_ang', 'F1_ang', 'G1_ang',), ('a1_ang', 'cosi', 'omega1', 'Omega1',), A_B_F_G_to_a_cosi_omega_Omega),
+    (('A2_ang', 'B2_ang', 'F2_ang', 'G2_ang',), ('a2_ang', 'cosi', 'omega2', 'Omega2',), A_B_F_G_to_a_cosi_omega_Omega),
     (('a', 'cosi', 'omega', 'Omega',), ('A', 'B', 'F', 'G',), a_cosi_omega_Omega_to_ABFG),
-    (('a1', 'cosi', 'omega1', 'Omega',), ('A1', 'B1', 'F1', 'G1',), a_cosi_omega_Omega_to_ABFG),
-    (('a2', 'cosi', 'omega2', 'Omega',), ('A2', 'B2', 'F2', 'G2',), a_cosi_omega_Omega_to_ABFG),
+    (('a1', 'cosi', 'omega1', 'Omega1',), ('A1', 'B1', 'F1', 'G1',), a_cosi_omega_Omega_to_ABFG),
+    (('a2', 'cosi', 'omega2', 'Omega2',), ('A2', 'B2', 'F2', 'G2',), a_cosi_omega_Omega_to_ABFG),
+    (('a_ang', 'cosi', 'omega', 'Omega',), ('A_ang', 'B_ang', 'F_ang', 'G_ang',), a_cosi_omega_Omega_to_ABFG),
+    (('a1_ang', 'cosi', 'omega1', 'Omega1',), ('A1_ang', 'B1_ang', 'F1_ang', 'G1_ang',), a_cosi_omega_Omega_to_ABFG),
+    (('a2_ang', 'cosi', 'omega2', 'Omega2',), ('A2_ang', 'B2_ang', 'F2_ang', 'G2_ang',), a_cosi_omega_Omega_to_ABFG),
+    (('Omega_asc',), ('Omega',), identity_modpi),
+    (('Omega_asc1',), ('Omega1',), identity_modpi),
+    (('Omega_asc2',), ('Omega2',), identity_modpi),
     (('a', 'sini', 'omega',), ('C', 'H',), a_sini_omega_to_C_H),
     (('a1', 'sini', 'omega1',), ('C1', 'H1',), a_sini_omega_to_C_H),
     (('a2', 'sini', 'omega2',), ('C2', 'H2',), a_sini_omega_to_C_H),
@@ -451,21 +436,24 @@ _transform_graph = [
     (('a1', 'M1', 'M2',), ('a2', 'a'), aa_Ma_Mb_to_ab_a),
     (('a2', 'M2', 'M1',), ('a1', 'a'), aa_Ma_Mb_to_ab_a),
     (('a', 'M1', 'M2',), ('a1', 'a2'), a_M1_M2_to_a1_a2),
-    (('omega', 'Omega',), ('piomega',), add_ab_mod2pi), # TODO may need some modulo here
-    (('omega1', 'Omega',), ('piomega1',), add_ab_mod2pi),
-    (('omega2', 'Omega',), ('piomega2',), add_ab_mod2pi),
+    (('omega', 'Omega_asc',), ('piomega',), add_ab_mod2pi), # TODO may need some modulo here
+    (('omega1', 'Omega_asc1',), ('piomega1',), add_ab_mod2pi),
+    (('omega2', 'Omega_asc2',), ('piomega2',), add_ab_mod2pi),
     (('omega',), ('omega2', 'omega1',), omega_to_omega2_omega1),
-    (('Omega',), ('Omega2', 'Omega1',), omega_to_omega2_omega1),
+    (('Omega_asc',), ('Omega_asc2', 'Omega_asc1',), omega_to_omega2_omega1),
     (('omega1',), ('omega', 'omega2',), omega1_to_omega_omega2),
-    (('Omega1',), ('Omega', 'Omega2',), omega1_to_omega_omega2),
+    (('Omega_asc1',), ('Omega_asc', 'Omega_asc2',), omega1_to_omega_omega2),
     (('omega2',), ('omega', 'omega1',), omega2_to_omega_omega1),
-    (('Omega2',), ('Omega', 'Omega1',), omega2_to_omega_omega1),
-    (('piomega', 'Omega',), ('omega',), sub_ab_mod2pi),
-    (('piomega1', 'Omega',), ('omega1',), sub_ab_mod2pi),
-    (('piomega2', 'Omega',), ('omega2',), sub_ab_mod2pi),
-    (('piomega', 'omega',), ('Omega',), sub_ab_mod2pi),
-    (('piomega1', 'omega1',), ('Omega',), sub_ab_mod2pi),
-    (('piomega2', 'omega2',), ('Omega',), sub_ab_mod2pi),
+    (('Omega_asc2',), ('Omega_asc', 'Omega_asc1',), omega2_to_omega_omega1),
+    (('Omega',), ('Omega1', 'Omega2',), identity2),
+    (('Omega1',), ('Omega', 'Omega2',), identity2),
+    (('Omega2',), ('Omega', 'Omega1',), identity2),
+    (('piomega', 'Omega_asc',), ('omega',), sub_ab_mod2pi),
+    (('piomega1', 'Omega_asc1',), ('omega1',), sub_ab_mod2pi),
+    (('piomega2', 'Omega_asc2',), ('omega2',), sub_ab_mod2pi),
+    (('piomega', 'omega',), ('Omega_asc',), sub_ab_mod2pi),
+    (('piomega1', 'omega1',), ('Omega_asc1',), sub_ab_mod2pi),
+    (('piomega2', 'omega2',), ('Omega_asc2',), sub_ab_mod2pi),
     (('i',), ('cosi', 'sini',), i_to_cosi_sini),
     (('a', 'b',), ('e',), a_b_to_e),
     (('a1', 'b1',), ('e',), a_b_to_e),
@@ -527,19 +515,7 @@ _transform_graph = [
     (('l0', 'piomega',), ('nu0',), sub_ab_mod2pi),
     (('l01', 'piomega1',), ('nu0',), sub_ab_mod2pi),
     (('l02', 'piomega2',), ('nu0',), sub_ab_mod2pi),
-    (('uM0', 'M0',), ('Omega',), sub_ab_mod2pi),
-    (('Omega', 'M0',), ('uM0',), add_ab_mod2pi),
-    (('uM0', 'Omega',), ('M0',), sub_ab_mod2pi),
-    (('u0', 'nu0',), ('Omega',), sub_ab_mod2pi),
-    (('Omega', 'nu0',), ('u0',), add_ab_mod2pi),
-    (('u0', 'Omega',), ('nu0',), sub_ab_mod2pi),
     (('nu0', 'e',), ('E0',), nu0_e_to_E0),
-    (('u0',), ('u01', 'u02'), u0_to_u01_u02),
-    (('u01',), ('u0', 'u02'), u01_to_u0_u02),
-    (('u02',), ('u0', 'u01'), u02_to_u0_u01),
-    (('uM0',), ('uM01', 'uM02'), uM0_to_uM01_uM02),
-    (('uM01',), ('uM0', 'uM02'), uM01_to_uM0_uM02),
-    (('uM02',), ('uM0', 'uM01'), uM02_to_uM0_uM01),
     (('a', 'sini', 'n', 'e'), ('K',), a_sini_n_e_to_K), 
     (('a1', 'sini', 'n', 'e'), ('K1',), a_sini_n_e_to_K),
     (('a2', 'sini', 'n', 'e'), ('K2',), a_sini_n_e_to_K),

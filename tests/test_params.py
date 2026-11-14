@@ -272,16 +272,16 @@ def test_inclination_converts_to_sine_and_cosine_and_back():
 
 def test_longitude_of_periastron_is_wrapped_to_one_revolution():
     piomega = transform(
-        {"omega", "Omega"},
+        {"omega", "Omega_asc"},
         "piomega",
         omega=1.5 * np.pi,
-        Omega=np.pi,
+        Omega_asc=np.pi,
     )
     recovered = transform(
-        {"piomega", "Omega"},
+        {"piomega", "Omega_asc"},
         "omega",
         piomega=piomega,
-        Omega=np.pi,
+        Omega_asc=np.pi,
     )
 
     assert piomega == pytest.approx(np.pi / 2.0)

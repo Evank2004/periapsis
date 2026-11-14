@@ -204,6 +204,7 @@ class RVInitialGuess(InitialGuess):
                 maxiter=2000,
                 polish=False,
                 x0=candidate,
+                rng=self.rng,
             )
 
             if np.isfinite(result.fun):
@@ -417,6 +418,7 @@ class RVLinearInitialGuess(RVInitialGuess):
                 maxiter=2000,
                 polish=False,
                 x0=candidate,
+                rng=self.rng,
             )
 
             if np.isfinite(result.fun):

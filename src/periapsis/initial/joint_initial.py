@@ -168,7 +168,8 @@ class JointLinearInitialGuess(InitialGuess):
                 args=(param_in,),
                 maxiter=2000,
                 polish=False,
-                x0=candidates
+                x0=candidates,
+                rng=self.rng,
             )
 
             if np.isfinite(result.fun):
@@ -383,6 +384,7 @@ class JointInitialGuess(JointLinearInitialGuess):
                 maxiter=2000,
                 polish=False,
                 x0=candidates,
+                rng=self.rng,
             )
 
             if np.isfinite(result.fun):

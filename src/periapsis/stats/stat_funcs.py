@@ -302,20 +302,25 @@ def linear_error_bootstrap(results, data, num_bootstraps=100, rng=np.random.defa
         if isinstance(sampled_data, AstrometryData):
             mm_eta = np.concatenate((sampled_data.x_ang_canonical, sampled_data.y_ang_canonical))
             mm_sigma = np.concatenate((sampled_data.x_err_ang_canonical, sampled_data.y_err_ang_canonical)) 
+            ref_epoch = sampled_data.ref_epoch_canonical
         elif isinstance(sampled_data, PhysicalAstrometryData):
             mm_eta = np.concatenate((sampled_data.x_canonical, sampled_data.y_canonical))
-            mm_sigma = np.concatenate((sampled_data.x_err_canonical, sampled_data.y_err_canonical))       
+            mm_sigma = np.concatenate((sampled_data.x_err_canonical, sampled_data.y_err_canonical))    
+            ref_epoch = sampled_data.ref_epoch_canonical   
         elif isinstance(sampled_data, RadialVelocityData):
             mm_eta = sampled_data.rv_canonical
             mm_sigma = sampled_data.rv_err_canonical
+            ref_epoch = sampled_data.ref_epoch_canonical
         elif isinstance(sampled_data,JointData):
             mm_eta = sampled_data._concat_obs_canonical()
             mm_sigma = sampled_data._err_canonical() 
+            ref_epoch = sampled_data.datas[0].ref_epoch_canonical
         elif isinstance(sampled_data,GaiaData):
             mm_eta = sampled_data.x_canonical
             mm_sigma = sampled_data.err_canonical
+            ref_epoch = sampled_data.ref_epoch_canonical
 
-        M, cols = helpers._matrix_builder(sampled_data, sampled_data.ref_epoch_canonical, linear_params)
+        M, cols = helpers._matrix_builder(sampled_data, ref_epoch, linear_params)
         helpers._matrix_filler(M, cols, PeTp, sampled_data)
         sig = helpers.sigma(sampled_data, PeTp, mm_sigma)
         mu, chi2 = helpers._lsq_helper(M, mm_eta, sig)

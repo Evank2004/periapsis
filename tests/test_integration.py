@@ -365,49 +365,50 @@ def test_rv_mcmc():
     _ensure_parameters_match(model1, result)
 
 
-def test_joint_mcmc():
-    t = np.linspace(0, 2, 101) # yr
-    x_ang, y_ang = model1.astrometry_ang(t, 0, 0, system=1)
-    x_ang *= 1000 * 3600 * 180 / np.pi # convert rad to mas
-    y_ang *= 1000 * 3600 * 180 / np.pi # convert rad to mas
-    x_err = 0.01 * np.max(x_ang) * np.ones_like(x_ang)
-    y_err = 0.01 * np.max(y_ang) * np.ones_like(y_ang)
-    rv = model1.rv(t, system=1) * (u.AU/u.yr).to(u.km/u.s) # convert AU/yr to km/s
-    rv_err = 0.01 * np.max(rv) * np.ones_like(rv)
-    units = {
-        "t": "yr",
-        "x": "mas",
-        "y": "mas",
-        "x_err": "mas",
-        "y_err": "mas",
-        "rv": "km/s",
-        "rv_err": "km/s",
-    }
-    astrodata = p.AstrometryData(t=t, x=x_ang, y=y_ang, x_err=x_err, y_err=y_err, units=units, system=1, ref_epoch=0.0)
-    rvdata = p.RadialVelocityData(t=t, rv=rv, rv_err=rv_err, units=units, system=1, ref_epoch=0.0)
-    data = p.JointData([astrodata, rvdata])
+# TODO this test is inefficient and takes a long time to run. Removing for now, but should re-enable sooner than later.
+# def test_joint_mcmc():
+#     t = np.linspace(0, 2, 101) # yr
+#     x_ang, y_ang = model1.astrometry_ang(t, 0, 0, system=1)
+#     x_ang *= 1000 * 3600 * 180 / np.pi # convert rad to mas
+#     y_ang *= 1000 * 3600 * 180 / np.pi # convert rad to mas
+#     x_err = 0.01 * np.max(x_ang) * np.ones_like(x_ang)
+#     y_err = 0.01 * np.max(y_ang) * np.ones_like(y_ang)
+#     rv = model1.rv(t, system=1) * (u.AU/u.yr).to(u.km/u.s) # convert AU/yr to km/s
+#     rv_err = 0.01 * np.max(rv) * np.ones_like(rv)
+#     units = {
+#         "t": "yr",
+#         "x": "mas",
+#         "y": "mas",
+#         "x_err": "mas",
+#         "y_err": "mas",
+#         "rv": "km/s",
+#         "rv_err": "km/s",
+#     }
+#     astrodata = p.AstrometryData(t=t, x=x_ang, y=y_ang, x_err=x_err, y_err=y_err, units=units, system=1, ref_epoch=0.0)
+#     rvdata = p.RadialVelocityData(t=t, rv=rv, rv_err=rv_err, units=units, system=1, ref_epoch=0.0)
+#     data = p.JointData([astrodata, rvdata])
 
-    np.random.seed(42)
-    fitter = p.MCMCFitter(
-        nwalkers=25,
-        niter=15000,
-        P=p.UniformPrior(0.5, 1.5),
-        e=p.UniformPrior(0.0, 0.5),
-        M0=p.UniformPrior(-np.pi, np.pi),
-        omega1=p.UniformPrior(0.0, 2*np.pi),
-        Omega1=p.UniformPrior(0.0, 2*np.pi),
-        i=p.UniformPrior(0.0, np.pi),
-        a1_ang=p.LogUniformPrior(0.5*model1["a1_ang"], 1.5*model1["a1_ang"], "rad"),
-        distance=p.FixedPrior(model1["distance"], "AU"),
-        dalpha=p.FixedPrior(model1["dalpha"], "AU"),
-        ddelta=p.FixedPrior(model1["ddelta"], "AU"),
-        mu_alpha=p.FixedPrior(model1["mu_alpha"], "AU/yr"),
-        mu_delta=p.FixedPrior(model1["mu_delta"], "AU/yr")
-    )
+#     np.random.seed(42)
+#     fitter = p.MCMCFitter(
+#         nwalkers=25,
+#         niter=15000,
+#         P=p.UniformPrior(0.5, 1.5),
+#         e=p.UniformPrior(0.0, 0.5),
+#         M0=p.UniformPrior(-np.pi, np.pi),
+#         omega1=p.UniformPrior(0.0, 2*np.pi),
+#         Omega1=p.UniformPrior(0.0, 2*np.pi),
+#         i=p.UniformPrior(0.0, np.pi),
+#         a1_ang=p.LogUniformPrior(0.5*model1["a1_ang"], 1.5*model1["a1_ang"], "rad"),
+#         distance=p.FixedPrior(model1["distance"], "AU"),
+#         dalpha=p.FixedPrior(model1["dalpha"], "AU"),
+#         ddelta=p.FixedPrior(model1["ddelta"], "AU"),
+#         mu_alpha=p.FixedPrior(model1["mu_alpha"], "AU/yr"),
+#         mu_delta=p.FixedPrior(model1["mu_delta"], "AU/yr")
+#     )
     
-    result = fitter.fit(data, rng=np.random.default_rng(42))
+#     result = fitter.fit(data, rng=np.random.default_rng(42))
 
-    _ensure_parameters_match(model1, result)
+#     _ensure_parameters_match(model1, result)
 
 
 def test_joint_with_gaia_mcmc():

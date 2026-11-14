@@ -2,8 +2,8 @@ from typing import Literal, Optional
 
 all_parameters = {
     'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'Omega_asc', 'piomega', 'P', 'A', 'B', 'C', 'F', 'G', 'H', 'cosi', 'sini', 'Mtot', 'mu',
-    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'omega1', 'Omega1', 'Omega_asc1', 'piomega1', 'A1', 'B1', 'C1', 'F1', 'G1', 'H1', 'M1',
-    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'omega2', 'Omega2', 'Omega_asc2', 'piomega2', 'A2', 'B2', 'C2', 'F2', 'G2', 'H2', 'M2',
+    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'omega1', 'Omega1', 'piomega1', 'A1', 'B1', 'C1', 'F1', 'G1', 'H1', 'M1',
+    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'omega2', 'Omega2', 'piomega2', 'A2', 'B2', 'C2', 'F2', 'G2', 'H2', 'M2',
     'c', 'h', 'c1', 'c2', 'h1', 'h2',
     'Msini', 'M1sini', 'M2sini', 'n', 'K', 'q', 'f1', 'f2', 'minM1', 'minM2',
     'a1sini', 'a2sini',
@@ -21,7 +21,7 @@ ang_parameters = {
 }
 
 wrapped_parameters = {
-    "omega", "Omega", "Omega_asc", "piomega", "omega1", "Omega1", "Omega_asc1", "piomega1", "omega2", "Omega2", "Omega_asc2", "piomega2",
+    "omega", "Omega", "Omega_asc", "piomega", "omega1", "Omega1", "piomega1", "omega2", "Omega2", "piomega2",
     "t0", "M0", "L0", "E0", "nu0", "l0", "l01", "l02"
 }
 
@@ -144,7 +144,7 @@ Omega_asc = "Omega_asc"
 """
 Longitude of ascending node.
 
-`Ω_asc` (Omega_asc) measures the angle in the reference plane from the reference direction to the ascending node of the orbit of body 2 (the secondary).
+`Ω_asc` (Omega_asc) measures the angle in the reference plane from the reference direction to the ascending node of the orbits.
 
 If the reference plane is the plane of the sky and the reference direction is North.
 
@@ -160,19 +160,9 @@ Omega1 = "Omega1"
 Longitude of nodes of body 1. Equivalent to `Omega`.
 """
 
-Omega_asc1 = "Omega_asc1"
-"""
-Longitude of ascending node of body 1. Related to `Omega_asc` by `Omega_asc1 = Omega_asc + π`.
-"""
-
 Omega2 = "Omega2"
 """
 Longitude of nodes of body 2. Equivalent to `Omega`.
-"""
-
-Omega_asc2 = "Omega_asc2"
-"""
-Longitude of ascending node of body 2. Equivalent to `Omega_asc` by convention.
 """
 
 piomega = "piomega"

@@ -257,8 +257,6 @@ _PARAMETER_DIMENSIONS = {
     par.Omega1: "angle",
     par.Omega2: "angle",
     par.Omega_asc: "angle",
-    par.Omega_asc1: "angle",
-    par.Omega_asc2: "angle",
     par.omega: "angle",
     par.omega1: "angle",
     par.omega2: "angle",

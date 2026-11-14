@@ -8,7 +8,7 @@ import numpy as np
 
 
 class GaiaData(SystemData):
-    def __init__(self, spsi,cpsi,t,plx_fac,x,err,units: Optional[Mapping[str, Any]] = None, system=None,band=None):
+    def __init__(self, spsi,cpsi,t,plx_fac,x,err,units: Optional[Mapping[str, Any]] = None, system=None, ref_epoch=None, band=None):
         super().__init__(system, units)
         required_units = {"t", "x", "err"}
         missing_units = required_units - self.unit_system.units.keys()
@@ -39,6 +39,12 @@ class GaiaData(SystemData):
         self.t_canonical = self.unit_system.convert_to_canonical("t", self.t)
         self.x_canonical = self.unit_system.convert_to_canonical("x", self.x)
         self.err_canonical = self.unit_system.convert_to_canonical("err", self.err)
+
+        if ref_epoch is None:
+            self.ref_epoch = np.mean(self.t)
+        else:
+            self.ref_epoch = ref_epoch
+        self.ref_epoch_canonical = self.unit_system.convert_to_canonical("t", self.ref_epoch)
 
         self.instrument = "Gaia"
         self.band = band

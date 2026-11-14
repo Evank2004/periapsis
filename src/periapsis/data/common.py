@@ -16,6 +16,7 @@ class SystemData(Data):
             raise ValueError(f"`system` must be either '1', '2', or 'relative'. Got '{system}' instead.")
         if units is None:
             raise ValueError(f"Units must be provided for {self.__class__.__name__}.")
+        self.units = units
         self.unit_system = UnitSystem(units)
 
     def parameter_unit(self,param_name):
@@ -305,7 +306,7 @@ class PhysicalAstrometryData(_AstrometryDataBase):
     
 
 class RadialVelocityData(SystemData):
-    def __init__(self, t, rv, rv_err, units: Optional[Mapping[str, Any]] = None, system=None,instrument=None):
+    def __init__(self, t, rv, rv_err, units: Optional[Mapping[str, Any]] = None, ref_epoch=None, system=None,instrument=None):
         if units is None:
             if is_quantity(t) and is_quantity(rv) and is_quantity(rv_err):
                 units = {
@@ -339,6 +340,12 @@ class RadialVelocityData(SystemData):
         self.t_canonical = self.unit_system.convert_to_canonical("t", self.t)
         self.rv_canonical = self.unit_system.convert_to_canonical("rv", self.rv)
         self.rv_err_canonical = self.unit_system.convert_to_canonical("rv_err", self.rv_err) 
+
+        if ref_epoch is None:
+            self.ref_epoch = np.mean(self.t)
+        else:
+            self.ref_epoch = ref_epoch
+        self.ref_epoch_canonical = self.unit_system.convert_to_canonical("t", self.ref_epoch)
         
         self.instrument = instrument
         

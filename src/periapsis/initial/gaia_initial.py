@@ -3,7 +3,7 @@ import periapsis.utils.helpers as helpers
 from periapsis.data.gaia import GaiaData
 from periapsis.params.transforms import build_transform_functions
 from periapsis.params.transforms import covered_parameters
-from periapsis.prior import Bounds, FixedPrior
+from periapsis.prior import Bounds, FixedPrior, UniformPrior
 from scipy.optimize import differential_evolution, minimize, NonlinearConstraint
 import periapsis.params as params
 from .initial import InitialGuess
@@ -134,7 +134,8 @@ class GaiaLinearInitialGuess(InitialGuess):
                 args=(self.data, self.priors, param_in),
                 maxiter=2000,
                 polish=False,
-                x0=candidate
+                x0=candidate,
+                rng=self.rng,
             )
 
             if np.isfinite(result.fun):
@@ -331,7 +332,8 @@ class GaiaInitialGuess(GaiaLinearInitialGuess):
                 args=(self.data, self.priors, param_in),
                 maxiter=2000,
                 polish=False,
-                x0=candidate
+                x0=candidate,
+                rng=self.rng,
             )
 
             if np.isfinite(result.fun):

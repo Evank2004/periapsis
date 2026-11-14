@@ -5,9 +5,7 @@ from periapsis.prior.prior import Prior
 from .fitter import Fitter
 from periapsis.model.orbit import Orbit
 from periapsis.data.data import Data
-from periapsis.fitting.results import FitResults
 from periapsis.params.transforms import covered_parameters, build_transform_functions, overconstrained_parameters, wrapped_parameters
-from periapsis.params.units import CanonicalUnits
 
 import numpy as np
 import ultranest
@@ -16,8 +14,11 @@ from typing import Optional
 reject_logl = -1e300
 
 class UltranestFitter(Fitter):
-    def __init__(self, output_params, ref_epoch=None, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, quiet=False, **priors):
+    def __init__(self, output_params=None, ref_epoch=None, min_num_live_points=400, min_ess=400, dlogz=0.5, dKL=0.5, frac_remain=0.01, Lepsilon=0.001, max_iters=None, max_ncalls=None, quiet=False, **priors):
         super().__init__(ref_epoch,**priors)
+        if output_params is None:
+            print("WARNING: No output_params provided. Using all parameters with priors. This may not be the ideal parameterization for your problem.")
+            output_params = [k for k in self.priors.keys() if not isinstance(self.priors[k], (Bounds, FixedPrior))]
         self.output_params = frozenset(output_params)
         self.output_param_order = tuple(output_params)
         if len(self.output_params) != len(self.output_param_order):
@@ -78,9 +79,11 @@ class UltranestFitter(Fitter):
             param_dict.update({name: canonical_priors[name].value for name in self.fixed_prior_params})
             bound_param_dict = likelihood_transform(**param_dict)
             for name in self.bound_params:
-                if canonical_priors[name].lower is not None and bound_param_dict[name] < canonical_priors[name].lower:
+                lower = canonical_priors[name].lower
+                upper = canonical_priors[name].upper
+                if lower is not None and bound_param_dict[name] < lower:
                     return reject_logl # TODO possibly slope inwards towards the bounds instead of hard cutoff
-                if canonical_priors[name].upper is not None and bound_param_dict[name] > canonical_priors[name].upper:
+                if upper is not None and bound_param_dict[name] > upper:
                     return reject_logl # TODO possibly slope inwards towards the bounds
             model = Orbit(**param_dict)
             log_likelihood = data.log_likelihood(model)
@@ -141,12 +144,15 @@ class UltranestFitter(Fitter):
         results_dict['Ess'] = results['ess']
         results_dict['logZ'] = results['logz']
         results_dict['logZerr'] = results['logzerr']
-        results_dict['param_names'] = param_order
-        results_dict['raw_sampler'] = sampler
+        results_dict['sampled_param_names'] = full_param_order
+        results_dict['param_names'] = [*full_param_order]
         results_dict['MAP_params'] = reported_best_params
         results_dict['median_params'] = reported_median_params
         results_dict['logl'] = logl
-        results_dict['samples'] = reported_samples
+        results_dict['samples'] = samples
+        results_dict['n_samples_raw'] = int(len(samples))
+        results_dict['n_samples_valid'] = int(len(samples))
+        results_dict['raw_sampler'] = sampler
         results_dict['backend'] = 'ultranest'
         results_dict['fit_method'] = 'full'
 

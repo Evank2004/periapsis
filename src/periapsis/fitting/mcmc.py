@@ -28,7 +28,7 @@ class _PosteriorContext:
 
 
 class MCMCFitter(Fitter):
-    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable,npeaks=3,ref_epoch=None, pool=None, initial: Optional[Type[InitialGuess]] = None, **priors):
+    def __init__(self, nwalkers: int, niter: int, sample_params: Iterable = None, npeaks=1, ref_epoch=None, pool=None, initial: Optional[Type[InitialGuess]] = None, **priors):
         super().__init__(ref_epoch,**priors)
         if nwalkers <= 0 or niter <= 0:
             raise ValueError("nwalkers and niter must be positive integers.")
@@ -36,6 +36,9 @@ class MCMCFitter(Fitter):
         self.niter = niter
         self.npeaks = npeaks
         self.pool = pool
+        if sample_params is None:
+            sample_params = [k for k in self.priors.keys() if not isinstance(self.priors[k], (Bounds, FixedPrior))]
+            print(f"WARNING: No sample_params provided. Using prior parameters {', '.join(sample_params)}. This may not be the ideal parameterization for your problem.")
         self.param_order = tuple(sample_params)
         self.sample_params = frozenset(sample_params)
         self.initial = initial
@@ -185,8 +188,14 @@ class MCMCFitter(Fitter):
             pool=self.pool,
         )
 
+        try:
+            sampler.run_mcmc(pos, self.niter, progress=True)
+        except ValueError as e:
+            if "Initial state has a large condition number" not in str(e):
+                raise
+            print("WARNING: Initial state has a large condition number. Results may be unreliable. Check your units, initial guess, and priors.")
+            sampler.run_mcmc(pos, self.niter, progress=True, skip_initial_state_check=True)
 
-        sampler.run_mcmc(pos, self.niter, progress=True)
 
         chain = cast(np.ndarray, sampler.get_chain())
         tau = emcee.autocorr.integrated_time(chain, quiet=True)

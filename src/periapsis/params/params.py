@@ -1,14 +1,14 @@
 from typing import Literal, Optional
 
 all_parameters = {
-    'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'piomega', 'P', 'A', 'B', 'C', 'F', 'G', 'H', 'cosi', 'sini', 'Mtot', 'mu',
-    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'omega1', 'Omega1', 'piomega1', 'A1', 'B1', 'C1', 'F1', 'G1', 'H1', 'M1',
-    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'omega2', 'Omega2', 'piomega2', 'A2', 'B2', 'C2', 'F2', 'G2', 'H2', 'M2',
+    'a', 'b', 'p', 'r_a', 'r_p', 'e', 'i', 'omega', 'Omega', 'Omega_asc', 'piomega', 'P', 'A', 'B', 'C', 'F', 'G', 'H', 'cosi', 'sini', 'Mtot', 'mu',
+    'a1', 'b1', 'p1', 'r_a1', 'r_p1', 'omega1', 'Omega1', 'Omega_asc1', 'piomega1', 'A1', 'B1', 'C1', 'F1', 'G1', 'H1', 'M1',
+    'a2', 'b2', 'p2', 'r_a2', 'r_p2', 'omega2', 'Omega2', 'Omega_asc2', 'piomega2', 'A2', 'B2', 'C2', 'F2', 'G2', 'H2', 'M2',
     'c', 'h', 'c1', 'c2', 'h1', 'h2',
     'Msini', 'M1sini', 'M2sini', 'n', 'K', 'q', 'f1', 'f2', 'minM1', 'minM2',
     'a1sini', 'a2sini',
-    'Tepoch', 'Tp', 't0', 'M0', 'L0', 'E0', 'nu0', 'l0', 'uM0', 'u0',
-    'u01', 'u02', 'uM01', 'uM02', 'l01', 'l02', 'K1', 'K2',
+    'Tepoch', 'Tp', 't0', 'M0', 'L0', 'E0', 'nu0', 'l0',
+    'l01', 'l02', 'K1', 'K2',
     'dalpha', 'ddelta', 'mu_alpha', 'mu_delta','dmu_alpha','dmu_delta' ,'gamma','dgamma',
     'parallax', 'distance',
 }
@@ -21,8 +21,8 @@ ang_parameters = {
 }
 
 wrapped_parameters = {
-    "omega", "Omega", "piomega", "omega1", "Omega1", "piomega1", "omega2", "Omega2", "piomega2",
-    "t0", "M0", "L0", "E0", "nu0", "l0", "uM0", "u0", "u01", "u02", "uM01", "uM02", "l01", "l02"
+    "omega", "Omega", "Omega_asc", "piomega", "omega1", "Omega1", "Omega_asc1", "piomega1", "omega2", "Omega2", "Omega_asc2", "piomega2",
+    "t0", "M0", "L0", "E0", "nu0", "l0", "l01", "l02"
 }
 
 for param in list(ang_parameters):
@@ -127,9 +127,11 @@ Argument of periastron of body 2. Equivalent to `omega` by convention.
 
 Omega = "Omega"
 """
-Longitude of ascending node.
+Longitude of nodes.
 
-`Ω` (Omega) measures the angle in the reference plane from the reference direction to the ascending node of the orbit of body 2 (the secondary).
+`Ω` (Omega) measures the angle in the reference plane from the reference direction to the node of the orbit of body 2 (the secondary) that falls in the range [0, π].
+
+See also: Omega_asc, which is the longitude of the ascending node, specifically, and falls in the range [0, 2π].
 
 If the reference plane is the plane of the sky and the reference direction is North.
 
@@ -137,16 +139,40 @@ For geocentric orbits, the reference plane is the equatorial plane and the refer
 
 For heliocentric orbits, the reference plane is the ecliptic plane and the reference direction is the first point of Aries (the vernal equinox).
 """
-# TODO - verify reference directions in our code. Also need to distinguish between longitude of ascending node (0 < Ω < 2π) and longitude of node (0 < Ω < π) when only absolute inclination is known. 
+
+Omega_asc = "Omega_asc"
+"""
+Longitude of ascending node.
+
+`Ω_asc` (Omega_asc) measures the angle in the reference plane from the reference direction to the ascending node of the orbit of body 2 (the secondary).
+
+If the reference plane is the plane of the sky and the reference direction is North.
+
+For geocentric orbits, the reference plane is the equatorial plane and the reference direction is the vernal equinox.
+
+For heliocentric orbits, the reference plane is the ecliptic plane and the reference direction is the first point of Aries (the vernal equinox).
+"""
+
+# TODO - verify reference directions in our code. 
 
 Omega1 = "Omega1"
 """
-Longitude of ascending node of body 1. Related to `Omega` by `Omega1 = Omega + π`.
+Longitude of nodes of body 1. Equivalent to `Omega`.
+"""
+
+Omega_asc1 = "Omega_asc1"
+"""
+Longitude of ascending node of body 1. Related to `Omega_asc` by `Omega_asc1 = Omega_asc + π`.
 """
 
 Omega2 = "Omega2"
 """
-Longitude of ascending node of body 2. Equivalent to `Omega` by convention.
+Longitude of nodes of body 2. Equivalent to `Omega`.
+"""
+
+Omega_asc2 = "Omega_asc2"
+"""
+Longitude of ascending node of body 2. Equivalent to `Omega_asc` by convention.
 """
 
 piomega = "piomega"
@@ -345,52 +371,6 @@ True longitude is the angle measured in the reference plane from the reference d
 This is the true longitude of body 2, which is related to the true longitude of body 1 by l02 = l01 + π.
 """
 
-uM0 = "uM0"
-"""
-Mean argument of latitude at reference epoch.
-
-Mean argument of latitude is the angle measured in the orbital plane from the ascending node to the position of the body if it were moving at a constant angular speed throughout its whole orbit.
-"""
-
-uM01 = "uM01"
-"""
-Mean argument of latitude of body 1 at reference epoch.
-
-Mean argument of latitude is the angle measured in the orbital plane from the ascending node to the position of the body if it were moving at a constant angular speed throughout its whole orbit.
-This is the mean argument of latitude of body 1, which is related to the mean argument of latitude by uM01 = uM0 + π.
-"""
-
-uM02 = "uM02"
-"""
-Mean argument of latitude of body 2 at reference epoch.
-Mean argument of latitude is the angle measured in the orbital plane from the ascending node to the position of the body if it were moving at a constant angular speed throughout its whole orbit.
-This is the mean argument of latitude of body 2, which is related to the mean argument of latitude of body 1 by uM02 = uM01 + π.
-"""
-
-u0 = "u0"
-"""
-True argument of latitude at reference epoch.
-
-True argument of latitude is the angle measured in the orbital plane from the ascending node to the position of the body relative to the focus of the ellipse.
-"""
-
-u01 = "u01"
-"""
-True argument of latitude of body 1 at reference epoch.
-
-True argument of latitude is the angle measured in the orbital plane from the ascending node to the position of the body relative to the focus of the ellipse.
-This is the true argument of latitude of body 1, which is related to the true argument of latitude by u01 = u0 + π.
-"""
-
-u02 = "u02"
-"""
-True argument of latitude of body 2 at reference epoch.
-
-
-True argument of latitude is the angle measured in the orbital plane from the ascending node to the position of the body relative to the focus of the ellipse.
-This is the true argument of latitude of body 2, which is related to the true argument of latitude of body 1 by u02 = u01 + π.
-"""
-
 K = "K"
 """
 Relative radial velocity semi-amplitude.
@@ -543,6 +523,7 @@ _display_dict = {
     'r_p': 'rₚ',
     'omega': 'ω',
     'Omega': 'Ω',
+    'Omega_asc': 'Ω_asc',
     'piomega': 'ϖ',
     'mu': 'μ',
     'Tp': 'Tₚ',
@@ -552,8 +533,6 @@ _display_dict = {
     'E0': 'E₀',
     'nu0': 'ν₀',
     'l0': 'l₀',
-    'uM0': 'u_M₀',
-    'u0': 'u₀',
     'dalpha': 'Δα',
     'ddelta': 'Δδ',
     'mu_alpha': 'μ_α',
@@ -566,6 +545,7 @@ _latex_display_dict = {
     'r_p': r'r_p',
     'omega': r'\omega',
     'Omega': r'\Omega',
+    'Omega_asc': r'\Omega_\mathrm{asc}',
     'piomega': r'\varpi',
     'mu': r'\mu',
     'Tp': r'T_p',
@@ -575,8 +555,6 @@ _latex_display_dict = {
     'E0': r'E_0',
     'nu0': r'\nu_0',
     'l0': r'l_0',
-    'uM0': r'u_{M_0}',
-    'u0': r'u_0',
     'dalpha': r'\Delta \alpha',
     'ddelta': r'\Delta \delta',
     'mu_alpha': r'\mu_\alpha',

@@ -1,14 +1,18 @@
 import json
+from collections import defaultdict
 
 import numpy as np
+from periapsis.data.common import _AstrometryDataBase, AstrometryData, PhysicalAstrometryData, RadialVelocityData
 from periapsis.data.data import Data
-from periapsis.data import AstrometryData, RadialVelocityData,GaiaData,JointData
-from periapsis.utils.helpers import _flatten_and_join 
+from periapsis.data import GaiaData, JointData
+from periapsis.utils.helpers import _flatten_and_join
+import periapsis.utils.helpers as helpers
 from periapsis.model.orbit import Orbit
 from periapsis.prior import FixedPrior
 from scipy.stats import chi2
 from periapsis.utils.helpers import error_sigfig_latex_string
 from periapsis.params import display_latex
+from periapsis.params.transforms import build_transform_functions
 import astropy.units as u
 
 
@@ -206,6 +210,124 @@ def credible_intervals(results):
             credible_intervals['minM2'] = _credible_interval_summary(min_m2_samples, min_m2_unit, map_index)
 
     return credible_intervals
+
+
+def _subdata(data, idx):
+    if isinstance(data, _AstrometryDataBase):
+        return AstrometryData(
+            t=data.t[idx],
+            x=data.x[idx],
+            y=data.y[idx],
+            x_err=data.x_err[idx],
+            y_err=data.y_err[idx],
+            units=data.units,
+            system=data.system,
+            plxf_x=data.plxf_x[idx] if data.plxf_x is not None else None,
+            plxf_y=data.plxf_y[idx] if data.plxf_y is not None else None,
+            ref_epoch=data.ref_epoch,
+            instrument=data.instrument,
+            band=data.band,
+        )
+    elif isinstance(data, RadialVelocityData):
+        return RadialVelocityData(
+            t=data.t[idx],
+            rv=data.rv[idx],
+            rv_err=data.rv_err[idx],
+            units=data.units,
+            system=data.system,
+            ref_epoch=data.ref_epoch,
+            instrument=data.instrument,
+        )
+    elif isinstance(data, GaiaData):
+        return GaiaData(
+            spsi=data.spsi[idx],
+            cpsi=data.cpsi[idx],
+            t=data.t[idx],
+            plx_fac=data.plx_fac[idx],
+            x=data.x[idx],
+            err=data.err[idx],
+            units=data.units,
+            system=data.system,
+            ref_epoch=data.ref_epoch,
+            band=data.band
+        )
+    else:
+        raise NotImplementedError(f"Resampling not implemented for data type: {type(data).__name__}")
+    
+
+def resample_data(data) -> Data:
+    if isinstance(data, JointData):
+        sizes = []
+        for subdata in data.datas:
+            sizes.append(len(subdata.t))
+        totsize = sum(sizes)
+        idx = np.random.choice(totsize, size=totsize, replace=True)
+        newdatas = []
+        for i, size in enumerate(sizes):
+            sub_idx = idx[idx < size]
+            idx = idx[idx >= size] - size
+            if len(sub_idx) > 0:
+                newdatas.append(_subdata(data.datas[i], sub_idx))
+        return JointData(
+            newdatas,
+            instrument_offsets=data.instrument_offsets,
+            ref_astrometry_instrument=data.ref_astrometry_instrument,
+            ref_rv_instrument=data.ref_rv_instrument
+        )
+    else:
+        idx = np.random.choice(len(data.t), size=len(data.t), replace=True)
+        return _subdata(data, idx)
+
+
+def linear_error_bootstrap(results, data, num_bootstraps=100, rng=np.random.default_rng()):
+    """
+    Perform a bootstrap on linear parameters to estimate their uncertainties while sampling from the posterior of non-linear parameters.
+    """
+    sampled_params = results.sampled_param_names
+    params = {k: v.value for k, v in results.canonical_priors.items() if isinstance(v, FixedPrior)}
+    transform = build_transform_functions(set({*params.keys(), *sampled_params}), ('P', 'e', 'Tp'))
+    linear_params = getattr(results.fitter, "linear_params", results.priors.keys())
+    bs_params = defaultdict(lambda: [])
+    # params.update({name: np.median(results.samples[name]) for name in sampled_params})
+    for _ in range(num_bootstraps):
+        # Sample from the posterior of non-linear parameters
+        sidx = rng.choice(len(results.samples[sampled_params[0]]), size=1)[0]
+        params.update({name: results.samples[name][sidx] for name in sampled_params})
+        
+        PeTp = transform(**params)
+
+        sampled_data = resample_data(data)
+
+        # Matrix method cached variables
+        if isinstance(sampled_data, AstrometryData):
+            mm_eta = np.concatenate((sampled_data.x_ang_canonical, sampled_data.y_ang_canonical))
+            mm_sigma = np.concatenate((sampled_data.x_err_ang_canonical, sampled_data.y_err_ang_canonical)) 
+        elif isinstance(sampled_data, PhysicalAstrometryData):
+            mm_eta = np.concatenate((sampled_data.x_canonical, sampled_data.y_canonical))
+            mm_sigma = np.concatenate((sampled_data.x_err_canonical, sampled_data.y_err_canonical))       
+        elif isinstance(sampled_data, RadialVelocityData):
+            mm_eta = sampled_data.rv_canonical
+            mm_sigma = sampled_data.rv_err_canonical
+        elif isinstance(sampled_data,JointData):
+            mm_eta = sampled_data._concat_obs_canonical()
+            mm_sigma = sampled_data._err_canonical() 
+        elif isinstance(sampled_data,GaiaData):
+            mm_eta = sampled_data.x_canonical
+            mm_sigma = sampled_data.err_canonical
+
+        M, cols = helpers._matrix_builder(sampled_data, sampled_data.ref_epoch_canonical, linear_params)
+        helpers._matrix_filler(M, cols, PeTp, sampled_data)
+        sig = helpers.sigma(sampled_data, PeTp, mm_sigma)
+        mu, chi2 = helpers._lsq_helper(M, mm_eta, sig)
+        bs_sample = dict(zip(cols.keys(), mu))
+        bs_sample.update(PeTp)
+        for k, v in bs_sample.items():
+            bs_params[k].append(v)
+        bs_params["chi2"].append(chi2)
+    
+    return bs_params
+
+
 
 def all_stats(results,data,pretty_print=True,indent=4,savepath=None):
     if hasattr(results, "add_mass_samples") and "M2" not in results.samples:

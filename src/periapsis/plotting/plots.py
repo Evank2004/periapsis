@@ -532,14 +532,17 @@ def sky_motion_plot(results, data, savepath=None):
             map_params = results.MAP_params
             median_params = results.median_params
 
+            map_orbit = Orbit(**map_params)
+            median_orbit = Orbit(**median_params)
+
             tfold = np.linspace(data.t_canonical.min(), data.t_canonical.max(), 1000)
 
-            dalpha = map_params["dalpha_ang"]
-            ddelta = map_params["ddelta_ang"]
-            mu_alpha = map_params["mu_alpha_ang"]
-            mu_delta = map_params["mu_delta_ang"]
-            parallax = map_params["parallax"]
-            Tepoch = map_params.get("Tepoch", 0.0)
+            dalpha = map_orbit["dalpha_ang"]
+            ddelta = map_orbit["ddelta_ang"]
+            mu_alpha = map_orbit["mu_alpha_ang"]
+            mu_delta = map_orbit["mu_delta_ang"]
+            parallax = map_orbit["parallax"]
+            Tepoch = getattr(map_orbit, "Tepoch", 0.0)
 
             dt = tfold - Tepoch
             plx_alpha = np.interp(tfold, data.t_canonical, data.plx_fac * data.spsi)
@@ -560,8 +563,8 @@ def sky_motion_plot(results, data, savepath=None):
                 alpha=0.7,
             )
 
-            map_plot_dict = data._astrometry(Orbit(**map_params))
-            median_plot_dict = data._astrometry(Orbit(**median_params))
+            map_plot_dict = data._astrometry(map_orbit)
+            median_plot_dict = data._astrometry(median_orbit)
 
             ax.plot(
                 _plot_position(data, map_plot_dict["ra_sky"]),

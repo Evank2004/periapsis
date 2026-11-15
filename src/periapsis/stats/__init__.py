@@ -1,3 +1,3 @@
-from .stat_funcs import red_chi2, delta_chi2, credible_intervals, all_stats
+from .stat_funcs import red_chi2, delta_chi2, credible_intervals, linear_error_bootstrap, all_stats
 
-__all__ = ['red_chi2', 'delta_chi2', 'credible_intervals', 'all_stats']
+__all__ = ['red_chi2', 'delta_chi2', 'credible_intervals', 'linear_error_bootstrap', 'all_stats']

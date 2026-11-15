@@ -13,6 +13,7 @@ from periapsis.stats.stat_funcs import red_chi2
 
 class FitResults:
     def __init__(self, **samples):
+        self.fitter = samples.pop('fitter', None)
         self.raw_samples = samples.pop('raw_sampler', None)
         self.backend = samples.pop('backend', None)
         self.fit_method = samples.pop('fit_method', None)
@@ -146,6 +147,8 @@ class FitResults:
                 if prior_unit and not should_transform_prior:
                     return ParameterSamples(np.atleast_1d(self.priors[key].value), key, prior_unit)
                 if prior_unit and should_transform_prior:
+                    if unit is None:
+                        return ParameterSamples(np.atleast_1d(self.canonical_priors[key].value), key, None, map_index=self.map_index)
                     return ParameterSamples(np.atleast_1d(
                         self.unit_system.convert_from_canonical(key, self.canonical_priors[key].value, unit=unit)
                     ), key, unit)

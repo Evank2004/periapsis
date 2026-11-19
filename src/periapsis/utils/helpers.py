@@ -1,6 +1,7 @@
 from decimal import Decimal, ROUND_FLOOR, ROUND_HALF_EVEN
 
 import numpy as np
+import scipy.linalg as sla
 
 from periapsis.data.common import AstrometryData, PhysicalAstrometryData, RadialVelocityData
 from periapsis.data.gaia import GaiaData
@@ -28,6 +29,29 @@ def _lsq_helper(M,x,err):
     chi2 = np.sum(residuals**2)
 
     return mu, chi2
+
+def _lsq_helper_qrdraw(M, x, err, rng):
+    w = 1.0 / err
+    x_w = x * w
+    M_w = M * w[:, None]
+
+    N, K = M_w.shape
+
+    Q, R = np.linalg.qr(M_w, mode='reduced')
+    QTx = Q.T @ x_w
+    
+    # Draw a single conditional sample mu_sample ~ N(mu_hat, (Mw^T Mw)^-1)
+    z = rng.normal(size=K)
+    rhs = np.column_stack((QTx, QTx + z))
+    mu_both = sla.solve_triangular(R, rhs, lower=False, check_finite=False)
+    mu = mu_both[:, 0]
+    mu_sample = mu_both[:, 1]
+    
+    # Get residuals and chi2 for the least-squares solution
+    residuals_w = x_w - Q @ QTx
+    chi2_min = np.dot(residuals_w, residuals_w)
+
+    return mu, chi2_min, mu_sample
 
 def _flatten_joint(data):
         """

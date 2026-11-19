@@ -98,10 +98,10 @@ class MCMCLinearFitter(Fitter):
             helpers._matrix_filler(self.M,self.cols,params_dict,data)
 
             sigma = helpers.sigma(data, params_dict, mm_sigma)
-            mu,chi2 = helpers._lsq_helper(self.M,mm_eta,sigma)
+            mu, chi2, mu_sample = helpers._lsq_helper_qrdraw(self.M, mm_eta, sigma, rng)
 
              
-            return mu, chi2, sigma
+            return mu, chi2, mu_sample, sigma
     
 
         early_prior_transforms = build_transform_functions([*self.sampled_params, *self.fixed_prior_params], self.early_prior_params)
@@ -127,14 +127,17 @@ class MCMCLinearFitter(Fitter):
             })
             params_dict.update(param_transforms(**params_dict))
 
-            mu, chi2, sigma = matrix_method(params_dict)
+            mu, chi2, mu_sample, sigma = matrix_method(params_dict)
 
             # Evaluate priors for parameters that require full orbit solution, short circuiting if any are invalid
             
             late_transformed = late_prior_transforms(
                 **dict(zip(param_order, params)),
-                **{**{name: canonical_priors[name].value for name in self.fixed_prior_params},
-                    **{name:mu[self.cols[name]] for name in self.cols }})
+                **{
+                    **{name: canonical_priors[name].value for name in self.fixed_prior_params},
+                    **{name:mu_sample[self.cols[name]] for name in self.cols},
+                },
+            )
                 
             for name in self.late_prior_params:
                 val = late_transformed[name]
@@ -150,7 +153,8 @@ class MCMCLinearFitter(Fitter):
                 chi2 + np.sum(np.log(2 * np.pi * sigma ** 2))
             )
 
-            return ln_prior + ln_likelihood
+            return ln_prior + ln_likelihood, mu_sample
+
 
         initial_kwargs = {}
         initial = self.initial
@@ -211,23 +215,13 @@ class MCMCLinearFitter(Fitter):
             thin = 1
 
         samples = sampler.get_chain(discard=burn,thin=thin,flat=True)
+        mu_samples = sampler.get_blobs(discard=burn,thin=thin,flat=True)
         lnprobs = sampler.get_log_prob(discard=burn,thin=thin,flat=True)
 
-       
-        
-        full_posterior = [] 
-        
 
-        for param in samples:
-            transformed_param = dict(zip(param_order, param))
-            transformed_param.update({
-                name: canonical_priors[name].value
-                for name in self.fixed_prior_params
-            })
-            transformed_param.update(param_transforms(**transformed_param))
-
-            mu, _, _ = matrix_method(transformed_param)
-            full_posterior.append((*param,*(mu[self.cols[name]] for name in self.cols)))
+        full_posterior = np.array([
+            (*param, *mu) for param, mu in zip(samples, mu_samples[:, [self.cols[name] for name in self.cols]])
+        ])
 
         post_labels = [*param_order, *self.cols.keys()]
 
@@ -245,7 +239,7 @@ class MCMCLinearFitter(Fitter):
             for name in self.fixed_prior_params
         })
         median_sampled_params.update(param_transforms(**median_sampled_params))
-        median_mu, _, _ = matrix_method(median_sampled_params)
+        median_mu, _, _, _ = matrix_method(median_sampled_params)
         median_params = dict(median_sampled_params)
         median_params.update({name: median_mu[self.cols[name]] for name in self.cols})
 

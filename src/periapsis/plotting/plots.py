@@ -785,12 +785,27 @@ def astrometry_phase_plot(results, data, savepath=None):
                 fmt='s', color='tab:cyan', markersize=5, zorder=3,
                 label=f'Binned Data ({system})',
             )
+
+            ax[0].errorbar(
+                phases,
+                alpha_resids,
+                yerr=alpha_errs,
+                fmt='o', color='black', alpha=0.3, markersize=3, zorder=1,
+            )
+
             ax[1].errorbar(
                 center,
                 delta_binned,
                 yerr=delta_err_binned,
                 fmt='s', color='tab:cyan', markersize=5, zorder=3,
                 label=f'Binned Data ({system})',
+            )
+
+            ax[1].errorbar(
+                phases,
+                delta_resids,
+                yerr=delta_errs,
+                fmt='o', color='black', alpha=0.3, markersize=3, zorder=1,
             )
 
     for system in sorted({d.system for d in datas}):

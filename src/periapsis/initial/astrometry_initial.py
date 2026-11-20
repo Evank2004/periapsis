@@ -302,75 +302,80 @@ class AstrometryInitialGuess(InitialGuess):
     def get_initial_guess(self, param_order, nwalkers):
         best_values = self._linear_seed()
 
-        linear_params = set(self.cols)
-        fixed_params = set(self.fixed_prior_params)
-        linear_derived_params = covered_parameters(
-            linear_params | fixed_params
+        transform = build_transform_functions(
+            best_values.keys(),
+            param_order,
         )
-
-        nonlinear_names = [
-            name
-            for name, prior in self.priors.items()
-            if not isinstance(prior, (Bounds, FixedPrior))
-            and name not in linear_derived_params
-        ]
+        best_values.update(transform(**best_values))
 
         positions = []
 
-        for _ in range(nwalkers):
-            params = dict(best_values)
+        for name in param_order:
+            if name not in best_values:
+                raise ValueError(
+                    f"Missing initial guess for parameter: {name}"
+                )
 
-            for name in nonlinear_names:
-                prior = self.priors.get(name)
-                if prior is None:
-                    raise ValueError(
-                        f"Missing prior for parameter: {name}"
+            prior = self.priors.get(name)
+
+            scale = max(
+                1e-4 * abs(best_values[name]),
+                1e-8,
+            )
+
+            if prior is not None and not isinstance(prior, FixedPrior):
+                lower = getattr(
+                    prior,
+                    "lower",
+                    getattr(prior, "min", None),
+                )
+                upper = getattr(
+                    prior,
+                    "upper",
+                    getattr(prior, "max", None),
+                )
+
+                if lower is not None and upper is not None:
+                    scale = max(
+                        scale,
+                        1e-4 * (upper - lower),
                     )
 
-                scale = max(
-                    1e-4 * abs(best_values[name]),
-                    1e-8,
-                )
-    
-                if prior is not None and not isinstance(prior, (Bounds, FixedPrior)):
-                    lower = getattr(prior, "lower", getattr(prior, "min", None))
-                    upper = getattr(prior, "upper", getattr(prior, "max", None))
-                    if lower is not None and upper is not None:
-                        scale = max(scale, 1e-4 * (upper - lower))
-
-                value = best_values[name] + self.rng.normal(
-                    0.0,
-                    scale,
-                )
-
-                params[name] = np.clip(
-                    value,
-                    prior.min,
-                    prior.max,
-                )
-
-            params.update(self.PeTp_transform(**params))
-
-            params, _ = helpers._linear_solution(
-                self.M_base,
-                self.cols,
-                params,
-                self.data,
-                self.eta,
-                self.err,
+            values = best_values[name] + self.rng.normal(
+                0.0,
+                scale,
+                size=nwalkers,
             )
-            transform = build_transform_functions(
-                params.keys(),
-                param_order,
-            )
-            params.update(transform(**params))
-            positions.append([
-                params[name]
-                for name in param_order
-            ])
 
-        pos = np.asarray(positions)
-        return pos
+            if prior is not None and not isinstance(prior, FixedPrior):
+                lower = getattr(
+                    prior,
+                    "lower",
+                    getattr(prior, "min", None),
+                )
+                upper = getattr(
+                    prior,
+                    "upper",
+                    getattr(prior, "max", None),
+                )
+
+                # Do not place walkers exactly on prior boundaries.
+                if lower is not None:
+                    lower = np.nextafter(
+                        lower,
+                        upper if upper is not None else np.inf,
+                    )
+                if upper is not None:
+                    upper = np.nextafter(
+                        upper,
+                        lower if lower is not None else -np.inf,
+                    )
+
+                values = np.clip(values, lower, upper)
+
+            positions.append(values)
+
+        return np.column_stack(positions)
 
 
 class AstrometryLinearInitialGuess(AstrometryInitialGuess):

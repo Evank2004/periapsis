@@ -5,14 +5,17 @@ import numpy as np
 from periapsis.data.common import _AstrometryDataBase, AstrometryData, PhysicalAstrometryData, RadialVelocityData
 from periapsis.data.data import Data
 from periapsis.data import GaiaData, JointData
+from periapsis.utils.parameter_samples import ParameterSamples
 from periapsis.utils.helpers import _flatten_and_join
+from periapsis.params.units import get_unit_type
 import periapsis.utils.helpers as helpers
 from periapsis.model.orbit import Orbit
 from periapsis.prior import FixedPrior
 from scipy.stats import chi2
 from periapsis.utils.helpers import error_sigfig_latex_string
 from periapsis.params import display_latex
-from periapsis.params.transforms import build_transform_functions
+from periapsis.params.params import ang_parameters
+from periapsis.params.transforms import build_transform_functions, build_transform_function
 import astropy.units as u
 
 
@@ -279,6 +282,111 @@ def resample_data(data) -> Data:
         return _subdata(data, idx)
 
 
+class BootstrapResults:
+    def __init__(self, results, data, bs_params):
+        self.results = results
+        self.data = data
+        self.bs_params = {k: np.atleast_1d(v) for k, v in bs_params.items() if k != "chi2"}
+        self.median_params = {name: np.median(values) for name, values in self.bs_params.items()}
+        self.sampled_param_names = bs_params.keys()
+
+    def _repr_markdown_(self):
+        median_param_values = {name: self.results.unit_system.convert_from_canonical(name, value) for name, value in self.median_params.items()}
+        median_param_16th_84th = {name: np.percentile(self[name, self.results.unit_system.get_parameter_unit(name)], [15.865, 84.135]) for name in self.median_params.keys()}
+        
+        table_rows = [r"| Parameter | Median (1-$\sigma$) | Unit |", "| :--- | :--- | :--- |"]
+        for name in self.median_params.keys():
+            sampled = name in self.sampled_param_names
+            median_value = median_param_values[name]
+            lower_error = median_value - median_param_16th_84th[name][0]
+            upper_error = median_param_16th_84th[name][1] - median_value
+            
+            if lower_error <= 0 or upper_error <= 0:
+                error_string = f"{median_value}"
+            else:
+                error_string = error_sigfig_latex_string(median_value, upper_error, lower_error)
+                
+            unit_string = self.results.unit_system.get_parameter_unit(name).to_string("latex_inline")
+            
+            table_rows.append(f"| ${display_latex(name)}${' (sampled)' if sampled else ''} | ${error_string}$ | {unit_string} |")
+
+        median_params_latex = "\n".join(table_rows)
+
+        return "\n".join((
+            f"### Bootstrap Results ({self.results.fit_method} {self.results.backend} on {type(self.data).__name__})",
+            f"{len(next(iter(self.bs_params.values())))} bootstraps.",
+            f"",
+            f"#### Bootstrapped Parameters and Uncertainties",
+            f"",
+            f"{median_params_latex}",
+            f"",
+        ))
+
+    def __getitem__(self, key):
+        if isinstance(key, tuple):
+            key, unit = key
+            should_transform_prior = True
+            # Automatically transform length parameters to the angular version if the unit requested is an angle.
+            if self.results.unit_system is not None and unit is not None:
+                if (get_unit_type(unit) == "angle" or get_unit_type(unit) == "angular_velocity" or get_unit_type(unit) == "angular_acceleration") and key in ang_parameters and not key.endswith("_ang"):
+                    key = f"{key}_ang"
+        elif self.results.unit_system is None:
+            unit = None
+            should_transform_prior = False
+        else:
+            unit = self.results.unit_system.get_parameter_unit(key)
+            should_transform_prior = False
+
+        if key in self.bs_params:
+            if unit is None:
+                return ParameterSamples(np.atleast_1d(self.bs_params[key]), name=key, unit=None)
+            return ParameterSamples(np.atleast_1d(self.results.unit_system.convert_from_canonical(key, self.bs_params[key], unit=unit)), name=key, unit=unit)
+
+        if self.results.priors is not None and key in self.results.priors:
+            if isinstance(self.results.priors[key], FixedPrior):
+                prior_unit = self.results.priors[key].unit
+                if prior_unit and not should_transform_prior:
+                    return ParameterSamples(np.atleast_1d(self.results.priors[key].value), key, prior_unit)
+                if prior_unit and should_transform_prior:
+                    if unit is None:
+                        return ParameterSamples(np.atleast_1d(self.results.canonical_priors[key].value), key, None, map_index=self.results.map_index)
+                    return ParameterSamples(np.atleast_1d(
+                        self.results.unit_system.convert_from_canonical(key, self.results.canonical_priors[key].value, unit=unit)
+                    ), key, unit)
+                if not prior_unit:
+                    if unit is None:
+                        return ParameterSamples(np.atleast_1d(self.results.priors[key].value), key, None, map_index=self.results.map_index)
+                    return ParameterSamples(np.atleast_1d(
+                        self.results.unit_system.convert_from_canonical(key, self.results.canonical_priors[key].value, unit=unit)
+                    ), key, unit)
+
+        known_params = []
+        known_param_values = {}
+        if self.bs_params.keys() is not None:
+            known_params.extend(self.bs_params.keys())
+            known_param_values.update({name: self.bs_params[name] for name in self.bs_params.keys()})
+        if self.results.canonical_priors is not None:
+            known_params.extend([name for name in self.results.canonical_priors.keys() if isinstance(self.results.canonical_priors[name], FixedPrior)])
+            known_param_values.update({name: self.results.canonical_priors[name].value for name in self.results.canonical_priors.keys() if isinstance(self.results.canonical_priors[name], FixedPrior)})
+
+        if known_params:
+            transform = build_transform_function(known_params, key)
+            value = transform(**known_param_values)
+            if unit is None:
+                return ParameterSamples(np.atleast_1d(value), key, None, map_index=self.results.map_index)
+            return ParameterSamples(np.atleast_1d(self.results.unit_system.convert_from_canonical(key, value, unit=unit)), key, unit, map_index=self.results.map_index)
+
+    def __contains__(self, key):
+        if self.bs_params is not None and key in self.bs_params:
+            return True
+
+        if self.results.covered_params is not None and key in self.results.covered_params:
+            return True
+
+        return False
+
+
+
 def linear_error_bootstrap(results, data, num_bootstraps=100, rng=np.random.default_rng()):
     """
     Perform a bootstrap on linear parameters to estimate their uncertainties while sampling from the posterior of non-linear parameters.
@@ -330,7 +438,7 @@ def linear_error_bootstrap(results, data, num_bootstraps=100, rng=np.random.defa
             bs_params[k].append(v)
         bs_params["chi2"].append(chi2)
     
-    return bs_params
+    return BootstrapResults(results, data, bs_params)
 
 
 

@@ -640,7 +640,7 @@ def sky_motion_plot(results, data, savepath=None):
 
     return fig
 
-def astrometry_phase_plot(results, data, savepath=None):
+def astrometry_phase_plot(results, data, plot_datapoints=True, savepath=None):
     '''
     Plots astrometry data in phase space
     '''
@@ -786,13 +786,6 @@ def astrometry_phase_plot(results, data, savepath=None):
                 label=f'Binned Data ({system})',
             )
 
-            ax[0].errorbar(
-                phases,
-                alpha_resids,
-                yerr=alpha_errs,
-                fmt='o', color='black', alpha=0.3, markersize=3, zorder=1,
-            )
-
             ax[1].errorbar(
                 center,
                 delta_binned,
@@ -801,12 +794,25 @@ def astrometry_phase_plot(results, data, savepath=None):
                 label=f'Binned Data ({system})',
             )
 
-            ax[1].errorbar(
-                phases,
-                delta_resids,
-                yerr=delta_errs,
-                fmt='o', color='black', alpha=0.3, markersize=3, zorder=1,
-            )
+            if plot_datapoints:
+
+                ax[0].errorbar(
+                    phases,
+                    alpha_resids,
+                    yerr=alpha_errs,
+                    fmt='o', color='black', alpha=0.3, markersize=3, zorder=1,
+                )
+
+                ax[1].errorbar(
+                    phases,
+                    delta_resids,
+                    yerr=delta_errs,
+                    fmt='o', color='black', alpha=0.3, markersize=3, zorder=1,
+                )
+
+            
+
+            
 
     for system in sorted({d.system for d in datas}):
         plot_system(system, [d for d in datas if d.system == system])

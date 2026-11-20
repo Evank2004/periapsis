@@ -782,7 +782,7 @@ def astrometry_phase_plot(results, data, savepath=None):
                 center,
                 alpha_binned,
                 yerr=alpha_err_binned,
-                fmt='s', color='tab:cyan', markersize=5, zorder=3,
+                fmt='s', color='#169C9C', markersize=5, zorder=3,
                 label=f'Binned Data ({system})',
             )
 
@@ -797,7 +797,7 @@ def astrometry_phase_plot(results, data, savepath=None):
                 center,
                 delta_binned,
                 yerr=delta_err_binned,
-                fmt='s', color='tab:cyan', markersize=5, zorder=3,
+                fmt='s', color='#169C9C', markersize=5, zorder=3,
                 label=f'Binned Data ({system})',
             )
 

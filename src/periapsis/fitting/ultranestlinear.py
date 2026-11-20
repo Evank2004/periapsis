@@ -93,44 +93,55 @@ class UltranestLinearFitter(Fitter):
             mm_eta = data.x_canonical
             mm_sigma = data.err_canonical
 
+        def matrix_method(params_dict):
+            helpers._matrix_filler(self.M,self.cols,params_dict,data)
+            sigma = helpers.sigma(data,params_dict,mm_sigma)
+            mu, chi2, mu_sample = helpers._lsq_helper_qrdraw(self.M, mm_eta, sigma, rng)
+                
+            return mu, chi2, mu_sample, sigma
+
            
         def prior_transform(cube):
             cube = np.array(cube, copy=True)
             sampled_priors = {}
-            i = 0
-            for name in param_order:
+            for i, name in enumerate(param_order):
                 sampled_priors[name] = canonical_priors[name].unp(cube[i])
-                i += 1
             params = self.prior_to_sampled_transform(
                 **sampled_priors,
                 **{name: canonical_priors[name].value for name in self.fixed_prior_params},
             )
-            return np.array([*[sampled_priors[name] for name in param_order], *[params[name] for name in self.output_param_order if name not in param_order]])
+
+            mm_params = standard_param_transform(
+                **params,
+                **{name: canonical_priors[name].value for name in self.fixed_prior_params}
+            )
+            mu, chi2, mu_sample, sigma = matrix_method(mm_params)
+            sigma_term = np.sum(np.log(2 * np.pi * sigma ** 2))
+
+            ln_marg_like = -0.5 * (
+                chi2 + sigma_term
+            )
+
+
+            return np.array([
+                *[sampled_priors[name] for name in param_order],
+                *[params[name] for name in self.output_param_order if name not in param_order],
+                *[mu_sample[self.cols[name]] for name in self.cols],
+                ln_marg_like,
+            ])
        
         reject_logl = -1e300
-        
-        def matrix_method(params_dict):
-
-            helpers._matrix_filler(self.M,self.cols,params_dict,data)
-            sigma = helpers.sigma(data,params_dict,mm_sigma)
-            mu,chi2 = helpers._lsq_helper(self.M,mm_eta,sigma)
-                
-            return mu, chi2,sigma
+        derived_param_names = [
+            *[name for name in self.output_param_order if name not in param_order],
+            *matrix_output_params,
+            "ln_marg_like",
+        ]
         
         
         def log_likelihood(params):
-            standard_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
-            params_dict = dict(zip(standard_param_order, params))
-            params_dict.update({name: canonical_priors[name].value for name in self.fixed_prior_params})
-            params_dict.update(
-                standard_param_transform(**params_dict)
-            )
-            mu, chi2, sigma = matrix_method(params_dict)
-
-            full_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order], *matrix_output_params]
+            full_param_order = [*param_order, *derived_param_names]
             param_dict = dict(zip(full_param_order, params))
             param_dict.update({name: canonical_priors[name].value for name in self.fixed_prior_params})
-            param_dict.update({name: mu[i] for i, name in enumerate(matrix_output_params)})
             bound_param_dict = likelihood_transform(**param_dict)
             for name in self.bound_params:
                 lower = canonical_priors[name].lower
@@ -140,17 +151,18 @@ class UltranestLinearFitter(Fitter):
                 if upper is not None and bound_param_dict[name] > upper:
                     return reject_logl # TODO possibly slope inwards towards the bounds instead of hard cutoff
 
-            ln_like = -0.5 * (
-                chi2 + np.sum(np.log(2 * np.pi * sigma ** 2))
-            )
+            ln_marg_like = param_dict["ln_marg_like"]
+            ln_like = ln_marg_like
 
             return ln_like  
+
+        
 
         sampler = ultranest.ReactiveNestedSampler(
             param_names=tuple(param_order),
             loglike=log_likelihood, 
             transform=prior_transform,
-            derived_param_names=tuple([name for name in self.output_param_order if name not in param_order]),
+            derived_param_names=tuple(derived_param_names),
             wrapped_params=[name in wrapped_parameters for name in param_order],
         )
 
@@ -169,10 +181,7 @@ class UltranestLinearFitter(Fitter):
 
         ultranest_samples = np.array(results['samples'])
 
-        standard_param_order = [*param_order, *[name for name in self.output_param_order if name not in param_order]]
-        params_dict = dict(zip(standard_param_order, ultranest_samples.T))
-        params_dict.update({name: canonical_priors[name].value for name in self.fixed_prior_params})
-        standard_params_dict = standard_param_transform(**params_dict)
+        standard_param_order = [*param_order, *derived_param_names[:-1]]
 
         full_posterior = []
         valid_logl = []
@@ -184,11 +193,7 @@ class UltranestLinearFitter(Fitter):
 
             sampled_params = dict(zip(standard_param_order, param))
             sampled_params.update({name: canonical_priors[name].value for name in self.fixed_prior_params})
-            sampled_params.update(
-                standard_param_transform(**sampled_params)
-            )
-            mu,_,_ = matrix_method(sampled_params)
-            full_posterior.append((*param, *(mu[self.cols[name]] for name in self.cols)))
+            full_posterior.append(param)
             valid_logl.append(ll)
 
         if len(full_posterior) == 0:
@@ -200,7 +205,7 @@ class UltranestLinearFitter(Fitter):
         logl = np.array(valid_logl)
         full_posterior_arr = np.array(full_posterior)
 
-        post_labels = [*standard_param_order, *self.cols.keys()]
+        post_labels = [*standard_param_order]
 
         best_i = int(np.argmax(logl))
         best_params = dict(zip(post_labels, full_posterior[best_i]))
@@ -213,9 +218,7 @@ class UltranestLinearFitter(Fitter):
             for name in self.fixed_prior_params
         })
         median_sampled_params.update(standard_param_transform(**median_sampled_params))
-        median_mu, _, _ = matrix_method(median_sampled_params)
-        median_params = dict(median_sampled_params)
-        median_params.update({name: median_mu[self.cols[name]] for name in self.cols})
+        median_params = median_sampled_params
         for prior in self.fixed_prior_params:
             best_params[prior] = canonical_priors[prior].value
 

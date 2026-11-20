@@ -553,12 +553,27 @@ class FastEmceeSampler:
         assert initial.shape == (self.nwalkers, self.ndim)
         self.run_arguments = (initial.copy(), niter, progress)
         self.chain = np.repeat(initial[np.newaxis, :, :], niter, axis=0)
-        initial_log_prob = np.array(
-            [
-                self.log_prob_fn(position, *self.args)
-                for position in initial
-            ]
-        )
+        if type(self.log_prob_fn(initial[0], *self.args)) is tuple:
+            ilp = []
+            blobs = []
+            for position in initial:
+                lp, blob = self.log_prob_fn(position, *self.args)
+                ilp.append(lp)
+                blobs.append(blob)
+            
+            initial_log_prob = np.array(ilp)
+            self.blobs = np.repeat(
+                np.array(blobs)[np.newaxis, :, :],
+                niter,
+                axis=0,
+            )
+        else:
+            initial_log_prob = np.array(
+                [
+                    self.log_prob_fn(position, *self.args)
+                    for position in initial
+                ]
+            )
         self.log_prob = np.repeat(
             initial_log_prob[np.newaxis, :],
             niter,
@@ -571,6 +586,14 @@ class FastEmceeSampler:
         selected = self.chain[discard::thin]
         if flat:
             return selected.reshape(-1, self.ndim)
+        return selected
+
+    def get_blobs(self, discard=0, thin=1, flat=False):
+        if thin < 1:
+            raise ValueError("thin must be at least one")
+        selected = self.blobs[discard::thin]
+        if flat:
+            return selected.reshape(-1, self.blobs.shape[-1])
         return selected
 
     def get_log_prob(self, discard=0, thin=1, flat=False):

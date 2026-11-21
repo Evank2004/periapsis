@@ -7,6 +7,8 @@ import numpy as np
 from scipy.special import ndtri
 
 class NormalPrior(Prior):
+    ''' A normal prior distribution with a specified mean and standard deviation.
+    '''
     def __init__(self, mean: float, std: float, unit=None):
         if std <= 0:
             raise ValueError("Standard deviation must be positive for a NormalPrior.")

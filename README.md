@@ -24,14 +24,16 @@ fit_data = p.JointData([
 fitter = p.MCMCFitter(
     nwalkers=32,
     niter=10000,
-    P=p.UniformPrior(10, 20000), # orbital period, days
+    P=p.UniformPrior(10, 20000,unit='day'), # orbital period, days
     t0=p.UniformPrior(-0.5, 0.5), # Tp/P, 
     # where Tp is time of periapsis passage
-    a1=p.UniformPrior(0.01, 1000), # semi-major axis, AU
+    a1=p.UniformPrior(0.01, 1000,unit='AU'), # semi-major axis, AU
     e=p.UniformPrior(0, 1), # eccentricity
     cosi=p.UniformPrior(-1, 1), # cos(inclination)
     omega1=p.UniformPrior(0, 2*np.pi), # argument of periapsis
     Omega1=p.UniformPrior(0, 2*np.pi), # longitude of ascending node
+    K1 = p.UniformPrior(-100,100,unit = 'km/s') #radial velocity semi-amplitude 
+    gamma = p.UniformPrior(-300,300, unit='km/s') # systemic velocity
 )
 
 result = fitter.fit(fit_data)

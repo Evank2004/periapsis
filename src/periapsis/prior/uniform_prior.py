@@ -5,6 +5,8 @@ import numpy as np
 from periapsis.params import get_canonical_unit_scale
 
 class UniformPrior(Prior):
+    ''' A uniform prior distribution with specified lower and upper bounds.
+    '''
     def __init__(self, lower_bound: float, upper_bound: float, unit = None):
         if lower_bound >= upper_bound:
             raise ValueError("Lower bound must be less than upper bound for a UniformPrior.")

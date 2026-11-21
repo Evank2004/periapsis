@@ -6,6 +6,8 @@ from .prior import Prior
 import numpy as np
 
 class Bounds(Prior):
+    ''' Sets a bound for a derived parameter. This is not a prior distribution, but rather a constraint on the parameter space.
+    '''
     def __init__(self, lower: float = None, upper: float = None, unit = None):
         self.lower = lower
         self.upper = upper

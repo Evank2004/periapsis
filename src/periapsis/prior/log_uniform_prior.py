@@ -6,6 +6,8 @@ from .prior import Prior
 import numpy as np
 
 class LogUniformPrior(Prior):
+    ''' A log-uniform prior distribution with specified lower and upper bounds.
+    '''
     def __init__(self, lower_bound: float, upper_bound: float, unit = None):
         if lower_bound <= 0 or upper_bound <= 0:
             raise ValueError("Bounds must be positive for a LogUniformPrior.")

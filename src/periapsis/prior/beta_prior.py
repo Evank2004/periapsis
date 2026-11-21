@@ -8,6 +8,8 @@ from periapsis.params.units import get_canonical_unit_scale
 from .prior import Prior
 
 class BetaPrior(Prior):
+    ''' A beta prior distribution with specified alpha and beta parameters, and optional lower and upper bounds.
+    '''
     def __init__(self, alpha: float, beta: float, lower_bound: float = 0.0, upper_bound: float = 1.0, unit=None):
         if alpha <= 0 or beta <= 0:
             raise ValueError("Alpha and beta parameters must be positive for a BetaPrior.")
